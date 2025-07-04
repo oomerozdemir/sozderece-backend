@@ -1,0 +1,130 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Contact {
+  id        Int      @id @default(autoincrement())
+  name      String
+  phone     String
+  email     String
+  message   String
+  createdAt DateTime @default(now())
+}
+
+model User {
+  id            Int     @id @default(autoincrement())
+  name          String
+  email         String  @unique
+  password      String
+  phone         String?
+  role          String
+  isVerified    Boolean @default(false)
+  emailVerified Boolean @default(false)
+  phoneVerified Boolean @default(false)
+  createdAt     DateTime @default(now())
+
+  orders        Order[]
+
+  assignedCoachId Int?
+  assignedCoach   Coach? @relation("AssignedCoach", fields: [assignedCoachId], references: [id])
+
+  coachProfile   Coach? @relation("CoachProfile") 
+  couponUsages CouponUsage[]
+
+  grade         String? // 8, 9, 10, 11, 12, Mezun gibi
+  track         String? // Sayısal, Eşit Ağırlık, Sözel gibi
+
+}
+
+model Coach {
+  id          Int    @id @default(autoincrement())
+  name        String
+  subject     String
+  description String
+  image       String
+
+userId      Int?    @unique
+user        User?   @relation("CoachProfile", fields: [userId], references: [id])
+assignedTo  User[]  @relation("AssignedCoach")
+}
+
+model Order {
+  id        Int      @id @default(autoincrement())
+  package   String
+  startDate DateTime @default(now())
+  endDate   DateTime
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user   User @relation(fields: [userId], references: [id])
+  userId Int
+
+  billingInfo   BillingInfo @relation("BillingToOrder", fields: [billingInfoId], references: [id])
+  billingInfoId Int // geçici olarak opsiyonel
+
+  orderItems OrderItem[]
+
+  refundReason  String? // 👈 iade nedeni
+  refundMessage String? // 👈 iade açıklaması
+  status        String  @default("active") // 'active', 'refund_requested', 'refunded'
+}
+
+model Package {
+  id          Int    @id @default(autoincrement())
+  name        String
+  description String
+  price       Float
+}
+
+model BillingInfo {
+  id          Int     @id @default(autoincrement())
+  email       String
+  name        String
+  surname     String
+  address     String
+  district    String
+  city        String
+  postalCode  String
+  phone       String
+  allowEmails Boolean
+
+  // 🔄 Bu ilişki Order modeliyle eşleşir
+  orders Order[] @relation("BillingToOrder")
+}
+
+model OrderItem {
+  id          Int    @id @default(autoincrement())
+  name        String
+  price       String
+  quantity    Int
+  description String
+
+  order   Order @relation(fields: [orderId], references: [id])
+  orderId Int
+}
+
+model Coupon {
+  id            Int             @id @default(autoincrement())
+  code          String          @unique
+  discountRate  Int
+  usageLimit    Int
+  createdAt     DateTime        @default(now())
+  usedBy        CouponUsage[]   // Bağlantı: bir kupon birçok kullanıcı tarafından kullanılabilir
+}
+
+model CouponUsage {
+  id        Int      @id @default(autoincrement())
+  userId    Int
+  couponId  Int
+  usedAt    DateTime @default(now())
+
+  user      User     @relation(fields: [userId], references: [id])
+  coupon    Coupon   @relation(fields: [couponId], references: [id])
+
+  @@unique([userId, couponId]) // Her kullanıcı aynı kuponu sadece bir kez kullanabilir
+}
