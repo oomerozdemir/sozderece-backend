@@ -100,13 +100,6 @@ export const createOrderWithBilling = async (req, res) => {
       }
     }
 
-     await prisma.user.update({
-      where: { id: userId },
-      data: {
-        grade,
-        track
-      }
-    });
 
     res.status(201).json({ message: "Sipariş başarıyla oluşturuldu." });
   } catch (error) {
