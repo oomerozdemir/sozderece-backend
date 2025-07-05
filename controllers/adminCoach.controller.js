@@ -37,6 +37,7 @@ const coaches = await prisma.coach.findMany({
 
 
 export const createCoachWithUser = async (req, res) => {
+  console.log("Dosya:", req.file);
   try {
     const { name, email, subject, description } = req.body;
 
