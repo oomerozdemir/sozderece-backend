@@ -32,7 +32,7 @@ router.put("/orders/:id/billing", authenticateToken, authorizeRoles("admin"), up
 
 //Koc yonetimi
 router.get("/coaches", authenticateToken, authorizeRoles("admin"), getAllCoaches);
-router.post("/coaches", upload.single("image"), authenticateToken, authorizeRoles("admin"), createCoachWithUser);
+router.post("/coaches", authenticateToken, authorizeRoles("admin"), upload.single("image"),  createCoachWithUser);
 
 router.put(
   "/coaches/:id",
