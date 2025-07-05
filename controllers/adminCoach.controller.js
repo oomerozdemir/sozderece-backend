@@ -63,7 +63,7 @@ export const createCoachWithUser = async (req, res) => {
       },
     });
 
-    const imagePath = req.file ? `/uploads/${req.file.filename}` : null;
+    const imagePath = req.file ? req.file.path : null;
 
     await prisma.coach.create({
       data: {
@@ -88,7 +88,8 @@ export const createCoachWithUser = async (req, res) => {
 export const updateCoach = async (req, res) => {
   try {
     const { name, subject, description } = req.body;
-    const image = req.file ? `/uploads/${req.file.filename}` : undefined;
+    const image = req.file ? req.file.path : undefined;
+
 
     const updatedCoach = await prisma.coach.update({
       where: { id: parseInt(req.params.id) },
