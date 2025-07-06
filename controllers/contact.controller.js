@@ -30,9 +30,9 @@ const transporter = nodemailer.createTransport({
 
 export const createTrialMeeting = async (req, res) => {
   try {
-    const { name, email, phone, userType, date, message } = req.body;
+    const { name, email, phone, userType, message } = req.body;
 
-    if (!name || !email || !phone || !userType || !date || !message) {
+    if (!name || !email || !phone || !userType || !message) {
       return res.status(400).json({
         success: false,
         message: "Tüm alanlar zorunludur.",
@@ -40,7 +40,7 @@ export const createTrialMeeting = async (req, res) => {
     }
 
     await prisma.trialMeeting.create({
-      data: { name, email, phone, userType, date, message }
+      data: { name, email, phone, userType, message }
     });
 
     // Mail gönder (nodemailer ile)
@@ -53,7 +53,6 @@ export const createTrialMeeting = async (req, res) => {
     <p><strong>Email:</strong> ${email}</p>
     <p><strong>Telefon:</strong> ${phone}</p>
     <p><strong>Kullanıcı Tipi:</strong> ${userType}</p>
-    <p><strong>Randevu Tarihi:</strong> ${date}</p>
     <p><strong>Mesaj:</strong> ${message}</p>
   `,
 });
