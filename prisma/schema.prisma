@@ -22,7 +22,6 @@ model TrialMeeting {
   email     String
   phone     String
   userType  String   // Öğrenci veya Veli
-  date      String   // ISO tarih string olarak gelir
   message   String
   createdAt DateTime @default(now())
 }
