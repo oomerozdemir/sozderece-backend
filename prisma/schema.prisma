@@ -16,6 +16,18 @@ model Contact {
   createdAt DateTime @default(now())
 }
 
+model TrialMeeting {
+  id        Int      @id @default(autoincrement())
+  name      String
+  email     String
+  phone     String
+  userType  String   // Öğrenci veya Veli
+  date      String   // ISO tarih string olarak gelir
+  message   String
+  createdAt DateTime @default(now())
+}
+
+
 model User {
   id              Int           @id @default(autoincrement())
   name            String
