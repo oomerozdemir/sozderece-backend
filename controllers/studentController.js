@@ -12,11 +12,21 @@ export const getStudentProfile = async (req, res) => {
     }
 
     const user = await prisma.user.findUnique({
-      where: { id: userId },
+  where: { id: userId },
+  include: {
+    assignedCoach: {
       include: {
-        assignedCoach: true,
+        user: {
+          select: {
+            email: true,
+            phone: true,
+          },
+        },
       },
-    });
+    },
+  },
+});
+
 
     if (!user) {
       return res.status(404).json({ message: "Kullanıcı bulunamadı." });
