@@ -101,7 +101,7 @@ model OrderItem {
   name        String
   price       Float
   quantity    Int
-  description String
+  description String?
   orderId     Int
   order       Order  @relation(fields: [orderId], references: [id])
 }

@@ -73,8 +73,8 @@ export const createOrderWithBilling = async (req, res) => {
     });
 
    const cleanString = (value) => {
-  if (typeof value !== "string") return value;
-  return value.replace(/\u0000/g, ""); // null karakter (\x00) temizlenir
+  if (typeof value !== "string") return "";
+  return value.replace(/\u0000/g, "");
 };
 
 // ✅ Sipariş ürünlerini oluştur
