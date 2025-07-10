@@ -73,7 +73,7 @@ export const createOrderWithBilling = async (req, res) => {
     const user_ip =
       req.headers["x-forwarded-for"] || req.socket.remoteAddress || "127.0.0.1";
 
-    const merchant_oid = `ORDER_${Date.now()}_${userId}`;
+    const merchant_oid = `ORDER${Date.now()}${userId}`;
 
     const user_basket = Buffer.from(
       JSON.stringify(
