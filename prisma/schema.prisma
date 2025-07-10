@@ -67,7 +67,7 @@ model Order {
   endDate       DateTime
   startDate     DateTime    @default(now())
   updatedAt     DateTime    @updatedAt
-  status        String      @default("active")
+  status        String      @default("pending_payment") // paid, refund_requested, etc.
   refundMessage String?
   refundReason  String?
   billingInfo   BillingInfo @relation("BillingToOrder", fields: [billingInfoId], references: [id])
