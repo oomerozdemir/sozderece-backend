@@ -2,8 +2,11 @@ import jwt from "jsonwebtoken";
 
 export const authenticateToken = (req, res, next) => {
   const authHeader = req.headers.authorization;
+  console.log("🔐 Gelen Authorization Header:", authHeader);
+  console.log("🔐 JWT_SECRET env:", process.env.JWT_SECRET);
 
   if (!authHeader || !authHeader.startsWith("Bearer ")) {
+    console.warn("❌ Token bulunamadı");
     return res.status(401).json({ success: false, message: "Token bulunamadı" });
   }
 
@@ -11,9 +14,11 @@ export const authenticateToken = (req, res, next) => {
 
   try {
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
+    console.log("✅ Token doğrulandı:", decoded);
     req.user = decoded;
     next();
   } catch (error) {
+    console.error("❌ Token doğrulanamadı:", error.message);
     return res.status(401).json({ success: false, message: "Token geçersiz" });
   }
 };
