@@ -1,10 +1,14 @@
 import express from "express";
 import { getMyOrders, createOrderWithBilling, createRefundRequest } from "../../controllers/order.controller.js";
 import { authenticateToken, authorizeRoles } from "../../middleware/authMiddleware.js";
+import { PrismaClient } from "@prisma/client";
+import crypto from "crypto";
+
+const prisma = new PrismaClient();
 
 const router = express.Router();
 
-router.get("/my-orders", authenticateToken, getMyOrders);
+router.get("/my-orders", authenticateToken, authorizeRoles("student"), getMyOrders);
 router.post("/orders", authenticateToken, authorizeRoles("student"), createOrderWithBilling);
 
 router.put("/orders/:id/refund-request", authenticateToken, authorizeRoles("student"), createRefundRequest);
@@ -23,17 +27,30 @@ router.post("/paytr/callback", express.urlencoded({ extended: false }), async (r
       return res.status(403).send("INVALID HASH");
     }
 
-    const orderId = parseInt(merchant_oid.replace("ORDER_", ""));
+    const order = await prisma.order.findFirst({
+      where: { merchantOid: merchant_oid },
+    });
+
+    if (!order) {
+      return res.status(404).send("ORDER NOT FOUND");
+    }
+
+    if (order.status === "paid") {
+      return res.send("ALREADY PROCESSED");
+    }
 
     if (status === "success") {
       await prisma.order.update({
-        where: { id: orderId },
+        where: { id: order.id },
         data: { status: "paid" },
       });
-
-      console.log(`✅ Ödeme başarılı: Order #${orderId}`);
+      console.log(`✅ Ödeme başarılı: Order #${order.id}`);
     } else {
-      console.log(`⚠️ Ödeme başarısız: Order #${orderId}`);
+      await prisma.order.update({
+        where: { id: order.id },
+        data: { status: "failed" },
+      });
+      console.log(`⚠️ Ödeme başarısız: Order #${order.id}`);
     }
 
     res.send("OK");
@@ -42,5 +59,4 @@ router.post("/paytr/callback", express.urlencoded({ extended: false }), async (r
     res.status(500).send("SERVER ERROR");
   }
 });
-
 export default router;

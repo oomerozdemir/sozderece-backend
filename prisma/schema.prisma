@@ -67,9 +67,10 @@ model Order {
   endDate       DateTime
   startDate     DateTime    @default(now())
   updatedAt     DateTime    @updatedAt
-  status        String      @default("pending_payment") // paid, refund_requested, etc.
+  status        String      @default("pending_payment")
   refundMessage String?
   refundReason  String?
+  merchantOid   String?     // 🔥 Ödeme takip için
   billingInfo   BillingInfo @relation("BillingToOrder", fields: [billingInfoId], references: [id])
   user          User        @relation(fields: [userId], references: [id])
   orderItems    OrderItem[]
