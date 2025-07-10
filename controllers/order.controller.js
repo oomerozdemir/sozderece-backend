@@ -189,7 +189,7 @@ const orderItems = cart.map((item) => ({
       orderId: order.id,
     });
   } catch (error) {
-    console.error("Sipariş oluşturulurken hata:", error.message);
+    console.error("Sipariş oluşturulurken hata:", error);
     return res.status(500).json({ error: "Sipariş oluşturulamadı." });
   }
 };
