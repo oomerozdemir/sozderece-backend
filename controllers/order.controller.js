@@ -1,5 +1,6 @@
 import { PrismaClient } from "@prisma/client";
-
+import axios from "axios";
+import crypto from "crypto";
 
 
 const prisma = new PrismaClient();
@@ -37,12 +38,14 @@ export const createOrderWithBilling = async (req, res) => {
       cart,
       packageName,
       couponCode,
+      discountRate = 0, // frontend'den gönderilse bile kontrol amaçlı
     } = req.body;
 
     const now = new Date();
     const oneMonthLater = new Date();
     oneMonthLater.setMonth(now.getMonth() + 1);
 
+    // Fatura bilgisi oluştur
     const billingInfo = await prisma.billingInfo.create({
       data: {
         email: billingInfoData.email,
@@ -57,6 +60,7 @@ export const createOrderWithBilling = async (req, res) => {
       },
     });
 
+    // Siparişi oluştur
     const order = await prisma.order.create({
       data: {
         package: packageName,
@@ -64,12 +68,16 @@ export const createOrderWithBilling = async (req, res) => {
         endDate: oneMonthLater,
         user: { connect: { id: userId } },
         billingInfo: { connect: { id: billingInfo.id } },
+        status: "pending_payment",
       },
     });
 
+    // Sipariş ürünlerini oluştur
     const orderItems = cart.map((item) => ({
       name: item.name,
-      price: item.price,
+      price: typeof item.price === "string"
+        ? parseFloat(item.price.replace("₺", "").replace(/[^\d.]/g, ""))
+        : item.price,
       quantity: item.quantity || 1,
       description: item.description,
       orderId: order.id,
@@ -77,11 +85,11 @@ export const createOrderWithBilling = async (req, res) => {
 
     await prisma.orderItem.createMany({ data: orderItems });
 
-    // ✅ Kupon kodu kullanımı kaydet
+    // Kupon kontrolü
     if (couponCode) {
       const coupon = await prisma.coupon.findUnique({
         where: { code: couponCode },
-        include: { usedBy: true }
+        include: { usedBy: true },
       });
 
       if (
@@ -93,20 +101,93 @@ export const createOrderWithBilling = async (req, res) => {
           where: { id: userId },
           data: {
             usedCoupons: {
-              connect: { id: coupon.id }
-            }
-          }
+              connect: { id: coupon.id },
+            },
+          },
         });
       }
     }
 
+    // ✅ ÖDEME TUTARINI HESAPLA
+    const totalPrice = orderItems.reduce(
+      (acc, item) => acc + item.price * item.quantity,
+      0
+    );
 
-    res.status(201).json({ message: "Sipariş başarıyla oluşturuldu." });
+    const discountedPrice =
+      couponCode && discountRate > 0
+        ? totalPrice * (1 - discountRate / 100)
+        : totalPrice;
+
+    const payment_amount = Math.round(discountedPrice * 100); // kuruş
+
+    // ✅ PAYTR TOKEN OLUŞTUR
+    const merchant_id = process.env.PAYTR_MERCHANT_ID;
+    const merchant_key = process.env.PAYTR_MERCHANT_KEY;
+    const merchant_salt = process.env.PAYTR_MERCHANT_SALT;
+
+    const user_ip =
+      req.headers["x-forwarded-for"] || req.socket.remoteAddress || "127.0.0.1";
+
+    const merchant_oid = `ORDER_${order.id}`;
+
+    const user_basket = Buffer.from(
+      JSON.stringify(
+        orderItems.map((item) => [
+          item.name,
+          item.price.toFixed(2),
+          item.quantity,
+        ])
+      )
+    ).toString("base64");
+
+    const no_installment = 0;
+    const max_installment = 0;
+    const currency = "TL";
+    const test_mode = "1";
+
+    const hash_str = `${merchant_id}${user_ip}${merchant_oid}${billingInfo.email}${payment_amount}${user_basket}${no_installment}${max_installment}${currency}${test_mode}`;
+
+    const paytr_token = crypto
+      .createHmac("sha256", merchant_key)
+      .update(hash_str + merchant_salt)
+      .digest("base64");
+
+    const paytrRes = await axios.post(
+      "https://www.paytr.com/odeme/api/get-token",
+      null,
+      {
+        headers: { "Content-Type": "application/x-www-form-urlencoded" },
+        params: {
+          merchant_id,
+          user_ip,
+          merchant_oid,
+          email: billingInfo.email,
+          payment_amount,
+          paytr_token,
+          user_basket,
+          no_installment,
+          max_installment,
+          currency,
+          test_mode,
+          user_name: billingInfo.name + " " + billingInfo.surname,
+          merchant_ok_url: "https://sozderece-frontend.vercel.app/payment-success",
+          merchant_fail_url: "https://sozderece-frontend.vercel.app/payment-fail",
+        },
+      }
+    );
+
+    return res.status(201).json({
+      message: "Sipariş başarıyla oluşturuldu.",
+      paytrToken: paytrRes.data.token,
+      orderId: order.id,
+    });
   } catch (error) {
-    console.error("Sipariş oluşturulurken hata:", error);
-    res.status(500).json({ error: "Sipariş oluşturulamadı." });
+    console.error("Sipariş oluşturulurken hata:", error.message);
+    return res.status(500).json({ error: "Sipariş oluşturulamadı." });
   }
 };
+
 
 
 // İade talebi oluştur
