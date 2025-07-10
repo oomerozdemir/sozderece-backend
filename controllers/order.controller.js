@@ -1,6 +1,7 @@
 import { PrismaClient } from "@prisma/client";
 import axios from "axios";
 import crypto from "crypto";
+import qs from "querystring";
 
 
 const prisma = new PrismaClient();
@@ -53,7 +54,6 @@ export const createOrderWithBilling = async (req, res) => {
       description: cleanString(item.description),
     }));
 
-    // ✅ Ödeme tutarını hesapla
     const totalPrice = orderItems.reduce(
       (acc, item) => acc + item.price * item.quantity,
       0
@@ -66,7 +66,6 @@ export const createOrderWithBilling = async (req, res) => {
 
     const payment_amount = Math.round(discountedPrice * 100); // kuruş
 
-    // ✅ PAYTR TOKEN OLUŞTUR
     const merchant_id = process.env.PAYTR_MERCHANT_ID;
     const merchant_key = process.env.PAYTR_MERCHANT_KEY;
     const merchant_salt = process.env.PAYTR_MERCHANT_SALT;
@@ -98,26 +97,29 @@ export const createOrderWithBilling = async (req, res) => {
       .update(hash_str + merchant_salt)
       .digest("base64");
 
+    const paytrData = {
+      merchant_id,
+      user_ip,
+      merchant_oid,
+      email: billingInfoData.email,
+      payment_amount,
+      paytr_token,
+      user_basket,
+      no_installment,
+      max_installment,
+      currency,
+      test_mode,
+      user_name: billingInfoData.name + " " + billingInfoData.surname,
+      merchant_ok_url: "https://sozderece-frontend.vercel.app/payment-success",
+      merchant_fail_url: "https://sozderece-frontend.vercel.app/payment-fail",
+    };
+
     const paytrRes = await axios.post(
       "https://www.paytr.com/odeme/api/get-token",
-      null,
+      qs.stringify(paytrData),
       {
-        headers: { "Content-Type": "application/x-www-form-urlencoded" },
-        params: {
-          merchant_id,
-          user_ip,
-          merchant_oid,
-          email: billingInfoData.email,
-          payment_amount,
-          paytr_token,
-          user_basket,
-          no_installment,
-          max_installment,
-          currency,
-          test_mode,
-          user_name: billingInfoData.name + " " + billingInfoData.surname,
-          merchant_ok_url: "https://sozderece-frontend.vercel.app/payment-success",
-          merchant_fail_url: "https://sozderece-frontend.vercel.app/payment-fail",
+        headers: {
+          "Content-Type": "application/x-www-form-urlencoded",
         },
       }
     );
@@ -126,12 +128,10 @@ export const createOrderWithBilling = async (req, res) => {
       throw new Error("PayTR token alınamadı");
     }
 
-    // ✅ Fatura bilgisi oluştur
     const billingInfo = await prisma.billingInfo.create({
       data: { ...billingInfoData },
     });
 
-    // ✅ Sipariş oluştur
     const now = new Date();
     const oneMonthLater = new Date();
     oneMonthLater.setMonth(now.getMonth() + 1);
@@ -144,7 +144,7 @@ export const createOrderWithBilling = async (req, res) => {
         user: { connect: { id: userId } },
         billingInfo: { connect: { id: billingInfo.id } },
         status: "pending_payment",
-        merchantOid: merchant_oid, 
+        merchantOid: merchant_oid,
       },
     });
 
@@ -155,7 +155,6 @@ export const createOrderWithBilling = async (req, res) => {
       })),
     });
 
-    // ✅ Kupon uygula
     if (couponCode) {
       const coupon = await prisma.coupon.findUnique({
         where: { code: couponCode },
@@ -184,12 +183,12 @@ export const createOrderWithBilling = async (req, res) => {
       orderId: order.id,
     });
   } catch (error) {
-  console.error("❌ Sipariş oluşturulurken hata:", error.message, error.stack);
-  return res.status(500).json({ 
-    error: "Sipariş oluşturulamadı.", 
-    detail: error.message 
-  });
-}
+    console.error("❌ Sipariş oluşturulurken hata:", error.message, error.stack);
+    return res.status(500).json({
+      error: "Sipariş oluşturulamadı.",
+      detail: error.message,
+    });
+  }
 };
 
 
