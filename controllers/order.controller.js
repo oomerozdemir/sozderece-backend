@@ -110,9 +110,11 @@ export const createOrderWithBilling = async (req, res) => {
       currency,
       test_mode,
       user_name: billingInfoData.name + " " + billingInfoData.surname,
+      user_address: billingInfoData.address,
       merchant_ok_url: "https://sozderece-frontend.vercel.app/payment-success",
       merchant_fail_url: "https://sozderece-frontend.vercel.app/payment-fail",
     };
+console.log("📤 PayTR isteği:", paytrData);
 
     const paytrRes = await axios.post(
       "https://www.paytr.com/odeme/api/get-token",
