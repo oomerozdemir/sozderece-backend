@@ -114,6 +114,7 @@ export const createOrderWithBilling = async (req, res) => {
       user_phone: billingInfoData.phone,
       merchant_ok_url: "https://sozderece-frontend.vercel.app/payment-success",
       merchant_fail_url: "https://sozderece-frontend.vercel.app/payment-fail",
+      callback_url: "https://sozderece-backend.onrender.com/api/orders/paytr/callback",
     };
 console.log("📤 PayTR isteği:", paytrData);
 
