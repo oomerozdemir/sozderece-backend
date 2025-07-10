@@ -111,6 +111,7 @@ export const createOrderWithBilling = async (req, res) => {
       test_mode,
       user_name: billingInfoData.name + " " + billingInfoData.surname,
       user_address: billingInfoData.address,
+      user_phone: billingInfoData.phone,
       merchant_ok_url: "https://sozderece-frontend.vercel.app/payment-success",
       merchant_fail_url: "https://sozderece-frontend.vercel.app/payment-fail",
     };
