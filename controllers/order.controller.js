@@ -184,9 +184,12 @@ export const createOrderWithBilling = async (req, res) => {
       orderId: order.id,
     });
   } catch (error) {
-    console.error("💥 Sipariş oluşturulurken hata:", error.message);
-    return res.status(500).json({ error: "Sipariş oluşturulamadı." });
-  }
+  console.error("❌ Sipariş oluşturulurken hata:", error.message, error.stack);
+  return res.status(500).json({ 
+    error: "Sipariş oluşturulamadı.", 
+    detail: error.message 
+  });
+}
 };
 
 
