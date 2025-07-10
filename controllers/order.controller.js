@@ -123,6 +123,7 @@ export const createOrderWithBilling = async (req, res) => {
         },
       }
     );
+console.log("💬 PayTR Yanıtı:", paytrRes.data);
 
     if (!paytrRes.data?.token) {
       throw new Error("PayTR token alınamadı");
