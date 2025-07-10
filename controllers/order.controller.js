@@ -72,16 +72,21 @@ export const createOrderWithBilling = async (req, res) => {
       },
     });
 
-    // Sipariş ürünlerini oluştur
-    const orderItems = cart.map((item) => ({
-      name: item.name,
-      price: typeof item.price === "string"
-        ? parseFloat(item.price.replace("₺", "").replace(/[^\d.]/g, ""))
-        : item.price,
-      quantity: item.quantity || 1,
-      description: item.description,
-      orderId: order.id,
-    }));
+   const cleanString = (value) => {
+  if (typeof value !== "string") return value;
+  return value.replace(/\u0000/g, ""); // null karakter (\x00) temizlenir
+};
+
+// ✅ Sipariş ürünlerini oluştur
+const orderItems = cart.map((item) => ({
+  name: cleanString(item.name),
+  price: typeof item.price === "string"
+    ? parseFloat(item.price.replace("₺", "").replace(/[^\d.]/g, ""))
+    : item.price,
+  quantity: item.quantity || 1,
+  description: cleanString(item.description),
+  orderId: order.id,
+}));
 
     await prisma.orderItem.createMany({ data: orderItems });
 
