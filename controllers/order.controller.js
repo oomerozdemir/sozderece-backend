@@ -144,7 +144,8 @@ export const createOrderWithBilling = async (req, res) => {
     const no_installment = 0;
     const max_installment = 0;
     const currency = "TL";
-    const test_mode = "1";
+    const test_mode = process.env.PAYTR_TEST_MODE || "1";
+
 
     const hash_str = `${merchant_id}${user_ip}${merchant_oid}${billingInfo.email}${payment_amount}${user_basket}${no_installment}${max_installment}${currency}${test_mode}`;
 
