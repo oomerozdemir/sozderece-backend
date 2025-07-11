@@ -1,4 +1,7 @@
 import { PrismaClient } from "@prisma/client";
+import crypto from "crypto";
+import axios from "axios";
+import qs from "querystring";
 const prisma = new PrismaClient();
 
 // Admin tüm siparişleri görür
@@ -21,6 +24,7 @@ export const getAllOrdersForAdmin = async (req, res) => {
       userName: order.user?.name,
       userEmail: order.user?.email,
       billingInfo: order.billingInfo,
+      merchantOid: order.merchantOid,
     }));
 
     res.status(200).json(formatted);
@@ -160,5 +164,43 @@ export const updateBillingInfo = async (req, res) => {
   } catch (error) {
     console.error("Fatura bilgisi güncellenemedi:", error);
     res.status(500).json({ error: "Fatura bilgisi güncellenemedi." });
+  }
+};
+
+export const checkPaytrStatus = async (req, res) => {
+  const { merchant_oid } = req.body;
+
+  try {
+    const { PAYTR_MERCHANT_ID, PAYTR_MERCHANT_KEY, PAYTR_MERCHANT_SALT } = process.env;
+
+    const hash_str = `${PAYTR_MERCHANT_ID}${merchant_oid}${PAYTR_MERCHANT_SALT}`;
+    const paytr_token = crypto.createHmac("sha256", PAYTR_MERCHANT_KEY)
+      .update(hash_str)
+      .digest("base64");
+
+    const response = await axios.post(
+      "https://www.paytr.com/odeme/durum-sorgu",
+      qs.stringify({
+        merchant_id: PAYTR_MERCHANT_ID,
+        merchant_oid,
+        paytr_token,
+      }),
+      {
+        headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      }
+    );
+
+    // Eğer başarılıysa veritabanını güncelle
+    if (response.data.status === "success") {
+      await prisma.order.updateMany({
+        where: { merchantOid: merchant_oid, status: "pending_payment" },
+        data: { status: "paid" },
+      });
+    }
+
+    return res.status(200).json(response.data);
+  } catch (error) {
+    console.error("⚠️ PayTR Durum Sorgu Hatası:", error.message);
+    return res.status(500).json({ error: "Durum sorgulanamadı", detail: error.message });
   }
 };
