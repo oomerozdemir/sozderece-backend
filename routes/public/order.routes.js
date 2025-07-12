@@ -50,6 +50,7 @@ router.post("/paytr/callback", express.urlencoded({ extended: false }), async (r
       });
 
       if (user?.email) {
+        console.log("📩 Mail gönderiliyor:", user.email);
         await sendPaymentSuccessEmail(user.email, order.id);
       }
 
