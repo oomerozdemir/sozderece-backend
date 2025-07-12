@@ -1,16 +1,15 @@
 import express from "express";
 import { getMyOrders, createOrderWithBilling, createRefundRequest } from "../../controllers/order.controller.js";
 import { authenticateToken, authorizeRoles } from "../../middleware/authMiddleware.js";
+import { sendPaymentSuccessEmail } from "../../utils/sendEmail.js";
 import { PrismaClient } from "@prisma/client";
 import crypto from "crypto";
 
 const prisma = new PrismaClient();
-
 const router = express.Router();
 
 router.get("/my-orders", authenticateToken, authorizeRoles("student"), getMyOrders);
 router.post("/orders", authenticateToken, authorizeRoles("student"), createOrderWithBilling);
-
 router.put("/orders/:id/refund-request", authenticateToken, authorizeRoles("student"), createRefundRequest);
 
 router.post("/paytr/callback", express.urlencoded({ extended: false }), async (req, res) => {
@@ -18,7 +17,8 @@ router.post("/paytr/callback", express.urlencoded({ extended: false }), async (r
     const { merchant_oid, status, total_amount, hash } = req.body;
 
     const hashStr = `${merchant_oid}${process.env.PAYTR_MERCHANT_SALT}${status}${total_amount}`;
-    const expectedHash = crypto.createHmac("sha256", process.env.PAYTR_MERCHANT_KEY)
+    const expectedHash = crypto
+      .createHmac("sha256", process.env.PAYTR_MERCHANT_KEY)
       .update(hashStr)
       .digest("base64");
 
@@ -44,6 +44,15 @@ router.post("/paytr/callback", express.urlencoded({ extended: false }), async (r
         where: { id: order.id },
         data: { status: "paid" },
       });
+
+      const user = await prisma.user.findUnique({
+        where: { id: order.userId },
+      });
+
+      if (user?.email) {
+        await sendPaymentSuccessEmail(user.email, order.id);
+      }
+
       console.log(`✅ Ödeme başarılı: Order #${order.id}`);
     } else {
       await prisma.order.update({
@@ -59,4 +68,5 @@ router.post("/paytr/callback", express.urlencoded({ extended: false }), async (r
     res.status(500).send("SERVER ERROR");
   }
 });
+
 export default router;
