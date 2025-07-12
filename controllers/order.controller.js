@@ -2,7 +2,7 @@ import { PrismaClient } from "@prisma/client";
 import axios from "axios";
 import crypto from "crypto";
 import qs from "querystring";
-import { sendPaymentSuccessEmail } from "../../utils/sendEmail.js";
+import { sendPaymentSuccessEmail } from "../utils/sendEmail";
 
 
 const prisma = new PrismaClient();
