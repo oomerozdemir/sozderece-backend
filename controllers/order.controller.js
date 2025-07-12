@@ -217,10 +217,12 @@ export const handlePaytrCallback = async (req, res) => {
     });
 
     if (!order) {
+      console.error("❌ Sipariş bulunamadı:", merchant_oid);
       return res.status(404).send("ORDER NOT FOUND");
     }
 
     if (order.status === "paid") {
+      console.log("ℹ️ Sipariş zaten ödenmiş:", order.id);
       return res.send("ALREADY PROCESSED");
     }
 
@@ -235,22 +237,26 @@ export const handlePaytrCallback = async (req, res) => {
       });
 
       const billingInfo = await prisma.billingInfo.findUnique({
-  where: { id: order.billingInfoId },
-});
+        where: { id: order.billingInfoId },
+      });
 
-const targetEmail = user?.email || billingInfo?.email;
+      console.log("👤 Kullanıcı email:", user?.email);
+      console.log("📦 Fatura email:", billingInfo?.email);
 
-if (targetEmail) {
-  try {
-    console.log("📩 Mail gönderiliyor:", targetEmail);
-    await sendPaymentSuccessEmail(targetEmail, order.id);
-    console.log("✅ Mail başarıyla gönderildi");
-  } catch (err) {
-    console.error("❌ Mail gönderilemedi:", err.message);
-  }
-} else {
-  console.warn("⚠️ Mail adresi bulunamadı. Mail gönderimi atlandı.");
-}
+      const targetEmail = user?.email || billingInfo?.email;
+
+      if (targetEmail) {
+        console.log("📩 Mail gönderiliyor:", targetEmail);
+        try {
+          await sendPaymentSuccessEmail(targetEmail, order.id);
+          console.log("✅ Mail başarıyla gönderildi");
+        } catch (err) {
+          console.error("❌ Mail gönderilemedi:", err.message);
+        }
+      } else {
+        console.warn("⚠️ Mail adresi bulunamadı. Mail gönderimi atlandı.");
+      }
+
       console.log(`✅ Ödeme başarılı: Order #${order.id}`);
     } else {
       await prisma.order.update({
@@ -266,6 +272,7 @@ if (targetEmail) {
     res.status(500).send("SERVER ERROR");
   }
 };
+
 
 
 
