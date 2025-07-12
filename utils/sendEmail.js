@@ -1,6 +1,8 @@
 import nodemailer from "nodemailer";
 
 export const sendPaymentSuccessEmail = async (to, orderId) => {
+  console.log("📨 sendPaymentSuccessEmail fonksiyonu çalıştı:", recipientEmail);
+
   try {
     const transporter = nodemailer.createTransport({
       host: process.env.SMTP_HOST,
