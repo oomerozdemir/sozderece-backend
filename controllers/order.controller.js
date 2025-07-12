@@ -234,11 +234,23 @@ export const handlePaytrCallback = async (req, res) => {
         where: { id: order.userId },
       });
 
-      if (user?.email) {
-        console.log("📩 Mail gönderiliyor:", user.email);
-        await sendPaymentSuccessEmail(user.email, order.id);
-      }
+      const billingInfo = await prisma.billingInfo.findUnique({
+  where: { id: order.billingInfoId },
+});
 
+const targetEmail = user?.email || billingInfo?.email;
+
+if (targetEmail) {
+  try {
+    console.log("📩 Mail gönderiliyor:", targetEmail);
+    await sendPaymentSuccessEmail(targetEmail, order.id);
+    console.log("✅ Mail başarıyla gönderildi");
+  } catch (err) {
+    console.error("❌ Mail gönderilemedi:", err.message);
+  }
+} else {
+  console.warn("⚠️ Mail adresi bulunamadı. Mail gönderimi atlandı.");
+}
       console.log(`✅ Ödeme başarılı: Order #${order.id}`);
     } else {
       await prisma.order.update({
