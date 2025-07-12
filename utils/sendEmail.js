@@ -25,7 +25,11 @@ export const sendPaymentSuccessEmail = async (to, orderId) => {
         <p>Teşekkür ederiz.<br/>SözDerece Ekibi</p>
       `,
     });
-
+console.log("📨 Mail içeriği:", {
+  from: process.env.EMAIL_USER,
+  to: to,
+  subject: "Ödemeniz Başarılı 🎉",
+});
     console.log("✅ E-posta gönderildi:", info.messageId);
   } catch (error) {
     console.error("❌ E-posta gönderim hatası:", error.message);
