@@ -13,7 +13,7 @@ export const sendPaymentSuccessEmail = async (to, orderId) => {
     });
 
     const info = await transporter.sendMail({
-      from: `"SözDerece" <${process.env.SMTP_USER}>`,
+      from: `"SözDerece" <${process.env.EMAIL_USER}>`,
       to,
       subject: "📦 Ödeme Başarılı - Sipariş Onayı",
       html: `
