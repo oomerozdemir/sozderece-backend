@@ -26,7 +26,7 @@ export const getMyOrders = async (req, res) => {
 
     res.status(200).json({ orders });
   } catch (error) {
-    console.error("Siparişler alınamadı:", error);
+    console.error("Siparişler alınamadı:");
     res.status(500).json({ message: "Siparişler alınamadı." });
   }
 };
@@ -127,7 +127,6 @@ export const createOrderWithBilling = async (req, res) => {
         },
       }
     );
-console.log("💬 PayTR Yanıtı:", paytrRes.data);
 
     if (!paytrRes.data?.token) {
       throw new Error("PayTR token alınamadı");
@@ -188,7 +187,7 @@ console.log("💬 PayTR Yanıtı:", paytrRes.data);
       orderId: order.id,
     });
   } catch (error) {
-    console.error("❌ Sipariş oluşturulurken hata:", error.message, error.stack);
+    console.error("❌ Sipariş oluşturulurken hata:");
     return res.status(500).json({
       error: "Sipariş oluşturulamadı.",
       detail: error.message,
@@ -217,7 +216,7 @@ export const handlePaytrCallback = async (req, res) => {
     });
 
     if (!order) {
-      console.error("❌ Sipariş bulunamadı:", merchant_oid);
+      console.error("❌ Sipariş bulunamadı:");
       return res.status(404).send("ORDER NOT FOUND");
     }
 
@@ -230,7 +229,6 @@ export const handlePaytrCallback = async (req, res) => {
   where: { id: order.id },
   data: { status: "paid" },
 });
-console.log("✅ Güncellenen sipariş:", updated);
 
       const user = await prisma.user.findUnique({
         where: { id: order.userId },
@@ -243,29 +241,28 @@ console.log("✅ Güncellenen sipariş:", updated);
       const targetEmail = user?.email || billingInfo?.email;
 
       if (targetEmail) {
-        console.log("📩 Mail gönderiliyor:", targetEmail);
         try {
           await sendPaymentSuccessEmail(targetEmail, order.id);
           console.log("✅ Mail başarıyla gönderildi");
         } catch (err) {
-          console.error("❌ Mail gönderilemedi:", err.message);
+          console.error("❌ Mail gönderilemedi:");
         }
       } else {
         console.warn("⚠️ Mail adresi bulunamadı. Mail gönderimi atlandı.");
       }
 
-      console.log(`✅ Ödeme başarılı: Order #${order.id}`);
+      console.log(`✅ Ödeme başarılı}`);
     } else {
       await prisma.order.update({
         where: { id: order.id },
         data: { status: "failed" },
       });
-      console.log(`⚠️ Ödeme başarısız: Order #${order.id}`);
+      console.log(`⚠️ Ödeme başarısız`);
     }
 
     res.send("OK");
   } catch (error) {
-    console.error("⚠️ PayTR callback hatası:", error.message);
+    console.error("⚠️ PayTR callback hatası:");
     res.status(500).send("SERVER ERROR");
   }
 };
@@ -304,7 +301,7 @@ export const createRefundRequest = async (req, res) => {
 
     res.status(200).json({ message: "İade talebi oluşturuldu." });
   } catch (error) {
-    console.error("İade talebi hatası:", error);
+    console.error("İade talebi hatası:");
     res.status(500).json({ message: "Sunucu hatası." });
   }
 };

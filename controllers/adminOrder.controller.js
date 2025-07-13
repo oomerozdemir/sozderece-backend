@@ -92,7 +92,7 @@ export const approveRefundRequest = async (req, res) => {
 
     res.status(200).json({ message: "İade onaylandı.", updatedOrder });
   } catch (error) {
-    console.error("İade onayı başarısız:", error);
+    console.error("İade onayı başarısız:");
     res.status(500).json({ error: "İade onayı başarısız." });
   }
 };
@@ -200,7 +200,7 @@ export const checkPaytrStatus = async (req, res) => {
 
     return res.status(200).json(response.data);
   } catch (error) {
-    console.error("⚠️ PayTR Durum Sorgu Hatası:", error.message);
-    return res.status(500).json({ error: "Durum sorgulanamadı", detail: error.message });
+    console.error("⚠️ PayTR Durum Sorgu Hatası:");
+    return res.status(500).json({ error: "Durum sorgulanamadı"});
   }
 };

@@ -1,7 +1,6 @@
 import nodemailer from "nodemailer";
 
 export const sendPaymentSuccessEmail = async (to, orderId) => {
-  console.log("📨 sendPaymentSuccessEmail fonksiyonu çalıştı:", to); // düzeltildi
 
   try {
     const transporter = nodemailer.createTransport({
@@ -27,15 +26,7 @@ export const sendPaymentSuccessEmail = async (to, orderId) => {
         <p>Teşekkür ederiz.<br/>SözDerece Ekibi</p>
       `,
     });
-
-    console.log("📨 Mail içeriği:", {
-      from: process.env.EMAIL_USER,
-      to,
-      subject: "Ödemeniz Başarılı 🎉",
-    });
-
-    console.log("✅ E-posta gönderildi:", info.messageId);
   } catch (error) {
-    console.error("❌ E-posta gönderim hatası:", error.message);
+    console.error("❌ E-posta gönderilemedi:");
   }
 };

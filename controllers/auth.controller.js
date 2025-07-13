@@ -36,7 +36,7 @@ export const registerUser = async (req, res) => {
       user: { id: newUser.id, email: newUser.email, role: newUser.role }
     });
   } catch (error) {
-    console.error("Register error:", error);
+    console.error("Register error:");
     res.status(500).json({ success: false, message: "Bir hata oluştu." });
   }
 };
@@ -78,7 +78,7 @@ export const loginUser = async (req, res) => {
       user: { id: user.id, name: user.name, email: user.email, role: user.role }
     });
   } catch (error) {
-    console.error("Login error:", error);
+    console.error("Login error:");
     res.status(500).json({ success: false, message: "Bir hata oluştu." });
   }
 };
@@ -111,7 +111,7 @@ export const getMe = async (req, res) => {
 
     res.status(200).json({ success: true, user });
   } catch (error) {
-    console.error("getMe error:", error);
+    console.error("getMe error:");
     res.status(500).json({ success: false, message: "Sunucu hatası" });
   }
 };
@@ -145,7 +145,7 @@ export const updateProfile = async (req, res) => {
 
     res.status(200).json({ user: updatedUser });
   } catch (error) {
-    console.error("Profil güncelleme hatası:", error);
+    console.error("Profil güncelleme hatası:");
     res.status(500).json({ message: "Profil güncellenemedi" });
   }
 };
@@ -173,7 +173,7 @@ export const changePassword = async (req, res) => {
 
     res.status(200).json({ success: true, message: "Şifre başarıyla değiştirildi." });
   } catch (error) {
-    console.error("Şifre değişim hatası:", error);
+    console.error("Şifre değişim hatası:");
     res.status(500).json({ success: false, message: "Şifre değiştirilemedi." });
   }
 };
@@ -204,12 +204,11 @@ export const forgotPassword = async (req, res) => {
 
     resetCodes.set(input, { code, expiresAt });
 
-    // E-posta veya SMS gönderme burada yapılabilir (şimdilik console.log)
-    console.log(`Kullanıcı: ${input} için doğrulama kodu: ${code}`);
+
 
     res.status(200).json({ message: "Doğrulama kodu gönderildi." });
   } catch (error) {
-    console.error("forgotPassword error:", error);
+    console.error("forgotPassword error:");
     res.status(500).json({ message: "Bir hata oluştu." });
   }
 };
@@ -262,7 +261,7 @@ export const resetPassword = async (req, res) => {
 
     res.status(200).json({ message: "Doğrulama başarılı." });
   } catch (error) {
-    console.error("resetPassword error:", error);
+    console.error("resetPassword error:");
     res.status(500).json({ message: "Sunucu hatası oluştu." });
   }
 };
@@ -294,7 +293,7 @@ export const verifyContact = async (req, res) => {
 
     res.status(200).json({ user: updatedUser });
   } catch (error) {
-    console.error("Doğrulama güncelleme hatası:", error);
+    console.error("Doğrulama güncelleme hatası:");
     res.status(500).json({ message: "Doğrulama kaydedilemedi." });
   }
 };
@@ -318,7 +317,7 @@ export const updatePassword = async (req, res) => {
 
     res.json({ message: "Şifre başarıyla güncellendi." });
   } catch (error) {
-    console.error("Şifre güncelleme hatası:", error);
+    console.error("Şifre güncelleme hatası:");
     res.status(500).json({ message: "Şifre güncellenemedi." });
   }
 };
