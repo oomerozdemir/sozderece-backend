@@ -223,9 +223,8 @@ export const handlePaytrCallback = async (req, res) => {
     }
 
     if (order.status === "paid") {
-      console.log("ℹ️ Sipariş zaten ödenmiş:", order.id);
-      return res.send("ALREADY PROCESSED");
-    }
+  return res.send("OK");
+}
 
     if (status === "success") {
       await prisma.order.update({

@@ -18,7 +18,7 @@ const router = express.Router();
 // Public API endpoints
 router.use("/auth", authRoutes);
 router.use("/contact", contactRoutes);
-router.use("/orders", orderRoutes);
+router.use("/", orderRoutes);
 router.use("/users", userRoutes);
 router.use("/packages", packageRoutes);
 router.use("/", protectedRoutes); 
