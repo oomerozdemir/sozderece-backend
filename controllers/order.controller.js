@@ -113,11 +113,10 @@ export const createOrderWithBilling = async (req, res) => {
       user_name: billingInfoData.name + " " + billingInfoData.surname,
       user_address: billingInfoData.address,
       user_phone: billingInfoData.phone,
-      merchant_ok_url: "https://sozderecekocluk.com/order-success",
-      merchant_fail_url: "https://sozderecekocluk.com/payment-fail",
-      callback_url: "https://sozderece-backend.onrender.com/api/orders/paytr/callback",
+     callback_url: "https://sozderece-backend.onrender.com/api/orders/paytr/callback",
+  merchant_ok_url: "https://sozderecekocluk.com/order-success",
+  merchant_fail_url: "https://sozderecekocluk.com/payment-fail",
     };
-console.log("📤 PayTR isteği:", paytrData);
 
     const paytrRes = await axios.post(
       "https://www.paytr.com/odeme/api/get-token",
