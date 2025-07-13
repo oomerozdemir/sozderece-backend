@@ -88,10 +88,10 @@ export const createCoachWithUser = async (req, res) => {
 // Koçu güncelle
 export const updateCoach = async (req, res) => {
   try {
-    const { name, subject, description } = req.body;
+    const { name, subject, description, email } = req.body;
     const image = req.file ? req.file.path : undefined;
 
-
+    // Koç bilgilerini güncelle
     const updatedCoach = await prisma.coach.update({
       where: { id: parseInt(req.params.id) },
       data: {
@@ -101,6 +101,16 @@ export const updateCoach = async (req, res) => {
         ...(image && { image }),
       },
     });
+
+    // Koçun ilişkili olduğu kullanıcıyı da güncelle (email değişikliği için)
+    const coach = await prisma.coach.findUnique({ where: { id: parseInt(req.params.id) } });
+
+    if (coach && email) {
+      await prisma.user.update({
+        where: { id: coach.userId },
+        data: { email },
+      });
+    }
 
     res.status(200).json(updatedCoach);
   } catch (error) {

@@ -5,7 +5,6 @@ export const authenticateToken = (req, res, next) => {
  
 
   if (!authHeader || !authHeader.startsWith("Bearer ")) {
-    console.warn("❌ Token bulunamadı");
     return res.status(401).json({ success: false, message: "Token bulunamadı" });
   }
 
@@ -13,11 +12,9 @@ export const authenticateToken = (req, res, next) => {
 
   try {
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
-    console.log("✅ Token doğrulandı:");
     req.user = decoded;
     next();
   } catch (error) {
-    console.error("❌ Token doğrulanamadı:");
     return res.status(401).json({ success: false, message: "Token geçersiz" });
   }
 };
