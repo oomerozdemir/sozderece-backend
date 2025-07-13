@@ -113,7 +113,7 @@ export const createOrderWithBilling = async (req, res) => {
       user_name: billingInfoData.name + " " + billingInfoData.surname,
       user_address: billingInfoData.address,
       user_phone: billingInfoData.phone,
-     callback_url: "https://sozderece-backend.onrender.com/api/orders/paytr/callback",
+     callback_url: "https://sozderece-backend.onrender.com/api/paytr/callback",
   merchant_ok_url: "https://sozderecekocluk.com/order-success",
   merchant_fail_url: "https://sozderecekocluk.com/payment-fail",
     };
