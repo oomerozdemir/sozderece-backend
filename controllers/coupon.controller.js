@@ -34,7 +34,7 @@ export const validateCoupon = async (req, res) => {
 
     return res.json({ discountRate: coupon.discountRate });
   } catch (err) {
-    console.error("Kupon doğrulama hatası:", err);
+    console.error("Kupon doğrulama hatası:");
     res.status(500).json({ error: "Kupon doğrulanamadı" });
   }
 };
@@ -56,7 +56,7 @@ export const markCouponUsed = async (req, res) => {
 
     return res.status(200).json({ message: "Kupon başarıyla kullanıldı" });
   } catch (err) {
-    console.error("Kupon kullanım hatası:", err);
+    console.error("Kupon kullanım hatası:");
     res.status(500).json({ error: "Sunucu hatası" });
   }
 };
@@ -76,7 +76,7 @@ export const createCoupon = async (req, res) => {
 
     res.status(201).json({ message: "Kupon başarıyla oluşturuldu.", coupon: newCoupon });
   } catch (error) {
-    console.error("Kupon oluşturulamadı:", error);
+    console.error("Kupon oluşturulamadı:");
     res.status(500).json({ error: "Kupon oluşturulamadı." });
   }
 };
@@ -96,7 +96,7 @@ export const getAllCoupons = async (req, res) => {
 
     res.json({ coupons: enrichedCoupons });
   } catch (error) {
-    console.error("Kuponlar alınamadı:", error);
+    console.error("Kuponlar alınamadı:");
     res.status(500).json({ error: "Kuponlar alınamadı." });
   }
 };
@@ -109,7 +109,7 @@ export const deleteCoupon = async (req, res) => {
     await prisma.coupon.delete({ where: { id } });
     res.status(200).json({ message: "Kupon silindi." });
   } catch (error) {
-    console.error("Kupon silinemedi:", error);
+    console.error("Kupon silinemedi:");
     res.status(500).json({ error: "Kupon silinemedi." });
   }
 };

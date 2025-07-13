@@ -7,7 +7,7 @@ export const getAllPackages = async (req, res) => {
     const packages = await prisma.package.findMany();
     res.json({ success: true, packages });
   } catch (err) {
-    console.error("Paketler alınamadı:", err);
+    console.error("Paketler alınamadı:");
     res.status(500).json({ success: false, message: "Paketler alınamadı." });
   }
 };

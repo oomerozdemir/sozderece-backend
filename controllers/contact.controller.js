@@ -15,7 +15,7 @@ export const createContact = async (req, res) => {
 
     res.status(201).json({ success: true, data: newContact });
   } catch (error) {
-    console.error("Hata:", error);
+    console.error("Hata:");
     res.status(500).json({ success: false, message: "Bir hata oluştu." });
   }
 };
