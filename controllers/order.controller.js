@@ -226,10 +226,10 @@ export const handlePaytrCallback = async (req, res) => {
 }
 
     if (status === "success") {
-      await prisma.order.update({
-        where: { id: order.id },
-        data: { status: "paid" },
-      });
+      const updated = await prisma.order.update({
+  where: { id: order.id },
+  data: { status: "paid" },
+});
 console.log("✅ Güncellenen sipariş:", updated);
 
       const user = await prisma.user.findUnique({
