@@ -89,7 +89,7 @@ export const createOrderWithBilling = async (req, res) => {
     const no_installment = 0;
     const max_installment = 0;
     const currency = "TL";
-    const test_mode = process.env.PAYTR_TEST_MODE || "1";
+    const test_mode = process.env.PAYTR_TEST_MODE || "0";
 
     const hash_str = `${merchant_id}${user_ip}${merchant_oid}${billingInfoData.email}${payment_amount}${user_basket}${no_installment}${max_installment}${currency}${test_mode}`;
 
@@ -113,8 +113,8 @@ export const createOrderWithBilling = async (req, res) => {
       user_name: billingInfoData.name + " " + billingInfoData.surname,
       user_address: billingInfoData.address,
       user_phone: billingInfoData.phone,
-      merchant_ok_url: "https://sozderece-frontend.vercel.app/order-success",
-      merchant_fail_url: "https://sozderece-frontend.vercel.app/payment-fail",
+      merchant_ok_url: "https://sozderecekocluk.com/order-success",
+      merchant_fail_url: "https://sozderecekocluk.com/payment-fail",
       callback_url: "https://sozderece-backend.onrender.com/api/orders/paytr/callback",
     };
 console.log("📤 PayTR isteği:", paytrData);
