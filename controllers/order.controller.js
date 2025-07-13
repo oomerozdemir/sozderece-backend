@@ -197,7 +197,6 @@ console.log("💬 PayTR Yanıtı:", paytrRes.data);
 };
 
 export const handlePaytrCallback = async (req, res) => {
-  console.log("🔁 PayTR callback çalıştı. Gelen veri:", req.body);
 
   try {
     const { merchant_oid, status, total_amount, hash } = req.body;
