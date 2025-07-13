@@ -198,7 +198,7 @@ console.log("💬 PayTR Yanıtı:", paytrRes.data);
 };
 
 export const handlePaytrCallback = async (req, res) => {
-  console.log("🔁 [TEST] Callback fonksiyonu gerçekten çalıştı mı?");
+  console.log("🔁 PayTR callback çalıştı. Gelen veri:", req.body);
 
   try {
     const { merchant_oid, status, total_amount, hash } = req.body;
@@ -233,6 +233,7 @@ export const handlePaytrCallback = async (req, res) => {
         where: { id: order.id },
         data: { status: "paid" },
       });
+console.log("✅ Güncellenen sipariş:", updated);
 
       const user = await prisma.user.findUnique({
         where: { id: order.userId },
@@ -241,9 +242,6 @@ export const handlePaytrCallback = async (req, res) => {
       const billingInfo = await prisma.billingInfo.findUnique({
         where: { id: order.billingInfoId },
       });
-
-      console.log("👤 Kullanıcı email:", user?.email);
-      console.log("📦 Fatura email:", billingInfo?.email);
 
       const targetEmail = user?.email || billingInfo?.email;
 
