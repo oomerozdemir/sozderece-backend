@@ -11,11 +11,15 @@ export const getStudentProfile = async (req, res) => {
       return res.status(400).json({ message: "Geçersiz kullanıcı kimliği" });
     }
 
-    const user = await prisma.user.findUnique({
+   const user = await prisma.user.findUnique({
   where: { id: userId },
   include: {
     assignedCoach: {
-      include: {
+      select: {
+        name: true,
+        subject: true,
+        description: true,
+        image: true, // ✅ Koçun resmi
         user: {
           select: {
             email: true,
@@ -26,6 +30,7 @@ export const getStudentProfile = async (req, res) => {
     },
   },
 });
+
 
 
     if (!user) {
