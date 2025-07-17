@@ -275,8 +275,12 @@ export const handlePaytrCallback = async (req, res) => {
 export const createRefundRequest = async (req, res) => {
   const userId = req.user.id;
   const orderId = parseInt(req.params.id);
-  const { reason, explanation } = req.body;
+  const { reason, description  } = req.body;
 
+  if (!reason) {
+    return res.status(400).json({ message: "İade nedeni gereklidir." });
+  }
+  
   try {
     const existingOrder = await prisma.order.findFirst({
       where: {
@@ -295,7 +299,7 @@ export const createRefundRequest = async (req, res) => {
       data: {
         status: "refund_requested",
         refundReason: reason,
-        refundMessage: explanation
+        refundMessage: description
       }
     });
 
