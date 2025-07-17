@@ -273,6 +273,7 @@ export const handlePaytrCallback = async (req, res) => {
 
 // İade talebi oluştur
 export const createRefundRequest = async (req, res) => {
+  console.log("📥 İade endpoint çalıştı:", req.method, req.path);
   const userId = req.user.id;
   const orderId = parseInt(req.params.id);
   const { reason, description  } = req.body;
@@ -280,13 +281,13 @@ export const createRefundRequest = async (req, res) => {
   if (!reason) {
     return res.status(400).json({ message: "İade nedeni gereklidir." });
   }
-  
+
   try {
     const existingOrder = await prisma.order.findFirst({
       where: {
         id: orderId,
         userId: userId,
-        status: "active"
+        status: "paid"
       }
     });
 

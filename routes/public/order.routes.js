@@ -8,7 +8,7 @@ const prisma = new PrismaClient();
 const router = express.Router();
 
 router.get("/my-orders", authenticateToken, authorizeRoles("student"), getMyOrders);
-router.post("/orders", authenticateToken, authorizeRoles("student"), createOrderWithBilling);
+router.post("/orders", authenticateToken, createOrderWithBilling);
 router.put("/orders/:id/refund-request", authenticateToken, authorizeRoles("student"), createRefundRequest);
 router.post("/orders/paytr/callback", express.urlencoded({ extended: false }), express.json(), handlePaytrCallback);
 
