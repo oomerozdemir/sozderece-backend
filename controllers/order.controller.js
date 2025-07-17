@@ -273,7 +273,6 @@ export const handlePaytrCallback = async (req, res) => {
 
 // İade talebi oluştur
 export const createRefundRequest = async (req, res) => {
-  console.log("📥 İade endpoint çalıştı:", req.method, req.path);
   const userId = req.user.id;
   const orderId = parseInt(req.params.id);
   const { reason, description  } = req.body;
