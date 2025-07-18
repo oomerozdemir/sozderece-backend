@@ -29,7 +29,7 @@ router.post("/send-code", authenticateToken, async (req, res) => {
 });
 
 // Kod doğrula
-router.post("/verify-code", authMiddleware, async (req, res) => {
+router.post("/verify-code", authenticateToken, async (req, res) => {
   const userId = req.user.id;
   const { type, target, code } = req.body;
 
