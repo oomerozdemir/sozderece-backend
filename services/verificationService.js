@@ -3,6 +3,13 @@ import { sendVerificationEmail } from "../utils/sendEmail.js";
 const prisma = new PrismaClient();
 
 export const createVerificationCode = async ({ userId, type, target }) => {
+  console.log("📥 Veritabanına kayıt edilen kod:", {
+  userId,
+  type,
+  target,
+  code,
+});
+
   const code = Math.floor(100000 + Math.random() * 900000).toString();
 
   await prisma.verificationCode.create({
