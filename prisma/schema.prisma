@@ -45,6 +45,8 @@ model User {
   couponUsages    CouponUsage[]
   orders          Order[]
   assignedCoach   Coach?        @relation("AssignedCoach", fields: [assignedCoachId], references: [id])
+  verificationCodes VerificationCode[]
+
 }
 
 model Coach {
@@ -125,4 +127,15 @@ model CouponUsage {
   user     User     @relation(fields: [userId], references: [id])
 
   @@unique([userId, couponId])
+}
+
+model VerificationCode {
+  id        Int      @id @default(autoincrement())
+  user      User     @relation(fields: [userId], references: [id])
+  userId    Int
+  type      String   // "email" veya "phone"
+  target    String   // gönderilecek adres/numara
+  code      String
+  createdAt DateTime @default(now())
+  expiresAt DateTime
 }

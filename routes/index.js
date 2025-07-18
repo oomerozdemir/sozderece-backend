@@ -10,6 +10,9 @@ import protectedRoutes from "./public/protected.routes.js";
 import studentRoutes from "./public/student.routes.js";
 import coachRoutes from "./public/coach.routes.js";
 import couponRoutes from "./public/coupon.routes.js";
+import verificationRoutes from "./public/verification.routes.js";
+
+
 // 🔐 Admin routes
 import adminRoutes from "./admin/adminRoutes.js";
 
@@ -26,6 +29,7 @@ router.use("/student", studentRoutes);
 router.use("/coach", coachRoutes);
 router.use("/coaches", coachRoutes);
 router.use("/coupon", couponRoutes);
+router.use("/verification", verificationRoutes);
 
 
 
