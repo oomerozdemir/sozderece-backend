@@ -2,7 +2,7 @@ import { PrismaClient } from "@prisma/client";
 import bcrypt from "bcrypt";
 import jwt from "jsonwebtoken";
 import { createVerificationCode } from "../services/verificationService.js";
-import { sendPasswordResetEmail } from "../utils/sendEmail";
+import { sendPasswordResetEmail } from "../utils/sendEmail.js";
 import crypto from "crypto";
 
 
