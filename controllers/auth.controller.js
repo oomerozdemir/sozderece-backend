@@ -1,7 +1,9 @@
 import { PrismaClient } from "@prisma/client";
 import bcrypt from "bcrypt";
 import jwt from "jsonwebtoken";
-import { createVerificationCode, verifyCode } from "../services/verificationService.js";
+import { createVerificationCode } from "../services/verificationService.js";
+import crypto from "crypto";
+
 
 const prisma = new PrismaClient();
 
@@ -194,97 +196,58 @@ export const changePassword = async (req, res) => {
 };
 
 export const forgotPassword = async (req, res) => {
-  try {
-    const { input } = req.body;
+  const { email } = req.body;
+  if (!email) return res.status(400).json({ message: "E-posta gerekli" });
 
-    if (!input) {
-      return res.status(400).json({ message: "E-posta gerekli" });
-    }
+  const user = await prisma.user.findUnique({ where: { email } });
+  if (!user) return res.status(404).json({ message: "Kullanıcı bulunamadı" });
 
-    // ✳️ Buraya EKLE:
-    if (!input.includes("@")) {
-      return res.status(400).json({ message: "Lütfen geçerli bir e-posta adresi girin." });
-    }
+  const token = crypto.randomBytes(32).toString("hex");
+  const expires = new Date(Date.now() + 1000 * 60 * 10); // 10 dk
 
-    const user = await prisma.user.findFirst({
-      where: {
-        email: input, // çünkü artık sadece e-posta üzerinden doğrulama yapıyoruz
-      },
-    });
-
-    if (!user) {
-      return res.status(404).json({ message: "Kullanıcı bulunamadı." });
-    }
-
-    const code = await createVerificationCode({
+  await prisma.passwordResetToken.create({
+    data: {
       userId: user.id,
-      type: "email",
-      target: user.email,
-    });
+      token,
+      expiresAt: expires
+    }
+  });
 
-    return res.status(200).json({ message: "Doğrulama kodu e-posta ile gönderildi." });
+  const resetUrl = `${process.env.FRONTEND_URL}/reset-password?token=${token}`;
 
-  } catch (error) {
-    console.error("❌ forgotPassword error:", error);
-    return res.status(500).json({ message: "Bir hata oluştu. Lütfen tekrar deneyin." });
-  }
+  await sendResetEmail(user.email, resetUrl); // bu fonksiyon maili yollar
+
+  return res.status(200).json({ message: "Şifre sıfırlama bağlantısı e-posta ile gönderildi." });
 };
-
 
 export const resetPassword = async (req, res) => {
-  try {
-    const { code, newPassword } = req.body;
+  const { token, newPassword, confirmPassword } = req.body;
 
-    if (!code || !newPassword) {
-      return res.status(400).json({ message: "Kod ve yeni şifre gereklidir." });
-    }
-
-    // Kodla eşleşen kullanıcıyı bul
-    const record = await prisma.verificationCode.findFirst({
-      where: {
-        code,
-        expiresAt: { gt: new Date() }
-      },
-      orderBy: { createdAt: "desc" }
-    });
-
-    if (!record) {
-      return res.status(400).json({ message: "Kod geçersiz veya süresi dolmuş." });
-    }
-
-    const user = await prisma.user.findUnique({ where: { id: record.userId } });
-
-    if (!user) {
-      return res.status(404).json({ message: "Kullanıcı bulunamadı." });
-    }
-
-    // Kodu doğrula ve sil
-    await verifyCode({
-      userId: user.id,
-      type: record.type,
-      target: record.target,
-      code
-    });
-
-    // Şifreyi güncelle
-    const hashedPassword = await bcrypt.hash(newPassword, 10);
-
-    await prisma.user.update({
-      where: { id: user.id },
-      data: {
-        password: hashedPassword,
-        emailVerified: record.type === "email" ? true : undefined,
-        phoneVerified: record.type === "phone" ? true : undefined
-      }
-    });
-
-    return res.status(200).json({ message: "Şifre başarıyla güncellendi." });
-
-  } catch (error) {
-    console.error("resetPassword error:", error);
-    return res.status(500).json({ message: "Kod geçersiz veya sunucu hatası." });
+  if (!token || !newPassword || !confirmPassword) {
+    return res.status(400).json({ message: "Tüm alanlar zorunlu" });
   }
+
+  if (newPassword !== confirmPassword) {
+    return res.status(400).json({ message: "Şifreler uyuşmuyor" });
+  }
+
+  const resetToken = await prisma.passwordResetToken.findUnique({ where: { token } });
+
+  if (!resetToken || resetToken.expiresAt < new Date()) {
+    return res.status(400).json({ message: "Token geçersiz veya süresi dolmuş" });
+  }
+
+  const hashedPassword = await bcrypt.hash(newPassword, 10);
+  await prisma.user.update({
+    where: { id: resetToken.userId },
+    data: { password: hashedPassword }
+  });
+
+  await prisma.passwordResetToken.delete({ where: { id: resetToken.id } });
+
+  return res.status(200).json({ message: "Şifreniz başarıyla güncellendi." });
 };
+
 
 export const verifyContact = async (req, res) => {
   try {
