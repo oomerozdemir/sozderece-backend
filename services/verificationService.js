@@ -3,31 +3,34 @@ import { sendVerificationEmail } from "../utils/sendEmail.js";
 const prisma = new PrismaClient();
 
 export const createVerificationCode = async ({ userId, type, target }) => {
+  const code = Math.floor(100000 + Math.random() * 900000).toString();
+  const normalizedTarget = target.trim().toLowerCase();
+
   try {
-    const code = Math.floor(100000 + Math.random() * 900000).toString();
-
-    console.log("📨 Kod oluşturuluyor:", { userId, type, target, code });
-
-    await prisma.verificationCode.create({
+    const record = await prisma.verificationCode.create({
       data: {
         userId,
         type,
-        target: target.toLowerCase().trim(),
+        target: normalizedTarget,
         code,
         expiresAt: new Date(Date.now() + 5 * 60 * 1000),
       },
     });
 
+    console.log("✅ Kod DB'ye kaydedildi:", record);
+
     if (type === "email") {
-      await sendVerificationEmail(target, code); // burada da hata olabilir
+      await sendVerificationEmail(normalizedTarget, code);
     }
 
     return code;
-  } catch (error) {
-    console.error("❌ createVerificationCode içinde hata:", error.message, error.stack);
-    throw new Error("Doğrulama kodu oluşturulamadı.");
+
+  } catch (err) {
+    console.error("❌ Kod DB'ye kaydedilemedi:", err);
+    throw new Error("Kod oluşturulamadı");
   }
 };
+
 
 
 export const verifyCode = async ({ userId, type, target, code }) => {
