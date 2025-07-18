@@ -45,8 +45,11 @@ export const verifyCode = async ({ userId, type, target, code }) => {
     },
     orderBy: { createdAt: "desc" },
   });
-
-  if (!record) throw new Error("Geçersiz veya süresi dolmuş kod.");
+ console.log("Doğrulama gelen veri:", { userId, type, target, code });
+  console.log("DB'deki son kayıt:", record);
+  if (!record || record.code !== code) {
+  throw new Error("Geçersiz veya süresi dolmuş kod.");
+}
 
   await prisma.verificationCode.delete({ where: { id: record.id } });
 
