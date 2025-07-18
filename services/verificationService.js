@@ -32,6 +32,7 @@ export const verifyCode = async ({ userId, type, target, code }) => {
       code,
       expiresAt: { gt: new Date() },
     },
+    orderBy: { createdAt: "desc" },
   });
 
   if (!record) throw new Error("Geçersiz veya süresi dolmuş kod.");
