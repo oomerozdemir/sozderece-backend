@@ -198,11 +198,14 @@ export const changePassword = async (req, res) => {
 
 export const forgotPassword = async (req, res) => {
   try {
+    console.log("Gönderilen input:", input);
+
     const { input } = req.body;
 
-    if (!input || !input.includes("@")) {
-      return res.status(400).json({ message: "Geçerli bir e-posta gerekli." });
-    }
+    const email = input?.trim().toLowerCase();
+if (!email || !email.includes("@")) {
+  return res.status(400).json({ message: "Geçerli bir e-posta gerekli." });
+}
 
     const user = await prisma.user.findUnique({ where: { email: input.trim().toLowerCase() } });
     if (!user) return res.status(404).json({ message: "Kullanıcı bulunamadı." });
