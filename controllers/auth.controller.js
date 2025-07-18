@@ -1,9 +1,12 @@
 import { PrismaClient } from "@prisma/client";
 import bcrypt from "bcrypt";
 import jwt from "jsonwebtoken";
+import { sendVerificationEmail } from "../utils/sendEmail";
+import { createVerificationCode } from "../services/verificationService";
+import { verifyCode } from "../services/verificationService";
 
 const prisma = new PrismaClient();
-const resetCodes = new Map(); // { emailOrPhone: { code, expiresAt } }
+
 
 export const registerUser = async (req, res) => {
   try {
@@ -29,6 +32,12 @@ export const registerUser = async (req, res) => {
         track
       },
     });
+
+  await createVerificationCode({
+    userId: newUser.id,
+    type: "email",
+    target: normalizedEmail,
+  });
 
     res.status(201).json({
       success: true,
@@ -62,26 +71,34 @@ export const loginUser = async (req, res) => {
     }
 
     const token = jwt.sign(
-  {
-    id: user.id,           // 🔥 BURASI ZORUNLU
-    email: user.email,
-    role: user.role
-  },
-  process.env.JWT_SECRET,
-  { expiresIn: "7d" }
-);
+      {
+        id: user.id,
+        email: user.email,
+        role: user.role
+      },
+      process.env.JWT_SECRET,
+      { expiresIn: process.env.JWT_EXPIRES_IN || "7d" } // 🔒 Süre .env'den alınır
+    );
 
     res.status(200).json({
       success: true,
       message: "Giriş başarılı",
       token,
-      user: { id: user.id, name: user.name, email: user.email, role: user.role }
+      user: {
+        id: user.id,
+        name: user.name,
+        email: user.email,
+        role: user.role,
+        emailVerified: user.emailVerified || false // ✅ Frontend için gönderilir
+      }
     });
+
   } catch (error) {
-    console.error("Login error:");
+    console.error("Login error:", error);
     res.status(500).json({ success: false, message: "Bir hata oluştu." });
   }
 };
+
 
 
 export const getMe = async (req, res) => {
@@ -126,7 +143,7 @@ export const updateProfile = async (req, res) => {
       where: { id: userId },
       data: {
         ...(name && { name }),
-        ...(email && { email }),
+        ...(email && {email,emailVerified: false }),
         ...(phone && { phone }),
         ...(grade && { grade }),
         ...(track !== undefined && { track: track || null }),
@@ -183,93 +200,98 @@ export const forgotPassword = async (req, res) => {
     const { input } = req.body;
 
     if (!input) {
-      return res.status(400).json({ message: "E-posta veya telefon gerekli." });
+      return res.status(400).json({ message: "E-posta gerekli" });
+    }
+
+    // ✳️ Buraya EKLE:
+    if (!input.includes("@")) {
+      return res.status(400).json({ message: "Lütfen geçerli bir e-posta adresi girin." });
     }
 
     const user = await prisma.user.findFirst({
       where: {
-        OR: [
-          { email: input },
-          { phone: input }
-        ]
-      }
+        email: input, // çünkü artık sadece e-posta üzerinden doğrulama yapıyoruz
+      },
     });
 
     if (!user) {
       return res.status(404).json({ message: "Kullanıcı bulunamadı." });
     }
 
-    const code = Math.floor(100000 + Math.random() * 900000).toString(); // 6 haneli kod
-    const expiresAt = Date.now() + 1000 * 60 * 10; // 10 dakika geçerli
+    const code = await createVerificationCode({
+      userId: user.id,
+      type: "email",
+      target: user.email,
+    });
 
-    resetCodes.set(input, { code, expiresAt });
+    return res.status(200).json({ message: "Doğrulama kodu e-posta ile gönderildi." });
 
-
-
-    res.status(200).json({ message: "Doğrulama kodu gönderildi." });
   } catch (error) {
-    console.error("forgotPassword error:");
-    res.status(500).json({ message: "Bir hata oluştu." });
+    console.error("❌ forgotPassword error:", error);
+    return res.status(500).json({ message: "Bir hata oluştu. Lütfen tekrar deneyin." });
   }
 };
+
+
 export const resetPassword = async (req, res) => {
   try {
-    const { code } = req.body;
+    const { code, newPassword } = req.body;
 
-    if (!code) {
-      return res.status(400).json({ message: "Kod gerekli." });
+    if (!code || !newPassword) {
+      return res.status(400).json({ message: "Kod ve yeni şifre gereklidir." });
     }
 
-    let matchedInput = null;
-    for (const [input, data] of resetCodes.entries()) {
-      if (data.code === code && data.expiresAt > Date.now()) {
-        matchedInput = input;
-        break;
-      }
-    }
+    // Kodla eşleşen kullanıcıyı bul
+    const record = await prisma.verificationCode.findFirst({
+      where: {
+        code,
+        expiresAt: { gt: new Date() }
+      },
+      orderBy: { createdAt: "desc" }
+    });
 
-    if (!matchedInput) {
+    if (!record) {
       return res.status(400).json({ message: "Kod geçersiz veya süresi dolmuş." });
     }
 
-    const user = await prisma.user.findFirst({
-      where: {
-        OR: [
-          { email: matchedInput },
-          { phone: matchedInput }
-        ]
-      }
-    });
+    const user = await prisma.user.findUnique({ where: { id: record.userId } });
 
     if (!user) {
       return res.status(404).json({ message: "Kullanıcı bulunamadı." });
     }
 
-  
-    const isEmail = user.email === matchedInput;
-    const isPhone = user.phone === matchedInput;
+    // Kodu doğrula ve sil
+    await verifyCode({
+      userId: user.id,
+      type: record.type,
+      target: record.target,
+      code
+    });
+
+    // Şifreyi güncelle
+    const hashedPassword = await bcrypt.hash(newPassword, 10);
 
     await prisma.user.update({
       where: { id: user.id },
       data: {
-        emailVerified: isEmail ? true : undefined,
-        phoneVerified: isPhone ? true : undefined,
+        password: hashedPassword,
+        emailVerified: record.type === "email" ? true : undefined,
+        phoneVerified: record.type === "phone" ? true : undefined
       }
     });
 
-    resetCodes.delete(matchedInput);
+    return res.status(200).json({ message: "Şifre başarıyla güncellendi." });
 
-    res.status(200).json({ message: "Doğrulama başarılı." });
   } catch (error) {
-    console.error("resetPassword error:");
-    res.status(500).json({ message: "Sunucu hatası oluştu." });
+    console.error("resetPassword error:", error);
+    return res.status(500).json({ message: "Kod geçersiz veya sunucu hatası." });
   }
 };
 
 export const verifyContact = async (req, res) => {
   try {
     const { userId } = req.user;
-    const { type } = req.body; // "email" veya "phone"
+    const { type } = req.body; 
 
     if (!["email", "phone"].includes(type)) {
       return res.status(400).json({ message: "Geçersiz doğrulama türü." });
