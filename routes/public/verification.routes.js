@@ -7,6 +7,7 @@ const router = express.Router();
 
 
 router.post("/send-code", authenticateToken, async (req, res) => {
+  console.log("📩 /send-code endpoint'e istek geldi:", req.body);
   const { type, target } = req.body;
 
   if (type !== "email") {
