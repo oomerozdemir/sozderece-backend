@@ -48,6 +48,7 @@ export const verifyCode = async ({ userId, type, target, code }) => {
  console.log("Doğrulama gelen veri:", { userId, type, target, code });
   console.log("DB'deki son kayıt:", record);
   if (!record || record.code !== code) {
+  console.log("❌ Kod eşleşmedi veya kayıt bulunamadı:", { record, gelenKod: code });
   throw new Error("Geçersiz veya süresi dolmuş kod.");
 }
 

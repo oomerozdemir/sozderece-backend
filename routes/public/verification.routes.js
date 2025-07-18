@@ -29,29 +29,31 @@ router.post("/send-code", authenticateToken, async (req, res) => {
 });
 
 // Kod doğrula
-router.post("/verify-code", authenticateToken, async (req, res) => {
+router.post("/verify-code", authMiddleware, async (req, res) => {
+  const userId = req.user.id;
   const { type, target, code } = req.body;
 
   try {
-    await verifyCode({
-      userId: req.user.id,
-      type,
-      target,
-      code,
-    });
+    const success = await verifyCode({ userId, type, target, code });
 
-    // E-posta doğrulandıysa kullanıcıyı güncelle
+    if (!success) {
+      return res.status(400).json({ message: "Kod doğrulanamadı." });
+    }
+
+    // email doğrulandıysa kullanıcıyı güncelle
     if (type === "email") {
       await prisma.user.update({
-        where: { id: req.user.id },
+        where: { id: userId },
         data: { emailVerified: true },
       });
     }
 
-    res.json({ success: true, message: "Doğrulama başarılı." });
-  } catch (error) {
-    res.status(400).json({ success: false, message: error.message });
+    return res.status(200).json({ message: "Doğrulama başarılı." });
+  } catch (err) {
+    console.error("🚨 Doğrulama hatası:", err);
+    return res.status(400).json({ message: "Kod doğrulanamadı." });
   }
 });
+
 
 export default router;
