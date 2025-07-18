@@ -1,9 +1,7 @@
 import { PrismaClient } from "@prisma/client";
 import bcrypt from "bcrypt";
 import jwt from "jsonwebtoken";
-import { sendVerificationEmail } from "../utils/sendEmail";
-import { createVerificationCode } from "../services/verificationService";
-import { verifyCode } from "../services/verificationService";
+import { createVerificationCode, verifyCode } from "../services/verificationService.js";
 
 const prisma = new PrismaClient();
 
