@@ -23,6 +23,7 @@ export const createVerificationCode = async ({ userId, type, target }) => {
 };
 
 export const verifyCode = async ({ userId, type, target, code }) => {
+   console.log("Doğrulama gelen veri:", { userId, type, target, code });
   const record = await prisma.verificationCode.findFirst({
     where: {
       userId,
