@@ -10,7 +10,6 @@ const router = express.Router();
 
 
 router.post("/send-code", authenticateToken, async (req, res) => {
-  console.log("📩 /send-code endpoint'e istek geldi:", req.body);
   const { type, target } = req.body;
 
   if (type !== "email") {
@@ -26,7 +25,7 @@ router.post("/send-code", authenticateToken, async (req, res) => {
 
     res.json({ success: true, message: "Kod gönderildi." });
   } catch (error) {
-    console.error("Kod gönderme hatası:", error.message);
+    console.error("Kod gönderme hatası:");
     res.status(500).json({ success: false, message: "Kod gönderilemedi." });
   }
 });
@@ -53,7 +52,7 @@ router.post("/verify-code", authenticateToken, async (req, res) => {
 
     return res.status(200).json({ message: "Doğrulama başarılı." });
   } catch (err) {
-    console.error("🚨 Doğrulama hatası:", err);
+    console.error("🚨 Doğrulama hatası:");
     return res.status(400).json({ message: "Kod doğrulanamadı." });
   }
 });

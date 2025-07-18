@@ -17,7 +17,6 @@ export const createVerificationCode = async ({ userId, type, target }) => {
       },
     });
 
-    console.log("✅ Kod DB'ye kaydedildi:", record);
 
     if (type === "email") {
       await sendVerificationEmail(normalizedTarget, code);
@@ -26,7 +25,7 @@ export const createVerificationCode = async ({ userId, type, target }) => {
     return code;
 
   } catch (err) {
-    console.error("❌ Kod DB'ye kaydedilemedi:", err);
+    console.error("❌ Kod DB'ye kaydedilemedi:");
     throw new Error("Kod oluşturulamadı");
   }
 };
@@ -34,7 +33,6 @@ export const createVerificationCode = async ({ userId, type, target }) => {
 
 
 export const verifyCode = async ({ userId, type, target, code }) => {
-   console.log("Doğrulama gelen veri:", { userId, type, target, code });
   const record = await prisma.verificationCode.findFirst({
     where: {
       userId,
@@ -45,10 +43,8 @@ export const verifyCode = async ({ userId, type, target, code }) => {
     },
     orderBy: { createdAt: "desc" },
   });
- console.log("Doğrulama gelen veri:", { userId, type, target, code });
-  console.log("DB'deki son kayıt:", record);
+ 
   if (!record || record.code !== code) {
-  console.log("❌ Kod eşleşmedi veya kayıt bulunamadı:", { record, gelenKod: code });
   throw new Error("Geçersiz veya süresi dolmuş kod.");
 }
 
