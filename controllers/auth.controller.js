@@ -199,7 +199,7 @@ export const changePassword = async (req, res) => {
 export const forgotPassword = async (req, res) => {
 
   try {
-    const { input } = req.body;
+    const input = req.body.input || req.body.email;
     console.log("Gönderilen input:", input);
 
     const email = input?.trim().toLowerCase();
