@@ -197,13 +197,14 @@ export const changePassword = async (req, res) => {
 };
 
 export const forgotPassword = async (req, res) => {
+
   try {
+    const { input } = req.body;
     console.log("Gönderilen input:", input);
 
-    const { input } = req.body;
-
     const email = input?.trim().toLowerCase();
-if (!email || !email.includes("@")) {
+
+  if (!email || !email.includes("@")) {
   return res.status(400).json({ message: "Geçerli bir e-posta gerekli." });
 }
 
