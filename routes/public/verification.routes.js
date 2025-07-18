@@ -1,6 +1,9 @@
 import express from "express";
 import { authenticateToken } from "../../middleware/authMiddleware.js";
 import { createVerificationCode, verifyCode } from "../../services/verificationService.js";
+import { PrismaClient } from "@prisma/client";
+const prisma = new PrismaClient();
+
 
 
 const router = express.Router();
