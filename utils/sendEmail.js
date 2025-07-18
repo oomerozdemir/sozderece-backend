@@ -62,3 +62,31 @@ export const sendVerificationEmail = async (to, code) => {
     html,
   });
 };
+
+
+export const sendPasswordResetEmail = async (to, resetUrl) => {
+  try {
+    const transporter = nodemailer.createTransport({
+      host: process.env.SMTP_HOST,
+      port: parseInt(process.env.SMTP_PORT || "587"),
+      secure: false,
+      auth: {
+        user: process.env.EMAIL_USER,
+        pass: process.env.EMAIL_PASS,
+      },
+    });
+
+    await transporter.sendMail({
+      from: `"SözDerece" <${process.env.EMAIL_USER}>`,
+      to,
+      subject: "🔐 Şifre Sıfırlama Bağlantısı",
+      html: `
+        <h2>Şifrenizi sıfırlamak için bağlantıya tıklayın</h2>
+        <p><a href="${resetUrl}">Şifreyi Sıfırla</a></p>
+        <p>Bu bağlantı 15 dakika boyunca geçerlidir.</p>
+      `,
+    });
+  } catch (err) {
+    console.error("❌ Şifre sıfırlama maili gönderilemedi:", err);
+  }
+};
