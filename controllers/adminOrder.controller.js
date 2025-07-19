@@ -25,6 +25,7 @@ export const getAllOrdersForAdmin = async (req, res) => {
       userEmail: order.user?.email,
       billingInfo: order.billingInfo,
       merchantOid: order.merchantOid,
+      totalPrice: order.totalPrice,
     }));
 
     res.status(200).json(formatted);
