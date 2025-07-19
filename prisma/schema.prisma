@@ -73,6 +73,7 @@ model Order {
   refundMessage String?
   refundReason  String?
   merchantOid   String?     // 🔥 Ödeme takip için
+  totalPrice    Float?
   billingInfo   BillingInfo @relation("BillingToOrder", fields: [billingInfoId], references: [id])
   user          User        @relation(fields: [userId], references: [id])
   orderItems    OrderItem[]
