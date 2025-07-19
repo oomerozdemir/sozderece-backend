@@ -149,6 +149,7 @@ export const createOrderWithBilling = async (req, res) => {
         billingInfo: { connect: { id: billingInfo.id } },
         status: "pending_payment",
         merchantOid: merchant_oid,
+        totalPrice: discountedPrice,
       },
     });
 

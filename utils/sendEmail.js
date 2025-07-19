@@ -53,7 +53,7 @@ export const sendVerificationEmail = async (to, code) => {
   const html = `
     <p>Merhaba,</p>
     <p>Doğrulama kodunuz: <strong>${code}</strong></p>
-    <p>Bu kod 5 dakika içinde geçerlidir.</p>
+    <p>Bu kod 5 dakika için geçerlidir.</p>
   `;
 
   await sendEmail({
