@@ -21,10 +21,15 @@ export const authenticateToken = (req, res, next) => {
 
 export const authorizeRoles = (...allowedRoles) => {
   return (req, res, next) => {
+    if (!req.user || !req.user.role) {
+      return res.status(401).json({ success: false, message: "Kullanıcı doğrulanamadı veya rol bilgisi eksik." });
+    }
+
     const userRole = req.user.role;
     if (!allowedRoles.includes(userRole)) {
       return res.status(403).json({ success: false, message: "Yetkisiz erişim" });
     }
+
     next();
   };
 };
