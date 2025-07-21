@@ -218,22 +218,17 @@ export const prepareOrder = async (req, res) => {
       return res.status(400).json({ error: "Eksik sipariş verisi" });
     }
 
-    // ➕ Test modu .env'den
     const test_mode = process.env.PAYTR_TEST_MODE || "1";
-
-    // ➕ Benzersiz merchantOid oluştur
     const merchantOid = uuidv4();
 
-    // 🔐 PayTR'a gönderilecek payload
     const paytrPayload = {
       user: req.user,
       merchantOid,
       cart,
       totalPrice,
-      test_mode, // ✅ TEST MODU BURADA
+      test_mode,
     };
 
-    // 🛰️ Token alınması
     const tokenResponse = await axios.post(
       "https://sozderecekocluk.com/api/paytr/initiate",
       paytrPayload
@@ -241,7 +236,11 @@ export const prepareOrder = async (req, res) => {
 
     const { token } = tokenResponse.data;
 
-    // 💾 PaymentMeta kaydı
+    if (!token) {
+      console.error("🚨 PayTR'den token alınamadı:", tokenResponse.data);
+      return res.status(500).json({ error: "Ödeme token alınamadı" });
+    }
+
     await prisma.paymentMeta.create({
       data: {
         merchantOid,
@@ -257,7 +256,7 @@ export const prepareOrder = async (req, res) => {
 
     return res.json({ token });
   } catch (err) {
-    console.error("prepareOrder hatası:", err);
+    console.error("❌ prepareOrder hatası:", err);
     return res.status(500).json({ error: "Sipariş hazırlanırken hata oluştu" });
   }
 };
