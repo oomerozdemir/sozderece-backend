@@ -4,11 +4,13 @@ import crypto from "crypto";
 import qs from "querystring";
 import { sendPaymentSuccessEmail } from "../utils/sendEmail.js"
 import { v4 as uuidv4 } from "uuid";
+import dotenv from "dotenv";
+
 
 
 
 const prisma = new PrismaClient();
-
+dotenv.config();
 // Siparişleri getir
 export const getMyOrders = async (req, res) => {
   try {
@@ -230,9 +232,9 @@ export const prepareOrder = async (req, res) => {
     };
 
     const tokenResponse = await axios.post(
-      "https://sozderecekocluk.com/api/paytr/initiate",
-      paytrPayload
-    );
+  `${process.env.BACKEND_URL}/api/paytr/initiate`,
+  paytrPayload
+);
 
     const { token } = tokenResponse.data;
 
@@ -361,6 +363,35 @@ export const handlePaytrCallback = async (req, res) => {
   }
 };
 
+
+export const initiatePaytrPayment = async (req, res) => {
+  try {
+    const { user, merchantOid, cart, totalPrice, test_mode } = req.body;
+
+    // 🧮 Sipariş toplamını kuruş cinsine çevir
+    const payment_amount = Math.round(parseFloat(totalPrice) * 100);
+
+    const user_ip = req.headers["x-forwarded-for"] || req.connection.remoteAddress;
+    const merchant_id = process.env.PAYTR_MERCHANT_ID;
+    const merchant_key = process.env.PAYTR_MERCHANT_KEY;
+    const merchant_salt = process.env.PAYTR_MERCHANT_SALT;
+
+    // 🔐 Token oluştur
+    const hash_str = merchant_id + user_ip + merchantOid + user.email + payment_amount + test_mode + merchant_salt;
+    const paytr_token = crypto
+      .createHmac("sha256", merchant_key)
+      .update(hash_str)
+      .digest("base64");
+
+    // 💳 PayTR iframe endpoint’ine istek
+    return res.json({
+      token: paytr_token,
+    });
+  } catch (err) {
+    console.error("initiatePaytrPayment hatası:", err);
+    return res.status(500).json({ error: "Ödeme başlatılamadı" });
+  }
+};
 
 
 
