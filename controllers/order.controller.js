@@ -10,7 +10,6 @@ import dotenv from "dotenv";
 
 
 const prisma = new PrismaClient();
-dotenv.config();
 // Siparişleri getir
 export const getMyOrders = async (req, res) => {
   try {
