@@ -1,7 +1,7 @@
 import { PrismaClient } from "@prisma/client";
 import axios from "axios";
 import crypto from "crypto";
-import qs from "querystring";
+import qs from "qs"; 
 import { sendPaymentSuccessEmail } from "../utils/sendEmail.js"
 import { v4 as uuidv4 } from "uuid";
 import dotenv from "dotenv";
@@ -366,29 +366,90 @@ export const handlePaytrCallback = async (req, res) => {
 
 export const initiatePaytrPayment = async (req, res) => {
   try {
-    const { user, merchantOid, cart, totalPrice, test_mode } = req.body;
+    const { cart, totalPrice, merchantOid, test_mode } = req.body;
+    const user = req.user;
 
-    // 🧮 Sipariş toplamını kuruş cinsine çevir
-    const payment_amount = Math.round(parseFloat(totalPrice) * 100);
+    if (!cart || !totalPrice || !merchantOid || !user) {
+      return res.status(400).json({ error: "Eksik ödeme verisi" });
+    }
 
-    const user_ip = req.headers["x-forwarded-for"] || req.connection.remoteAddress;
+    // 🔒 Gerekli PayTR ayarları
     const merchant_id = process.env.PAYTR_MERCHANT_ID;
     const merchant_key = process.env.PAYTR_MERCHANT_KEY;
     const merchant_salt = process.env.PAYTR_MERCHANT_SALT;
 
-    // 🔐 Token oluştur
-    const hash_str = merchant_id + user_ip + merchantOid + user.email + payment_amount + test_mode + merchant_salt;
+    // 🧺 Sepet verisi base64'lenmiş olmalı
+    const user_basket = Buffer.from(
+      JSON.stringify(
+        cart.map((item) => [
+          item.name,
+          parseFloat(item.price.toString().replace(/[^\d.]/g, "")),
+          item.quantity || 1,
+        ])
+      )
+    ).toString("base64");
+
+    const user_ip = req.headers["x-forwarded-for"] || req.connection.remoteAddress || "127.0.0.1";
+    const email = user.email;
+    const payment_amount = parseInt((parseFloat(totalPrice) * 100).toFixed(0)); // kuruş cinsinden
+    const currency = "TL";
+    const no_installment = "0";
+    const max_installment = "0"; // veya "12"
+    const timeout_limit = "30";
+    const debug_on = "1";
+
+    // 🔐 HASH OLUŞTUR
+    const hash_str = merchant_id +
+      user_ip +
+      merchantOid +
+      email +
+      payment_amount +
+      user_basket +
+      no_installment +
+      max_installment +
+      currency +
+      test_mode +
+      merchant_salt;
+
     const paytr_token = crypto
       .createHmac("sha256", merchant_key)
       .update(hash_str)
       .digest("base64");
 
-    // 💳 PayTR iframe endpoint’ine istek
-    return res.json({
-      token: paytr_token,
-    });
-  } catch (err) {
-    console.error("initiatePaytrPayment hatası:", err);
+    // 📦 Gönderilecek payload
+    const paytrData = {
+      merchant_id,
+      user_ip,
+      merchant_oid: merchantOid,
+      email,
+      payment_amount,
+      paytr_token,
+      user_basket,
+      no_installment,
+      max_installment,
+      currency,
+      test_mode,
+      merchant_ok_url: process.env.PAYTR_OK_URL,
+      merchant_fail_url: process.env.PAYTR_FAIL_URL,
+      timeout_limit,
+      debug_on,
+      lang: "tr"
+    };
+
+    // 🌐 POST isteği (form-urlencoded)
+    const response = await axios.post(
+      "https://www.paytr.com/odeme/api/get-token",
+      qs.stringify(paytrData),
+      {
+        headers: {
+          "Content-Type": "application/x-www-form-urlencoded",
+        },
+      }
+    );
+
+    return res.json({ token: response.data.token });
+  } catch (error) {
+    console.error("PayTR initiate hata:", error?.response?.data || error);
     return res.status(500).json({ error: "Ödeme başlatılamadı" });
   }
 };
