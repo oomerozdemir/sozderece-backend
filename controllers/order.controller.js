@@ -373,7 +373,7 @@ export const handlePaytrCallback = async (req, res) => {
 export const initiatePaytrPayment = async (req, res) => {
   try {
     const { cart, totalPrice, merchantOid, test_mode } = req.body;
-  const user = req.user || req.body.user;
+  const user = req.user;
 
     if (!cart || !totalPrice || !merchantOid || !user) {
       return res.status(400).json({ error: "Eksik ödeme verisi" });
