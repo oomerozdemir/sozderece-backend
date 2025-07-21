@@ -73,7 +73,7 @@ model Order {
   status        String      @default("pending_payment")
   refundMessage String?
   refundReason  String?
-  merchantOid   String?     // 🔥 Ödeme takip için
+  merchantOid   String?     @unique // 🔥 Ödeme takip için
   totalPrice    Float?
   billingInfo   BillingInfo @relation("BillingToOrder", fields: [billingInfoId], references: [id])
   user          User        @relation(fields: [userId], references: [id])
