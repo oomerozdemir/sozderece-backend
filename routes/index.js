@@ -15,7 +15,6 @@ import verificationRoutes from "./public/verification.routes.js";
 
 // 🔐 Admin routes
 import adminRoutes from "./admin/adminRoutes.js";
-import { initiatePaytrPayment } from "../controllers/order.controller.js";
 
 const router = express.Router();
 
@@ -31,7 +30,6 @@ router.use("/coach", coachRoutes);
 router.use("/coaches", coachRoutes);
 router.use("/coupon", couponRoutes);
 router.use("/verification", verificationRoutes);
-router.use("/paytr/initiate", initiatePaytrPayment);
 
 
 
