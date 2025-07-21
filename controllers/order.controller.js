@@ -204,6 +204,8 @@ export const createOrderWithBilling = async (req, res) => {
 
 export const prepareOrder = async (req, res) => {
   try {
+    console.error("🔴 prepareOrder gelen istek body:", req.body);
+
     const {
       cart,
       billingInfo,
