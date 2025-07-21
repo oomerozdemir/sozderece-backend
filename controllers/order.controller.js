@@ -232,9 +232,14 @@ export const prepareOrder = async (req, res) => {
       test_mode,
     };
 
-    const tokenResponse = await axios.post(
+ const tokenResponse = await axios.post(
   `${process.env.BACKEND_URL}/api/paytr/initiate`,
-  paytrPayload
+  paytrPayload,
+  {
+    headers: {
+      Authorization: `Bearer ${req.headers.authorization?.split(" ")[1]}`,
+    },
+  }
 );
 
     const { token } = tokenResponse.data;
@@ -368,7 +373,7 @@ export const handlePaytrCallback = async (req, res) => {
 export const initiatePaytrPayment = async (req, res) => {
   try {
     const { cart, totalPrice, merchantOid, test_mode } = req.body;
-    const user = req.user;
+  const user = req.user || req.body.user;
 
     if (!cart || !totalPrice || !merchantOid || !user) {
       return res.status(400).json({ error: "Eksik ödeme verisi" });
