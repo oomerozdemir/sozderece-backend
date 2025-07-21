@@ -3,6 +3,8 @@ import axios from "axios";
 import crypto from "crypto";
 import qs from "querystring";
 import { sendPaymentSuccessEmail } from "../utils/sendEmail.js"
+import { v4 as uuidv4 } from "uuid";
+
 
 
 const prisma = new PrismaClient();
@@ -32,6 +34,7 @@ export const getMyOrders = async (req, res) => {
 };
 
 // Sipariş oluştur
+/*
 export const createOrderWithBilling = async (req, res) => {
   try {
     const userId = req.user.id;
@@ -195,9 +198,72 @@ export const createOrderWithBilling = async (req, res) => {
     });
   }
 };
+*/
+
+
+export const prepareOrder = async (req, res) => {
+  try {
+    const {
+      cart,
+      billingInfo,
+      packageName,
+      totalPrice,
+      discountRate,
+      couponCode,
+    } = req.body;
+
+    const userId = req.user.id;
+
+    if (!cart || !billingInfo || !packageName || !totalPrice) {
+      return res.status(400).json({ error: "Eksik sipariş verisi" });
+    }
+
+    // ➕ Test modu .env'den
+    const test_mode = process.env.PAYTR_TEST_MODE || "1";
+
+    // ➕ Benzersiz merchantOid oluştur
+    const merchantOid = uuidv4();
+
+    // 🔐 PayTR'a gönderilecek payload
+    const paytrPayload = {
+      user: req.user,
+      merchantOid,
+      cart,
+      totalPrice,
+      test_mode, // ✅ TEST MODU BURADA
+    };
+
+    // 🛰️ Token alınması
+    const tokenResponse = await axios.post(
+      "https://sozderecekocluk.com/api/paytr/initiate",
+      paytrPayload
+    );
+
+    const { token } = tokenResponse.data;
+
+    // 💾 PaymentMeta kaydı
+    await prisma.paymentMeta.create({
+      data: {
+        merchantOid,
+        userId,
+        cart,
+        billingInfo,
+        packageName,
+        discountRate,
+        couponCode,
+        totalPrice,
+      },
+    });
+
+    return res.json({ token });
+  } catch (err) {
+    console.error("prepareOrder hatası:", err);
+    return res.status(500).json({ error: "Sipariş hazırlanırken hata oluştu" });
+  }
+};
+
 
 export const handlePaytrCallback = async (req, res) => {
-
   try {
     const { merchant_oid, status, total_amount, hash } = req.body;
 
@@ -212,24 +278,52 @@ export const handlePaytrCallback = async (req, res) => {
       return res.status(403).send("INVALID HASH");
     }
 
-    const order = await prisma.order.findFirst({
+    const order = await prisma.order.findUnique({
       where: { merchantOid: merchant_oid },
     });
 
     if (!order) {
-      console.error("❌ Sipariş bulunamadı:");
+      console.error("❌ Sipariş bulunamadı:", merchant_oid);
       return res.status(404).send("ORDER NOT FOUND");
     }
 
     if (order.status === "paid") {
-  return res.send("OK");
-}
+      return res.send("OK");
+    }
 
     if (status === "success") {
-      const updated = await prisma.order.update({
-  where: { id: order.id },
-  data: { status: "paid" },
-});
+      await prisma.order.update({
+        where: { id: order.id },
+        data: { status: "paid" },
+      });
+
+      const paymentMeta = await prisma.paymentMeta.findUnique({
+        where: { merchantOid: merchant_oid },
+      });
+
+      if (paymentMeta?.couponCode) {
+        const alreadyUsed = await prisma.couponUsage.findFirst({
+          where: {
+            userId: paymentMeta.userId,
+            coupon: {
+              code: paymentMeta.couponCode,
+            },
+          },
+        });
+
+        if (!alreadyUsed) {
+          await prisma.couponUsage.create({
+            data: {
+              userId: paymentMeta.userId,
+              coupon: {
+                connect: {
+                  code: paymentMeta.couponCode,
+                },
+              },
+            },
+          });
+        }
+      }
 
       const user = await prisma.user.findUnique({
         where: { id: order.userId },
@@ -246,24 +340,24 @@ export const handlePaytrCallback = async (req, res) => {
           await sendPaymentSuccessEmail(targetEmail, order.id);
           console.log("✅ Mail başarıyla gönderildi");
         } catch (err) {
-          console.error("❌ Mail gönderilemedi:");
+          console.error("❌ Mail gönderilemedi:", err);
         }
       } else {
         console.warn("⚠️ Mail adresi bulunamadı. Mail gönderimi atlandı.");
       }
 
-      console.log(`✅ Ödeme başarılı}`);
+      console.log("✅ Ödeme başarılı");
     } else {
       await prisma.order.update({
         where: { id: order.id },
         data: { status: "failed" },
       });
-      console.log(`⚠️ Ödeme başarısız`);
+      console.log("⚠️ Ödeme başarısız");
     }
 
     res.send("OK");
   } catch (error) {
-    console.error("⚠️ PayTR callback hatası:");
+    console.error("⚠️ PayTR callback hatası:", error);
     res.status(500).send("SERVER ERROR");
   }
 };

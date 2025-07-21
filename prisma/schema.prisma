@@ -47,6 +47,7 @@ model User {
   assignedCoach   Coach?        @relation("AssignedCoach", fields: [assignedCoachId], references: [id])
   verificationCodes VerificationCode[]
   passwordResetTokens PasswordResetToken[]
+  paymentMetas  PaymentMeta[]
 }
 
 model Coach {
@@ -148,3 +149,19 @@ model PasswordResetToken {
   createdAt  DateTime @default(now())
   expiresAt  DateTime
 }
+
+model PaymentMeta {
+  id            Int      @id @default(autoincrement())
+  merchantOid   String   @unique
+  userId        Int
+  cart          Json
+  billingInfo   Json
+  packageName   String
+  discountRate  Int
+  couponCode    String?
+  totalPrice    Float
+  createdAt     DateTime @default(now())
+
+  user          User     @relation(fields: [userId], references: [id])
+}
+
