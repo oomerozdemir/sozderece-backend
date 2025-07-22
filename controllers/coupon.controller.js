@@ -3,41 +3,45 @@ const prisma = new PrismaClient();
 
 // ✅ Kupon kodu doğrulama ve detay döndürme
 export const validateCoupon = async (req, res) => {
-  const { code, userId } = req.body;
-
   try {
+    const userId = req.user?.id;
+
+    if (!userId) {
+      return res.status(401).json({ error: "Kullanıcı doğrulanamadı veya rol bilgisi eksik." });
+    }
+
+    const { code } = req.body;
+
+    if (!code) {
+      return res.status(400).json({ error: "Kupon kodu gereklidir." });
+    }
+
     const coupon = await prisma.coupon.findUnique({
       where: { code },
       include: { usedBy: true },
     });
 
     if (!coupon) {
-      return res.status(404).json({ error: "Kupon bulunamadı" });
+      return res.status(404).json({ error: "Kupon bulunamadı." });
     }
 
-    if (!coupon.usageLimit || coupon.usedBy.length >= coupon.usageLimit) {
-      return res.status(400).json({ error: "Kupon kullanım sınırına ulaştı" });
+    const userUsed = coupon.usedBy.some((usage) => usage.userId === userId);
+
+    if (userUsed) {
+      return res.status(400).json({ error: "Bu kuponu zaten kullandınız." });
     }
 
-    const alreadyUsed = coupon.usedBy.some(u => u.userId === userId);
-    if (alreadyUsed) {
-      return res.status(400).json({ error: "Bu kullanıcı kuponu zaten kullandı" });
+    if (coupon.usedBy.length >= coupon.usageLimit) {
+      return res.status(400).json({ error: "Kupon kullanım hakkı dolmuş." });
     }
 
-    // KULLANIMI KAYDET
-    await prisma.couponUsage.create({
-      data: {
-        userId: userId,
-        couponId: coupon.id,
-      },
-    });
-
-    return res.json({ discountRate: coupon.discountRate });
-  } catch (err) {
-    console.error("Kupon doğrulama hatası:");
-    res.status(500).json({ error: "Kupon doğrulanamadı" });
+    return res.json({ success: true, discountRate: coupon.discountRate });
+  } catch (error) {
+    console.error("❌ Kupon doğrulama hatası:", error);
+    return res.status(500).json({ error: "Sunucu hatası." });
   }
 };
+
 
 // ✅ Kuponu kullanıcı adına işaretleme (kullanıldı)
 export const markCouponUsed = async (req, res) => {
