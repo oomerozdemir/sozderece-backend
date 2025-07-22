@@ -157,7 +157,8 @@ export const handlePaytrCallback = async (req, res) => {
           merchantOid: merchant_oid,
           totalPrice: paymentMeta.totalPrice,
           status: "pending",
-          package: paymentMeta.billingInfo.packageName,
+          package: paymentMeta.packageName,
+
           billingInfo: {
             create: paymentMeta.billingInfo,
           },
