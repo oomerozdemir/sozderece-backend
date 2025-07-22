@@ -151,28 +151,29 @@ export const handlePaytrCallback = async (req, res) => {
         return res.status(404).send("ORDER NOT FOUND");
       }
 
-      order = await prisma.order.create({
-        data: {
-          userId: paymentMeta.userId,
-          merchantOid: merchant_oid,
-          totalPrice: paymentMeta.totalPrice,
-          status: "pending",
-          package: paymentMeta.packageName,
-              endDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000), 
+     order = await prisma.order.create({
+  data: {
+    user: {
+      connect: { id: paymentMeta.userId },
+    },
+    merchantOid: merchant_oid,
+    totalPrice: paymentMeta.totalPrice,
+    status: "pending",
+    package: paymentMeta.packageName,
+    endDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000), // Örnek: 30 gün sonrası
+    billingInfo: {
+      create: paymentMeta.billingInfo,
+    },
+    orderItems: {
+      create: paymentMeta.cart.map((item) => ({
+        name: item.name,
+        price: item.price,
+        quantity: item.quantity,
+      })),
+    },
+  },
+});
 
-
-          billingInfo: {
-            create: paymentMeta.billingInfo,
-          },
-          orderItems: {
-            create: paymentMeta.cart.map((item) => ({
-              name: item.name,
-              price: item.price,
-              quantity: item.quantity,
-            })),
-          },
-        },
-      });
 
       console.log("🆕 Order oluşturuldu:", order.id);
     }
