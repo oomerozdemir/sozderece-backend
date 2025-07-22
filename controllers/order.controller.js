@@ -501,7 +501,7 @@ export const initiatePaytrPayment = async (req, res) => {
     }
 
     return res.json({ token: response.data.token });
- } catch (error) {
+} catch (error) {
   console.error("❌ PayTR initiate detaylı hata:");
 
   // ✅ Asıl hata mesajı burada görünür
@@ -516,10 +516,6 @@ export const initiatePaytrPayment = async (req, res) => {
     detail: error?.response?.data || error.message,
   });
 }
-
-
-    return res.status(500).json({ error: "Ödeme başlatılamadı", detail: error?.response?.data || error.message });
-  }
 };
 
 
