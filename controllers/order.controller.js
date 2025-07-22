@@ -243,6 +243,9 @@ export const prepareOrder = async (req, res) => {
       cart: cleanedCart,
       totalPrice,
       test_mode,
+      user_name: billingInfo.name + " " + billingInfo.surname, // ✅ EKLENDİ
+      user_address: billingInfo.address,                        // ✅ EKLENDİ
+      user_phone: billingInfo.phone                             // ✅ EKLENDİ
     };
 
     const tokenResponse = await axios.post(
@@ -281,6 +284,7 @@ export const prepareOrder = async (req, res) => {
     return res.status(500).json({ error: "Sipariş hazırlanırken hata oluştu" });
   }
 };
+
 
 
 
@@ -387,13 +391,22 @@ export const handlePaytrCallback = async (req, res) => {
 
 export const initiatePaytrPayment = async (req, res) => {
   try {
-    const { cart, totalPrice, merchantOid, test_mode } = req.body;
+    const {
+      cart,
+      totalPrice,
+      merchantOid,
+      test_mode,
+      user_name,
+      user_address,
+      user_phone
+    } = req.body;
+
     const user = req.user;
 
     console.log("🔍 initiatePaytrPayment body:", req.body);
     console.log("🔍 initiatePaytrPayment user:", user);
 
-    if (!cart || !totalPrice || !merchantOid || !user) {
+    if (!cart || !totalPrice || !merchantOid || !user || !user_name || !user_address || !user_phone) {
       return res.status(400).json({ error: "Eksik ödeme verisi" });
     }
 
@@ -402,13 +415,13 @@ export const initiatePaytrPayment = async (req, res) => {
     const merchant_key = process.env.PAYTR_MERCHANT_KEY.trim();
     const merchant_salt = process.env.PAYTR_MERCHANT_SALT.trim();
 
-    // 🧹 Fiyat temizleyici fonksiyon
+    // 🧹 Fiyat temizleyici
     const cleanPrice = (priceStr) => {
       const cleaned = priceStr.toString().replace(/[^\d,.-]/g, "").replace(",", ".");
       return parseFloat(cleaned) || 0;
     };
 
-    // 🧺 Sepeti PayTR formatına çevir
+    // 🧺 Sepeti encode et
     const user_basket = Buffer.from(
       JSON.stringify(
         cart.map((item) => [
@@ -431,7 +444,6 @@ export const initiatePaytrPayment = async (req, res) => {
     const timeout_limit = "30";
     const debug_on = "1";
 
-    // 🔐 HASH hesaplama
     const hash_str =
       merchant_id +
       user_ip +
@@ -449,7 +461,6 @@ export const initiatePaytrPayment = async (req, res) => {
       .update(hash_str + merchant_salt)
       .digest("base64");
 
-    // 📦 Gönderilecek veri
     const paytrData = {
       merchant_id,
       user_ip,
@@ -462,6 +473,9 @@ export const initiatePaytrPayment = async (req, res) => {
       max_installment,
       currency,
       test_mode,
+      user_name,     // ✅ Zorunlu
+      user_address,  // ✅ Zorunlu
+      user_phone,    // ✅ Zorunlu
       merchant_ok_url: process.env.PAYTR_OK_URL,
       merchant_fail_url: process.env.PAYTR_FAIL_URL,
       timeout_limit,
@@ -471,7 +485,6 @@ export const initiatePaytrPayment = async (req, res) => {
 
     console.log("💳 PayTR gönderilecek veri:", paytrData);
 
-    // 🌐 PayTR'a istek
     const response = await axios.post(
       "https://www.paytr.com/odeme/api/get-token",
       qs.stringify(paytrData),
@@ -493,6 +506,7 @@ export const initiatePaytrPayment = async (req, res) => {
     return res.status(500).json({ error: "Ödeme başlatılamadı", detail: error?.response?.data || error.message });
   }
 };
+
 
 
 
