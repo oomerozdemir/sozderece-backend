@@ -66,7 +66,7 @@ export const prepareOrder = async (req, res) => {
       quantity: item.quantity || 1,
     }));
 
-    const test_mode = process.env.PAYTR_TEST_MODE || "0";
+    const test_mode = process.env.PAYTR_TEST_MODE || "1";
 
     // ✅ Özel karakter temizliği
   const merchantOid = cleanMerchantOid(uuidv4());
