@@ -4,7 +4,6 @@ import crypto from "crypto";
 import qs from "qs"; 
 import { sendPaymentSuccessEmail } from "../utils/sendEmail.js"
 import { v4 as uuidv4 } from "uuid";
-import dotenv from "dotenv";
 
 
 
@@ -34,173 +33,6 @@ export const getMyOrders = async (req, res) => {
   }
 };
 
-// Sipariş oluştur
-/*
-export const createOrderWithBilling = async (req, res) => {
-  try {
-    const userId = req.user.id;
-    const {
-      billingInfo: billingInfoData,
-      cart,
-      packageName,
-      couponCode,
-      discountRate = 0,
-    } = req.body;
-
-    const cleanString = (value) =>
-      typeof value === "string" ? value.replace(/\u0000/g, "") : "";
-
-    const orderItems = cart.map((item) => ({
-      name: cleanString(item.name),
-      price: typeof item.price === "string"
-        ? parseFloat(item.price.replace("₺", "").replace(/[^\d.]/g, ""))
-        : item.price,
-      quantity: item.quantity || 1,
-      description: cleanString(item.description),
-    }));
-
-    const totalPrice = orderItems.reduce(
-      (acc, item) => acc + item.price * item.quantity,
-      0
-    );
-
-    const discountedPrice =
-      couponCode && discountRate > 0
-        ? totalPrice * (1 - discountRate / 100)
-        : totalPrice;
-
-    const payment_amount = Math.round(discountedPrice * 100); // kuruş
-
-    const merchant_id = process.env.PAYTR_MERCHANT_ID;
-    const merchant_key = process.env.PAYTR_MERCHANT_KEY;
-    const merchant_salt = process.env.PAYTR_MERCHANT_SALT;
-
-    const user_ip =
-      req.headers["x-forwarded-for"] || req.socket.remoteAddress || "127.0.0.1";
-
-    const merchant_oid = `ORDER${Date.now()}${userId}`;
-
-    const user_basket = Buffer.from(
-      JSON.stringify(
-        orderItems.map((item) => [
-          item.name,
-          item.price.toFixed(2),
-          item.quantity,
-        ])
-      )
-    ).toString("base64");
-
-    const no_installment = 0;
-    const max_installment = 0;
-    const currency = "TL";
-    const test_mode = process.env.PAYTR_TEST_MODE || "0";
-
-    const hash_str = `${merchant_id}${user_ip}${merchant_oid}${billingInfoData.email}${payment_amount}${user_basket}${no_installment}${max_installment}${currency}${test_mode}`;
-
-    const paytr_token = crypto
-      .createHmac("sha256", merchant_key)
-      .update(hash_str + merchant_salt)
-      .digest("base64");
-
-    const paytrData = {
-      merchant_id,
-      user_ip,
-      merchant_oid,
-      email: billingInfoData.email,
-      payment_amount,
-      paytr_token,
-      user_basket,
-      no_installment,
-      max_installment,
-      currency,
-      test_mode,
-      user_name: billingInfoData.name + " " + billingInfoData.surname,
-      user_address: billingInfoData.address,
-      user_phone: billingInfoData.phone,
-     callback_url: "https://sozderece-backend.onrender.com/api/orders/paytr/callback",
-  merchant_ok_url: "https://sozderecekocluk.com/order-success",
-  merchant_fail_url: "https://sozderecekocluk.com/payment-fail",
-    };
-
-    const paytrRes = await axios.post(
-      "https://www.paytr.com/odeme/api/get-token",
-      qs.stringify(paytrData),
-      {
-        headers: {
-          "Content-Type": "application/x-www-form-urlencoded",
-        },
-      }
-    );
-
-    if (!paytrRes.data?.token) {
-      throw new Error("PayTR token alınamadı");
-    }
-
-    const billingInfo = await prisma.billingInfo.create({
-      data: { ...billingInfoData },
-    });
-
-    const now = new Date();
-    const oneMonthLater = new Date();
-    oneMonthLater.setMonth(now.getMonth() + 1);
-
-    const order = await prisma.order.create({
-      data: {
-        package: packageName,
-        startDate: now,
-        endDate: oneMonthLater,
-        user: { connect: { id: userId } },
-        billingInfo: { connect: { id: billingInfo.id } },
-        status: "pending_payment",
-        merchantOid: merchant_oid,
-        totalPrice: discountedPrice,
-      },
-    });
-
-    await prisma.orderItem.createMany({
-      data: orderItems.map((item) => ({
-        ...item,
-        orderId: order.id,
-      })),
-    });
-
-    if (couponCode) {
-      const coupon = await prisma.coupon.findUnique({
-        where: { code: couponCode },
-        include: { usedBy: true },
-      });
-
-      if (
-        coupon &&
-        !coupon.usedBy.some((u) => u.id === userId) &&
-        coupon.usedBy.length < coupon.usageLimit
-      ) {
-        await prisma.user.update({
-          where: { id: userId },
-          data: {
-            usedCoupons: {
-              connect: { id: coupon.id },
-            },
-          },
-        });
-      }
-    }
-
-    return res.status(201).json({
-      message: "Sipariş başarıyla oluşturuldu.",
-      paytrToken: paytrRes.data.token,
-      orderId: order.id,
-    });
-  } catch (error) {
-    console.error("❌ Sipariş oluşturulurken hata:");
-    return res.status(500).json({
-      error: "Sipariş oluşturulamadı.",
-      detail: error.message,
-    });
-  }
-};
-*/
-
 
 export const prepareOrder = async (req, res) => {
   try {
@@ -221,13 +53,15 @@ export const prepareOrder = async (req, res) => {
       return res.status(400).json({ error: "Eksik sipariş verisi" });
     }
 
-    // 🧹 Fiyat temizleyici fonksiyon
+    if (isNaN(parseFloat(totalPrice))) {
+      return res.status(400).json({ error: "Geçersiz fiyat verisi" });
+    }
+
     const cleanPrice = (priceStr) => {
       const cleaned = priceStr.toString().replace(/[^\d,.-]/g, "").replace(",", ".");
       return parseFloat(cleaned) || 0;
     };
 
-    // 🛒 Sepet ürünlerini temizle
     const cleanedCart = cart.map((item) => ({
       ...item,
       price: cleanPrice(item.price),
@@ -235,7 +69,10 @@ export const prepareOrder = async (req, res) => {
     }));
 
     const test_mode = process.env.PAYTR_TEST_MODE || "1";
-    const merchantOid = uuidv4();
+
+    // ✅ Özel karakter temizliği
+    const rawOid = uuidv4();
+    const merchantOid = rawOid.replace(/[^a-zA-Z0-9]/g, "");
 
     const paytrPayload = {
       user: req.user,
@@ -243,9 +80,9 @@ export const prepareOrder = async (req, res) => {
       cart: cleanedCart,
       totalPrice,
       test_mode,
-      user_name: billingInfo.name + " " + billingInfo.surname, // ✅ EKLENDİ
-      user_address: billingInfo.address,                        // ✅ EKLENDİ
-      user_phone: billingInfo.phone                             // ✅ EKLENDİ
+      user_name: billingInfo.name + " " + billingInfo.surname,
+      user_address: billingInfo.address,
+      user_phone: billingInfo.phone
     };
 
     const tokenResponse = await axios.post(
@@ -284,8 +121,6 @@ export const prepareOrder = async (req, res) => {
     return res.status(500).json({ error: "Sipariş hazırlanırken hata oluştu" });
   }
 };
-
-
 
 
 
@@ -388,40 +223,48 @@ export const handlePaytrCallback = async (req, res) => {
   }
 };
 
-
 export const initiatePaytrPayment = async (req, res) => {
   try {
     const {
       cart,
       totalPrice,
-      merchantOid,
       test_mode,
       user_name,
       user_address,
       user_phone
     } = req.body;
 
+    const cleanMerchantOid = (id) => id?.toString().replace(/[^a-zA-Z0-9]/g, "") || "";
+    const rawMerchantOid = req.body.merchantOid;
+    const merchantOid = cleanMerchantOid(rawMerchantOid);
+
     const user = req.user;
 
     console.log("🔍 initiatePaytrPayment body:", req.body);
     console.log("🔍 initiatePaytrPayment user:", user);
+    console.log("🧼 Temizlenmiş merchantOid:", merchantOid);
 
-    if (!cart || !totalPrice || !merchantOid || !user || !user_name || !user_address || !user_phone) {
+    if (!user || !user.email) {
+      return res.status(400).json({ error: "Kullanıcı verisi eksik veya geçersiz" });
+    }
+
+    if (!cart || !totalPrice || !merchantOid || !user_name || !user_address || !user_phone) {
       return res.status(400).json({ error: "Eksik ödeme verisi" });
     }
 
-    // 🔐 PayTR bilgileri
+    if (isNaN(parseFloat(totalPrice))) {
+      return res.status(400).json({ error: "Geçersiz fiyat verisi" });
+    }
+
     const merchant_id = process.env.PAYTR_MERCHANT_ID.trim();
     const merchant_key = process.env.PAYTR_MERCHANT_KEY.trim();
     const merchant_salt = process.env.PAYTR_MERCHANT_SALT.trim();
 
-    // 🧹 Fiyat temizleyici
     const cleanPrice = (priceStr) => {
       const cleaned = priceStr.toString().replace(/[^\d,.-]/g, "").replace(",", ".");
       return parseFloat(cleaned) || 0;
     };
 
-    // 🧺 Sepeti encode et
     const user_basket = Buffer.from(
       JSON.stringify(
         cart.map((item) => [
@@ -436,6 +279,7 @@ export const initiatePaytrPayment = async (req, res) => {
       req.headers["x-forwarded-for"] ||
       req.connection.remoteAddress ||
       "127.0.0.1";
+
     const email = user.email;
     const payment_amount = parseInt((parseFloat(totalPrice) * 100).toFixed(0));
     const currency = "TL";
@@ -473,9 +317,9 @@ export const initiatePaytrPayment = async (req, res) => {
       max_installment,
       currency,
       test_mode,
-      user_name,     // ✅ Zorunlu
-      user_address,  // ✅ Zorunlu
-      user_phone,    // ✅ Zorunlu
+      user_name,
+      user_address,
+      user_phone,
       merchant_ok_url: process.env.PAYTR_OK_URL,
       merchant_fail_url: process.env.PAYTR_FAIL_URL,
       timeout_limit,
@@ -501,26 +345,18 @@ export const initiatePaytrPayment = async (req, res) => {
     }
 
     return res.json({ token: response.data.token });
-} catch (error) {
-  console.error("❌ PayTR initiate detaylı hata:");
+  } catch (error) {
+    console.error("❌ PayTR initiate detaylı hata:");
+    console.dir(error?.response?.data, { depth: null });
+    console.log("status:", error?.response?.status);
+    console.log("message:", error.message);
 
-  // ✅ Asıl hata mesajı burada görünür
-  console.dir(error?.response?.data, { depth: null });
-
-  // Ek bilgi
-  console.log("status:", error?.response?.status);
-  console.log("message:", error.message);
-
-  return res.status(500).json({
-    error: "Ödeme başlatılamadı",
-    detail: error?.response?.data || error.message,
-  });
-}
+    return res.status(500).json({
+      error: "Ödeme başlatılamadı",
+      detail: error?.response?.data || error.message,
+    });
+  }
 };
-
-
-
-
 
 
 
