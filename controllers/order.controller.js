@@ -237,8 +237,9 @@ export const prepareOrder = async (req, res) => {
   paytrPayload,
   {
     headers: {
-      Authorization: `Bearer ${req.headers.authorization?.split(" ")[1]}`,
-    },
+  Authorization: req.headers.authorization, // direkt bu şekilde
+},
+
   }
 );
 
@@ -372,6 +373,8 @@ export const handlePaytrCallback = async (req, res) => {
 
 export const initiatePaytrPayment = async (req, res) => {
   try {
+    console.log("🔍 Gelen veriler:", { cart, totalPrice, merchantOid, user });
+
     const { cart, totalPrice, merchantOid, test_mode } = req.body;
   const user = req.user;
 
