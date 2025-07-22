@@ -37,7 +37,6 @@ export const getMyOrders = async (req, res) => {
 
 export const prepareOrder = async (req, res) => {
   try {
-    console.error("🔴 prepareOrder gelen istek body:", req.body);
 
     const {
       cart,
@@ -96,7 +95,7 @@ export const prepareOrder = async (req, res) => {
     const { token } = tokenResponse.data;
 
     if (!token) {
-      console.error("🚨 PayTR'den token alınamadı:", tokenResponse.data);
+      console.error("🚨 PayTR'den token alınamadı:");
       return res.status(500).json({ error: "Ödeme token alınamadı" });
     }
 
@@ -147,7 +146,7 @@ export const handlePaytrCallback = async (req, res) => {
       });
 
       if (!paymentMeta) {
-        console.error("❌ paymentMeta da bulunamadı:", merchant_oid);
+        console.error("❌ paymentMeta da bulunamadı:");
         return res.status(404).send("ORDER NOT FOUND");
       }
 
@@ -175,7 +174,7 @@ export const handlePaytrCallback = async (req, res) => {
 });
 
 
-      console.log("🆕 Order oluşturuldu:", order.id);
+      console.log("🆕 Order oluşturuldu:");
     }
 
     if (order.status === "paid") {
@@ -268,9 +267,7 @@ export const initiatePaytrPayment = async (req, res) => {
     const merchantOid = cleanMerchantOid(req.body.merchantOid);
     const user = req.user;
 
-    console.log("🔍 initiatePaytrPayment body:", req.body);
-    console.log("🔍 initiatePaytrPayment user:", user);
-    console.log("🧼 Temizlenmiş merchantOid:", merchantOid);
+   
 
     if (!user || !user.email) {
       return res.status(400).json({ error: "Kullanıcı verisi eksik veya geçersiz" });
@@ -344,7 +341,6 @@ export const initiatePaytrPayment = async (req, res) => {
       lang: "tr",
     };
 
-    console.log("💳 PayTR gönderilecek veri:", paytrData);
 
     const response = await axios.post(
       "https://www.paytr.com/odeme/api/get-token",
@@ -357,20 +353,15 @@ export const initiatePaytrPayment = async (req, res) => {
     );
 
     if (!response.data?.token) {
-      console.error("🚨 PayTR token alınamadı:", response.data);
-      return res.status(500).json({ error: "PayTR token alınamadı", detail: response.data });
+      console.error("🚨 PayTR token alınamadı:");
+      return res.status(500).json({ error: "PayTR token alınamadı"});
     }
 
     return res.json({ token: response.data.token });
   } catch (error) {
-    console.error("❌ PayTR initiate detaylı hata:");
-    console.dir(error?.response?.data, { depth: null });
-    console.log("status:", error?.response?.status);
-    console.log("message:", error.message);
 
     return res.status(500).json({
-      error: "Ödeme başlatılamadı",
-      detail: error?.response?.data || error.message,
+      error: "Ödeme başlatılamadı"
     });
   }
 };
