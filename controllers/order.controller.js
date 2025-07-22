@@ -374,6 +374,9 @@ export const handlePaytrCallback = async (req, res) => {
 export const initiatePaytrPayment = async (req, res) => {
   try {
     console.log("🔍 Gelen veriler:", { cart, totalPrice, merchantOid, user });
+    console.log("🔍 initiatePaytrPayment gelen user:", req.user);
+  console.log("🔍 initiatePaytrPayment body:", req.body);
+
 
     const { cart, totalPrice, merchantOid, test_mode } = req.body;
   const user = req.user;
@@ -389,14 +392,13 @@ export const initiatePaytrPayment = async (req, res) => {
 
     // 🧺 Sepet verisi base64'lenmiş olmalı
     const user_basket = Buffer.from(
-      JSON.stringify(
-        cart.map((item) => [
-          item.name,
-          parseFloat(item.price.toString().replace(/[^\d.]/g, "")),
-          item.quantity || 1,
-        ])
-      )
-    ).toString("base64");
+  JSON.stringify(
+    cart.map((item) => [
+      item.name,
+      Math.round(parseFloat(item.price.toString().replace(/[^\d,.-]/g, "") .replace(",", ".")) * 100 ),item.quantity || 1,])
+  )
+).toString("base64");
+
 
     const user_ip = req.headers["x-forwarded-for"] || req.connection.remoteAddress || "127.0.0.1";
     const email = user.email;
@@ -419,6 +421,10 @@ export const initiatePaytrPayment = async (req, res) => {
       currency +
       test_mode +
       merchant_salt;
+      console.log("💳 PayTR gönderilecek veri:", paytrData);
+console.log("🔐 HASH STR:", hash_str);
+console.log("🔐 TOKEN:", paytr_token);
+
 
     const paytr_token = crypto
       .createHmac("sha256", merchant_key)
