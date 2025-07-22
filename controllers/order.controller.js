@@ -373,44 +373,51 @@ export const handlePaytrCallback = async (req, res) => {
 
 export const initiatePaytrPayment = async (req, res) => {
   try {
-    console.log("🔍 Gelen veriler:", { cart, totalPrice, merchantOid, user });
-    console.log("🔍 initiatePaytrPayment gelen user:", req.user);
-  console.log("🔍 initiatePaytrPayment body:", req.body);
-
-
     const { cart, totalPrice, merchantOid, test_mode } = req.body;
-  const user = req.user;
+    const user = req.user;
+
+    console.log("🔍 initiatePaytrPayment body:", req.body);
+    console.log("🔍 initiatePaytrPayment user:", user);
 
     if (!cart || !totalPrice || !merchantOid || !user) {
       return res.status(400).json({ error: "Eksik ödeme verisi" });
     }
 
-    // 🔒 Gerekli PayTR ayarları
-    const merchant_id = process.env.PAYTR_MERCHANT_ID;
-    const merchant_key = process.env.PAYTR_MERCHANT_KEY;
-    const merchant_salt = process.env.PAYTR_MERCHANT_SALT;
+    // 🔒 PayTR bilgileri
+    const merchant_id = process.env.PAYTR_MERCHANT_ID.trim();
+    const merchant_key = process.env.PAYTR_MERCHANT_KEY.trim();
+    const merchant_salt = process.env.PAYTR_MERCHANT_SALT.trim();
 
-    // 🧺 Sepet verisi base64'lenmiş olmalı
+    // 🧺 user_basket
     const user_basket = Buffer.from(
-  JSON.stringify(
-    cart.map((item) => [
-      item.name,
-      Math.round(parseFloat(item.price.toString().replace(/[^\d,.-]/g, "") .replace(",", ".")) * 100 ),item.quantity || 1,])
-  )
-).toString("base64");
+      JSON.stringify(
+        cart.map((item) => [
+          item.name,
+          Math.round(
+            parseFloat(
+              item.price.toString().replace(/[^\d,.-]/g, "").replace(",", ".")
+            ) * 100
+          ),
+          item.quantity || 1,
+        ])
+      )
+    ).toString("base64");
 
-
-    const user_ip = req.headers["x-forwarded-for"] || req.connection.remoteAddress || "127.0.0.1";
+    const user_ip =
+      req.headers["x-forwarded-for"] ||
+      req.connection.remoteAddress ||
+      "127.0.0.1";
     const email = user.email;
-    const payment_amount = parseInt((parseFloat(totalPrice) * 100).toFixed(0)); // kuruş cinsinden
+    const payment_amount = parseInt((parseFloat(totalPrice) * 100).toFixed(0));
     const currency = "TL";
     const no_installment = "0";
-    const max_installment = "0"; // veya "12"
+    const max_installment = "0";
     const timeout_limit = "30";
     const debug_on = "1";
 
-    // 🔐 HASH OLUŞTUR
-    const hash_str = merchant_id +
+    // 🔐 HASH
+    const hash_str =
+      merchant_id +
       user_ip +
       merchantOid +
       email +
@@ -421,17 +428,13 @@ export const initiatePaytrPayment = async (req, res) => {
       currency +
       test_mode +
       merchant_salt;
-      console.log("💳 PayTR gönderilecek veri:", paytrData);
-console.log("🔐 HASH STR:", hash_str);
-console.log("🔐 TOKEN:", paytr_token);
-
 
     const paytr_token = crypto
       .createHmac("sha256", merchant_key)
       .update(hash_str)
       .digest("base64");
 
-    // 📦 Gönderilecek payload
+    // 📦 Veriyi hazırla
     const paytrData = {
       merchant_id,
       user_ip,
@@ -448,10 +451,12 @@ console.log("🔐 TOKEN:", paytr_token);
       merchant_fail_url: process.env.PAYTR_FAIL_URL,
       timeout_limit,
       debug_on,
-      lang: "tr"
+      lang: "tr",
     };
 
-    // 🌐 POST isteği (form-urlencoded)
+    console.log("💳 PayTR gönderilecek veri:", paytrData);
+
+    // 🌐 Gönderim
     const response = await axios.post(
       "https://www.paytr.com/odeme/api/get-token",
       qs.stringify(paytrData),
@@ -468,6 +473,7 @@ console.log("🔐 TOKEN:", paytr_token);
     return res.status(500).json({ error: "Ödeme başlatılamadı" });
   }
 };
+
 
 
 
