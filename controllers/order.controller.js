@@ -158,6 +158,8 @@ export const handlePaytrCallback = async (req, res) => {
           totalPrice: paymentMeta.totalPrice,
           status: "pending",
           package: paymentMeta.packageName,
+              endDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000), 
+
 
           billingInfo: {
             create: paymentMeta.billingInfo,
