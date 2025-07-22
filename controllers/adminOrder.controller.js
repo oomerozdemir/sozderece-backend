@@ -194,9 +194,15 @@ export const checkPaytrStatus = async (req, res) => {
     // Eğer başarılıysa veritabanını güncelle
     if (response.data.status === "success") {
       await prisma.order.updateMany({
-        where: { merchantOid: merchant_oid, status: "pending_payment" },
-        data: { status: "paid" },
-      });
+  where: {
+    merchantOid: merchant_oid,
+    status: {
+      in: ["pending", "pending_payment"], // İki ihtimali de kapsa
+    },
+  },
+  data: { status: "paid" },
+});
+
     }
 
     return res.status(200).json(response.data);
