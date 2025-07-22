@@ -3,7 +3,7 @@ import { validateCoupon, markCouponUsed, createCoupon, getAllCoupons, deleteCoup
 import { authenticateToken, authorizeRoles } from "../../middleware/authMiddleware.js";
 const router = express.Router();
 
-router.post("/validate",authorizeRoles("admin"), validateCoupon);
+router.post("/validate", authenticateToken, validateCoupon);
 router.post("/mark-used",authorizeRoles("admin"), markCouponUsed);
 router.get("/all", authenticateToken,authorizeRoles("admin"), getAllCoupons);
 router.delete("/:id", authenticateToken,authorizeRoles("admin"), deleteCoupon);
