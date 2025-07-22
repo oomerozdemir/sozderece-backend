@@ -502,13 +502,21 @@ export const initiatePaytrPayment = async (req, res) => {
 
     return res.json({ token: response.data.token });
  } catch (error) {
-  console.error("❌ PayTR initiate hata:", {
-    status: error?.response?.status,
-    statusText: error?.response?.statusText,
-    headers: error?.response?.headers,
-    message: error.message,
-    detail: error?.response?.data,
+  console.error("❌ PayTR initiate detaylı hata:");
+
+  // ✅ Asıl hata mesajı burada görünür
+  console.dir(error?.response?.data, { depth: null });
+
+  // Ek bilgi
+  console.log("status:", error?.response?.status);
+  console.log("message:", error.message);
+
+  return res.status(500).json({
+    error: "Ödeme başlatılamadı",
+    detail: error?.response?.data || error.message,
   });
+}
+
 
     return res.status(500).json({ error: "Ödeme başlatılamadı", detail: error?.response?.data || error.message });
   }
