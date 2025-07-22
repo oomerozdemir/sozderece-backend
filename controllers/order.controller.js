@@ -137,13 +137,40 @@ export const handlePaytrCallback = async (req, res) => {
       return res.status(403).send("INVALID HASH");
     }
 
-    const order = await prisma.order.findUnique({
+    let order = await prisma.order.findUnique({
       where: { merchantOid: merchant_oid },
     });
 
     if (!order) {
-      console.error("❌ Sipariş bulunamadı:", merchant_oid);
-      return res.status(404).send("ORDER NOT FOUND");
+      const paymentMeta = await prisma.paymentMeta.findUnique({
+        where: { merchantOid: merchant_oid },
+      });
+
+      if (!paymentMeta) {
+        console.error("❌ paymentMeta da bulunamadı:", merchant_oid);
+        return res.status(404).send("ORDER NOT FOUND");
+      }
+
+      order = await prisma.order.create({
+        data: {
+          userId: paymentMeta.userId,
+          merchantOid: merchant_oid,
+          totalPrice: paymentMeta.totalPrice,
+          status: "pending",
+          billingInfo: {
+            create: paymentMeta.billingInfo,
+          },
+          orderItems: {
+            create: paymentMeta.cart.map((item) => ({
+              name: item.name,
+              price: item.price,
+              quantity: item.quantity,
+            })),
+          },
+        },
+      });
+
+      console.log("🆕 Order oluşturuldu:", order.id);
     }
 
     if (order.status === "paid") {
@@ -220,6 +247,7 @@ export const handlePaytrCallback = async (req, res) => {
     res.status(500).send("SERVER ERROR");
   }
 };
+
 
 export const initiatePaytrPayment = async (req, res) => {
   try {
