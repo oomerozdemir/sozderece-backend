@@ -1,5 +1,6 @@
 import { PrismaClient } from "@prisma/client";
 import bcrypt from 'bcrypt';
+import { sendCoachAssignmentToStudent, sendStudentAssignmentToCoach } from "../utils/sendEmail.js";
 
 
 
@@ -139,7 +140,7 @@ export const assignCoachToUser = async (req, res) => {
   try {
     const { userId, coachId } = req.body;
 
-    // Kullanıcı kontrolü
+    // Kullanıcı (öğrenci) kontrolü
     const user = await prisma.user.findUnique({ where: { id: parseInt(userId) } });
     if (!user) {
       return res.status(404).json({ message: "Kullanıcı bulunamadı." });
@@ -147,20 +148,29 @@ export const assignCoachToUser = async (req, res) => {
 
     let assignedCoachData = null;
 
-    // Eğer coachId gönderilmişse, koç kontrolü yap
     if (coachId) {
-      const coach = await prisma.coach.findUnique({ where: { id: parseInt(coachId) } });
+      // Koç kontrolü + e-posta için user ilişkisi
+      const coach = await prisma.coach.findUnique({
+        where: { id: parseInt(coachId) },
+        include: { user: true }, // koçun e-posta adresi için
+      });
+
       if (!coach) {
         return res.status(404).json({ message: "Koç bulunamadı." });
       }
+
       assignedCoachData = {
         id: coach.id,
         name: coach.name,
         subject: coach.subject,
       };
+
+      // E-posta gönderimi
+      await sendCoachAssignmentToStudent(user.email, coach);
+      await sendStudentAssignmentToCoach(coach.user.email, user);
     }
 
-    // Kullanıcıya koç ata veya kaldır (coachId null olabilir)
+    // Koç atama/kaldırma
     await prisma.user.update({
       where: { id: parseInt(userId) },
       data: {
