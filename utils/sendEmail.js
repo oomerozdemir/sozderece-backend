@@ -132,11 +132,12 @@ export const sendCoachAssignmentToStudent = async (to, coach) => {
         <td style="padding: 0 24px 24px;">
           <div style="background: #eff6ff; border: 1px solid #bfdbfe; padding: 16px; border-radius: 8px;">
             <p><strong>👤 Koç Adı:</strong> ${coach.name}</p>
-            <p><strong>📘 Branş:</strong> ${coach.subject || "Belirtilmedi"}</p>
           </div>
           <div style="margin-top: 20px; color: #555; font-size: 14px;">
-            <p>Artık çalışmalarınızı destekleyecek bir koçunuz var. İhtiyacınız oldukça iletişim kurmaktan çekinmeyin.</p>
-          </div>
+            <p>Artık çalışmalarınızı destekleyecek bir koçunuz var.</p>
+            <p><strong>Koçunuzla ilgili tüm bilgilere öğrenci panelinden ulaşabilirsiniz.</strong></p>
+          <p><strong>Sözderece Koçluk'u tercih ettiğiniz için teşekkür ederiz.</strong></p>
+            </div>
         </td>
       </tr>
       <tr>
@@ -171,9 +172,10 @@ export const sendStudentAssignmentToCoach = async (to, student) => {
           <div style="background: #ecfdf5; border: 1px solid #d1fae5; padding: 16px; border-radius: 8px;">
             <p><strong>👤 Öğrenci Adı:</strong> ${student.name}</p>
             <p><strong>📧 E-Posta:</strong> ${student.email}</p>
+
           </div>
           <div style="margin-top: 20px; color: #555; font-size: 14px;">
-            <p>Öğrenciyle iletişim kurarak ders planınızı oluşturabilirsiniz. Başarılar dileriz!</p>
+            <p>Koç panelinden öğrenciyle alakalı bilgileri görüntüleyip iletişim kurarabilir, ilk görüşmenizi oluşturabilirsiniz. İyi çalışmalar dileriz!</p>
           </div>
         </td>
       </tr>
