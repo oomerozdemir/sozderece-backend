@@ -132,6 +132,7 @@ export const sendCoachAssignmentToStudent = async (to, coach) => {
         <td style="padding: 0 24px 24px;">
           <div style="background: #eff6ff; border: 1px solid #bfdbfe; padding: 16px; border-radius: 8px;">
             <p><strong>👤 Koç Adı:</strong> ${coach.name}</p>
+            <p><strong>📧 E-posta:</strong> ${coach.user?.email || "Belirtilmedi"}</p>
           </div>
           <div style="margin-top: 20px; color: #555; font-size: 14px;">
             <p>Artık çalışmalarınızı destekleyecek bir koçunuz var.</p>
