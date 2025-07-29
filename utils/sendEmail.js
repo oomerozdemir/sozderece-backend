@@ -16,7 +16,7 @@ const transporter = nodemailer.createTransport({
 export const sendEmail = async ({ to, subject, html }) => {
   try {
     await transporter.sendMail({
-      from: `"SözDerece" <${process.env.EMAIL_USER}>`,
+      from: `"Sözderece" <${process.env.EMAIL_USER}>`,
       to,
       subject,
       html,
@@ -44,13 +44,13 @@ export const sendPaymentSuccessEmail = async (to, order) => {
       <tr>
         <td style="padding: 0 24px 24px;">
           <div style="background: #ecfdf5; border: 1px solid #d1fae5; padding: 16px; border-radius: 8px;">
-            <p><strong>📦 Sipariş No:</strong> #${order.id}</p>
-            <p><strong>🎁 Paket:</strong> ${order.package}</p>
-            <p><strong>📅 Geçerlilik:</strong> ${new Date(order.startDate).toLocaleDateString()} - ${new Date(order.endDate).toLocaleDateString()}</p>
+            <p><strong> Sipariş No:</strong> #${order.id}</p>
+            <p><strong> Paket İsmi:</strong> ${order.package}</p>
+            <p><strong>  Geçerlilik Tarihi:</strong> ${new Date(order.startDate).toLocaleDateString()} - ${new Date(order.endDate).toLocaleDateString()}</p>
             ${discounted ? `
-              <p><strong>💳 Kupon:</strong> ${order.couponCode} (%${order.discountRate})</p>
-              <p><strong>💰 İndirimsiz Tutar:</strong> <del>${order.originalPrice.toFixed(2)} TL</del></p>
-              <p><strong>💰 İndirimli Tutar:</strong> ${order.totalPrice.toFixed(2)} TL</p>
+              <p><strong> Kupon:</strong> ${order.couponCode} (%${order.discountRate})</p>
+              <p><strong> İndirimsiz Tutar:</strong> <del>${order.originalPrice.toFixed(2)} TL</del></p>
+              <p><strong> İndirimli Tutar:</strong> ${order.totalPrice.toFixed(2)} TL</p>
             ` : `
               <p><strong>💰 Ödenen Tutar:</strong> ${order.totalPrice.toFixed(2)} TL</p>
             `}
@@ -105,7 +105,7 @@ export const sendVerificationEmail = async (to, code) => {
 
 export const sendPasswordResetEmail = async (to, resetUrl) => {
   const html = `
-    <h2>🔐 Şifre Sıfırlama</h2>
+    <h2>Şifre Sıfırlama</h2>
     <p>Şifrenizi sıfırlamak için aşağıdaki bağlantıya tıklayın:</p>
     <p><a href="${resetUrl}">${resetUrl}</a></p>
     <p>Bu bağlantı 15 dakika boyunca geçerlidir.</p>
@@ -113,7 +113,7 @@ export const sendPasswordResetEmail = async (to, resetUrl) => {
 
   await sendEmail({
     to,
-    subject: "🔐 Şifre Sıfırlama Bağlantısı",
+    subject: "Şifre Sıfırlama Bağlantısı",
     html,
   });
 };
