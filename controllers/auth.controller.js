@@ -1,7 +1,6 @@
 import { PrismaClient } from "@prisma/client";
 import bcrypt from "bcrypt";
 import jwt from "jsonwebtoken";
-import { createVerificationCode } from "../services/verificationService.js";
 import { sendPasswordResetEmail } from "../utils/sendEmail.js";
 import crypto from "crypto";
 
@@ -31,15 +30,8 @@ export const registerUser = async (req, res) => {
         phone,
         grade,
         track,
-        isVerified: false,
       },
     });
-
-  await createVerificationCode({
-    userId: newUser.id,
-    type: "email",
-    target: normalizedEmail,
-  });
 
     res.status(201).json({
       success: true,
@@ -65,12 +57,6 @@ export const loginUser = async (req, res) => {
       return res.status(401).json({ success: false, message: "Kullanıcı bulunamadı." });
     }
 
-    if (!user.isVerified) {
-      return res.status(403).json({
-        success: false,
-        message: "Lütfen önce e-posta adresinizi doğrulayın.",
-      });
-    }
 
     const isMatch = await bcrypt.compare(password, user.password);
     if (!isMatch) {
