@@ -58,12 +58,21 @@ export const verifyCode = async ({ userId, type, target, code }) => {
     },
     orderBy: { createdAt: "desc" },
   });
- 
-  if (!record || record.code !== code) {
-  throw new Error("Geçersiz veya süresi dolmuş kod.");
-}
 
+  if (!record || record.code !== code) {
+    throw new Error("Geçersiz veya süresi dolmuş kod.");
+  }
+
+  // ✅ Kod geçerli, sil
   await prisma.verificationCode.delete({ where: { id: record.id } });
+
+  // ✅ Kullanıcıyı doğrula
+  if (type === "email") {
+    await prisma.user.update({
+      where: { id: userId },
+      data: { isVerified: true },
+    });
+  }
 
   return true;
 };
