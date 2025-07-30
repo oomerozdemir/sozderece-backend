@@ -30,7 +30,8 @@ export const registerUser = async (req, res) => {
         role: role || "student",
         phone,
         grade,
-        track
+        track,
+        isVerified: false,
       },
     });
 
@@ -51,11 +52,9 @@ export const registerUser = async (req, res) => {
   }
 };
 
-
 export const loginUser = async (req, res) => {
   try {
     const { email, password } = req.body;
-
     const normalizedEmail = email.trim().toLowerCase();
 
     const user = await prisma.user.findUnique({
@@ -64,6 +63,13 @@ export const loginUser = async (req, res) => {
 
     if (!user) {
       return res.status(401).json({ success: false, message: "Kullanıcı bulunamadı." });
+    }
+
+    if (!user.isVerified) {
+      return res.status(403).json({
+        success: false,
+        message: "Lütfen önce e-posta adresinizi doğrulayın.",
+      });
     }
 
     const isMatch = await bcrypt.compare(password, user.password);
@@ -78,7 +84,7 @@ export const loginUser = async (req, res) => {
         role: user.role
       },
       process.env.JWT_SECRET,
-      { expiresIn: process.env.JWT_EXPIRES_IN || "7d" } // 🔒 Süre .env'den alınır
+      { expiresIn: process.env.JWT_EXPIRES_IN || "7d" }
     );
 
     res.status(200).json({
@@ -90,7 +96,7 @@ export const loginUser = async (req, res) => {
         name: user.name,
         email: user.email,
         role: user.role,
-        emailVerified: user.emailVerified || false // ✅ Frontend için gönderilir
+        emailVerified: user.emailVerified || false
       }
     });
 
@@ -99,6 +105,7 @@ export const loginUser = async (req, res) => {
     res.status(500).json({ success: false, message: "Bir hata oluştu." });
   }
 };
+
 
 
 
