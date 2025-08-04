@@ -5,7 +5,7 @@ import {deleteOrder, getAllOrdersForAdmin, getRefundRequests, approveRefundReque
 import { authenticateToken, authorizeRoles } from "../../middleware/authMiddleware.js";
 import { PrismaClient } from "@prisma/client";
 import upload from "../../middleware/upload.js";
-
+import { sendExpiringOrderReminders } from "../../controllers/reminder.controller.js";
 import { createCoachWithUser, getAllCoaches, updateCoach, deleteCoach, assignCoachToUser } from "../../controllers/adminCoach.controller.js";
 const prisma = new PrismaClient();
 
@@ -46,6 +46,10 @@ router.put(
 );
 router.delete("/coaches/:id", authenticateToken, authorizeRoles("admin"), deleteCoach);
 router.post("/assign-coach", authenticateToken, authorizeRoles("admin"), assignCoachToUser);
+
+
+// Süresi yaklaşan siparişler için e-posta hatırlatması gönder
+router.post("/orders/send-expiry-reminders", authenticateToken, authorizeRoles("admin"), sendExpiringOrderReminders);
 
 
 
