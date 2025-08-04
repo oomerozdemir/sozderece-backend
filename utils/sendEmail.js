@@ -195,3 +195,36 @@ export const sendStudentAssignmentToCoach = async (to, student) => {
     html,
   });
 };
+
+
+export const sendOrderExpiryReminder = async (to, order) => {
+  const html = `
+    <div style="font-family: Arial, sans-serif; background-color: #fefce8; padding: 20px;">
+      <table width="100%" style="max-width: 600px; margin: auto; background: white; border-radius: 12px; overflow: hidden; box-shadow: 0 2px 8px rgba(0,0,0,0.05);">
+        <tr>
+          <td style="padding: 24px; text-align: center;">
+            <h2 style="color: #f59e0b; margin: 0;">⏳ Süre Dolmak Üzere</h2>
+            <p style="color: #555;">Siparişinizin süresi yakında sona eriyor.</p>
+          </td>
+        </tr>
+        <tr>
+          <td style="padding: 0 24px 24px;">
+            <div style="background: #fef3c7; border: 1px solid #fde68a; padding: 16px; border-radius: 8px;">
+              <p><strong>Paket:</strong> ${order.package}</p>
+              <p><strong>Bitiş Tarihi:</strong> ${new Date(order.endDate).toLocaleDateString()}</p>
+            </div>
+            <div style="margin-top: 20px; text-align: center;">
+              <a href="https://sozderecekocluk.com/paketler" style="background-color: #f59e0b; color: white; padding: 12px 24px; border-radius: 8px; text-decoration: none; font-weight: bold;">Paketi Yenile</a>
+            </div>
+          </td>
+        </tr>
+      </table>
+    </div>
+  `;
+
+  await sendEmail({
+    to,
+    subject: "⏳ Sipariş Süreniz Bitmek Üzere",
+    html,
+  });
+};
