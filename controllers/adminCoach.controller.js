@@ -1,7 +1,6 @@
 import { PrismaClient } from "@prisma/client";
 import bcrypt from 'bcrypt';
 import { sendCoachAssignmentToStudent, sendStudentAssignmentToCoach } from "../utils/sendEmail.js";
-import cloudinary from "../utils/cloudinary.js";
 import { uploadBufferToCloudinary } from "../helpers/cloudinaryUpload.js";
 
 
