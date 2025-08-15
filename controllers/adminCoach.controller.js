@@ -1,7 +1,8 @@
 import { PrismaClient } from "@prisma/client";
 import bcrypt from 'bcrypt';
 import { sendCoachAssignmentToStudent, sendStudentAssignmentToCoach } from "../utils/sendEmail.js";
-
+import cloudinary from "../utils/cloudinary.js";
+import { uploadBufferToCloudinary } from "../helpers/cloudinaryUpload.js";
 
 
 const prisma = new PrismaClient();
@@ -37,88 +38,73 @@ const coaches = await prisma.coach.findMany({
 };
 
 
+
 export const createCoachWithUser = async (req, res) => {
-  console.log("Dosya:", req.file);
   try {
     const { name, email, subject, description } = req.body;
+    if (!name || !email) return res.status(400).json({ message: "İsim ve e-posta zorunludur." });
 
-    if (!name || !email) {
-      return res.status(400).json({ message: "İsim ve e-posta zorunludur." });
-    }
-
-    // Kullanıcı zaten varsa
     const existing = await prisma.user.findUnique({ where: { email } });
-    if (existing) {
-      return res.status(409).json({ message: "Bu e-posta ile bir kullanıcı zaten var." });
-    }
+    if (existing) return res.status(409).json({ message: "Bu e-posta ile bir kullanıcı zaten var." });
 
     const hashedPassword = await bcrypt.hash("default123", 10);
-
     const newUser = await prisma.user.create({
-      data: {
-        name,
-        email,
-        password: hashedPassword,
-        role: "coach",
-        isVerified: true,
-        emailVerified: true,
-      },
+      data: { name, email, password: hashedPassword, role: "coach", isVerified: true, emailVerified: true },
     });
 
-    const imagePath = req.file ? req.file.path : null;
+   let imageUrl = null;
+
+if (req.file?.buffer) {
+  const result = await uploadBufferToCloudinary(req.file.buffer, name);
+  imageUrl = result.secure_url;
+} else if (req.file?.path) {
+  imageUrl = req.file.path; // CloudinaryStorage ile gelen hazır URL
+}
 
     await prisma.coach.create({
-      data: {
-        name,
-        subject,
-        description,
-        image: imagePath,
-        userId: newUser.id,
-      },
+      data: { name, subject, description, image: imageUrl, userId: newUser.id },
     });
 
-    res.status(201).json({ message: "Koç başarıyla oluşturuldu.", userId: newUser.id });
+    return res.status(201).json({ message: "Koç başarıyla oluşturuldu.", userId: newUser.id });
   } catch (error) {
     console.error("Koç (user) oluşturulamadı:", error);
-    res.status(500).json({ message: "Koç oluşturulurken bir hata oluştu." });
+    return res.status(500).json({ message: "Koç oluşturulurken bir hata oluştu." });
   }
 };
-
 
 
 // Koçu güncelle
 export const updateCoach = async (req, res) => {
   try {
     const { name, subject, description, email } = req.body;
-    const image = req.file ? req.file.path : undefined;
+    const id = parseInt(req.params.id);
 
-    // Koç bilgilerini güncelle
-    const updatedCoach = await prisma.coach.update({
-      where: { id: parseInt(req.params.id) },
-      data: {
-        name,
-        subject,
-        description,
-        ...(image && { image }),
-      },
-    });
+    // Güncellenecek alanlar
+    const data = { name, subject, description };
 
-    // Koçun ilişkili olduğu kullanıcıyı da güncelle (email değişikliği için)
-    const coach = await prisma.coach.findUnique({ where: { id: parseInt(req.params.id) } });
+    // Yeni resim geldiyse Cloudinary’e yükle
+  if (req.file?.buffer) {
+  const result = await uploadBufferToCloudinary(req.file.buffer, name);
+  data.image = result.secure_url;
+} else if (req.file?.path) {
+  data.image = req.file.path; // CloudinaryStorage ile gelen hazır URL
+}
 
+    const updatedCoach = await prisma.coach.update({ where: { id }, data });
+
+    // Email alanı user tablosunda — sen zaten update ediyorsun
+    const coach = await prisma.coach.findUnique({ where: { id } });
     if (coach && email) {
-      await prisma.user.update({
-        where: { id: coach.userId },
-        data: { email },
-      });
+      await prisma.user.update({ where: { id: coach.userId }, data: { email } });
     }
 
-    res.status(200).json(updatedCoach);
+    return res.status(200).json(updatedCoach);
   } catch (error) {
     console.error("Koç güncellenemedi:", error);
-    res.status(500).json({ message: "Koç güncellenemedi." });
+    return res.status(500).json({ message: "Koç güncellenemedi." });
   }
 };
+
 
 
 // Koçu sil
