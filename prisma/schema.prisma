@@ -21,33 +21,33 @@ model TrialMeeting {
   name      String
   email     String
   phone     String
-  userType  String   // Öğrenci veya Veli
+  userType  String // Öğrenci veya Veli
   message   String
   createdAt DateTime @default(now())
 }
 
-
 model User {
-  id              Int           @id @default(autoincrement())
-  name            String
-  email           String        @unique
-  password        String
-  role            String
-  phone           String?
-  isVerified      Boolean       @default(false)
-  createdAt       DateTime      @default(now())
-  emailVerified   Boolean       @default(false)
-  phoneVerified   Boolean       @default(false)
-  assignedCoachId Int?
-  grade           String?
-  track           String?
-  coachProfile    Coach?        @relation("CoachProfile")
-  couponUsages    CouponUsage[]
-  orders          Order[]
-  assignedCoach   Coach?        @relation("AssignedCoach", fields: [assignedCoachId], references: [id])
-  verificationCodes VerificationCode[]
+  id                  Int                  @id @default(autoincrement())
+  name                String?
+  email               String               @unique
+  password            String?
+  role                String
+  phone               String?
+  isVerified          Boolean              @default(false)
+  createdAt           DateTime             @default(now())
+  emailVerified       Boolean              @default(false)
+  phoneVerified       Boolean              @default(false)
+  assignedCoachId     Int?
+  grade               String?
+  track               String?
+  coachProfile        Coach?               @relation("CoachProfile")
+  couponUsages        CouponUsage[]
+  orders              Order[]
+  assignedCoach       Coach?               @relation("AssignedCoach", fields: [assignedCoachId], references: [id])
+  verificationCodes   VerificationCode[]
   passwordResetTokens PasswordResetToken[]
-  paymentMetas  PaymentMeta[]
+  paymentMetas        PaymentMeta[]
+  carts               Cart[]
 }
 
 model Coach {
@@ -87,6 +87,38 @@ model Package {
   price       Float
 }
 
+model Cart {
+  id        String     @id @default(cuid())
+  userId    Int? // Int? çünkü User.id Int
+  user      User?      @relation(fields: [userId], references: [id])
+  email     String?
+  status    CartStatus @default(OPEN)
+  createdAt DateTime   @default(now())
+  updatedAt DateTime   @updatedAt
+  items     CartItem[]
+  completed Boolean     @default(false) // ödeme tamamlandı mı?
+  reminderStep   Int         @default(0) // 0 = hiç mail atılmadı, 1 = ilk mail, 2 = ikinci mail...
+
+}
+
+model CartItem {
+  id        String @id @default(cuid())
+  cartId    String
+  cart      Cart   @relation(fields: [cartId], references: [id])
+  slug      String
+  title     String
+  unitPrice Int
+  quantity  Int    @default(1)
+
+  @@unique([cartId, slug])
+}
+
+enum CartStatus {
+  OPEN
+  ORDERED
+  ABANDONED
+}
+
 model BillingInfo {
   id          Int     @id @default(autoincrement())
   email       String
@@ -103,13 +135,13 @@ model BillingInfo {
 }
 
 model OrderItem {
-  id          Int    @id @default(autoincrement())
+  id          Int     @id @default(autoincrement())
   name        String
   price       Float
   quantity    Int
   description String?
   orderId     Int
-  order       Order  @relation(fields: [orderId], references: [id])
+  order       Order   @relation(fields: [orderId], references: [id])
 }
 
 model Coupon {
@@ -136,33 +168,33 @@ model VerificationCode {
   id        Int      @id @default(autoincrement())
   user      User     @relation(fields: [userId], references: [id])
   userId    Int
-  type      String   // "email" veya "phone"
-  target    String   // gönderilecek adres/numara
+  type      String // "email" veya "phone"
+  target    String // gönderilecek adres/numara
   code      String
   createdAt DateTime @default(now())
   expiresAt DateTime
 }
+
 model PasswordResetToken {
-  id         Int      @id @default(autoincrement())
-  token      String   @unique
-  user       User     @relation(fields: [userId], references: [id])
-  userId     Int
-  createdAt  DateTime @default(now())
-  expiresAt  DateTime
+  id        Int      @id @default(autoincrement())
+  token     String   @unique
+  user      User     @relation(fields: [userId], references: [id])
+  userId    Int
+  createdAt DateTime @default(now())
+  expiresAt DateTime
 }
 
 model PaymentMeta {
-  id            Int      @id @default(autoincrement())
-  merchantOid   String   @unique
-  userId        Int
-  cart          Json
-  billingInfo   Json
-  packageName   String
-  discountRate  Int
-  couponCode    String?
-  totalPrice    Float
-  createdAt     DateTime @default(now())
+  id           Int      @id @default(autoincrement())
+  merchantOid  String   @unique
+  userId       Int
+  cart         Json
+  billingInfo  Json
+  packageName  String
+  discountRate Int
+  couponCode   String?
+  totalPrice   Float
+  createdAt    DateTime @default(now())
 
-  user          User     @relation(fields: [userId], references: [id])
+  user User @relation(fields: [userId], references: [id])
 }
-

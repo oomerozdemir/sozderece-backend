@@ -3,6 +3,7 @@ import bcrypt from "bcrypt";
 import jwt from "jsonwebtoken";
 import { sendPasswordResetEmail } from "../utils/sendEmail.js";
 import crypto from "crypto";
+import { createVerificationCode, verifyCode } from "../services/verificationService.js";
 
 
 const prisma = new PrismaClient();
@@ -321,3 +322,103 @@ export const updatePassword = async (req, res) => {
     res.status(500).json({ message: "Şifre güncellenemedi." });
   }
 };
+
+
+export const sendOtp = async (req, res) => {
+  try {
+    const raw = (req.body?.email || "").trim().toLowerCase();
+    const email = raw.includes("@") ? raw : null;
+    if (!email) return res.status(400).json({ success: false, message: "Geçerli bir e-posta gerekli." });
+
+    let user = await prisma.user.findUnique({ where: { email } });
+    if (!user) {
+      // minimal kullanıcı (password null olabilir)
+      user = await prisma.user.create({
+        data: {
+          email,
+          role: "student",
+          emailVerified: false,
+        },
+        select: { id: true, email: true }
+      });
+    }
+
+    // OTP üret + gönder (servis içinde süre/ratelimit zaten olmalı)
+    await createVerificationCode({ userId: user.id, type: "email", target: email });
+
+    // enumeration engellemek için 200
+    return res.status(200).json({ success: true, message: "Doğrulama kodu gönderildi." });
+  } catch (err) {
+    console.error("sendOtp error:", err);
+    return res.status(500).json({ success: false, message: "Kod gönderilemedi." });
+  }
+};
+
+
+export const verifyOtpAndLogin = async (req, res) => {
+  try {
+    const email = (req.body?.email || "").trim().toLowerCase();
+    const code = (req.body?.code || "").trim();
+    const { packageId, slug } = req.body || {};
+
+    const user = await prisma.user.findUnique({ where: { email } });
+    if (!user) return res.status(400).json({ success: false, message: "Kullanıcı bulunamadı." });
+
+    // kodu doğrula
+    await verifyCode({ userId: user.id, type: "email", target: email, code });
+
+    // email doğrulandı
+    await prisma.user.update({
+      where: { id: user.id },
+      data: { emailVerified: true, isVerified: true }
+    });
+
+    // JWT üret
+    const token = jwt.sign(
+      { id: user.id, email: user.email, role: user.role || "student" },
+      process.env.JWT_SECRET,
+      { expiresIn: process.env.JWT_EXPIRES_IN || "7d" }
+    );
+
+     //İSTEĞE BAĞLI: backend taraflı sepete ekleme
+     //Eğer server-side cart varsa bu bloğu aç.
+     try {
+       const pkg = packageId
+         ? await prisma.package.findUnique({ where: { id: packageId } })
+         : await prisma.package.findUnique({ where: { slug } });
+       if (pkg) {
+         // Kullanıcının aktif sepetini bul/oluştur
+         let cart = await prisma.cart.findFirst({ where: { userId: user.id, status: "OPEN" } });
+         if (!cart) {
+           cart = await prisma.cart.create({ data: { userId: user.id, status: "OPEN" } });
+         }
+         // cart item (idempotent ekleme istersen unique constraint kullan)
+         await prisma.cartItem.create({
+           data: { cartId: cart.id, packageId: pkg.id, quantity: 1 }
+         });
+       }
+     } catch (e) {
+       console.warn("Cart add skipped:", e?.message);
+     }
+
+    // Güncel kullanıcıyı oku
+    const fresh = await prisma.user.findUnique({
+      where: { id: user.id },
+      select: {
+        id: true, name: true, email: true, role: true,
+        emailVerified: true, phoneVerified: true, grade: true, track: true
+      }
+    });
+
+    return res.status(200).json({
+      success: true,
+      message: "Giriş başarılı.",
+      token,
+      user: fresh
+    });
+  } catch (err) {
+    console.error("verifyOtpAndLogin error:", err);
+    return res.status(400).json({ success: false, message: "Kod geçersiz veya süresi dolmuş." });
+  }
+};
+
