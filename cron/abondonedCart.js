@@ -4,7 +4,7 @@ import { sendEmail } from "../utils/sendEmail.js";
 
 const prisma = new PrismaClient();
 
-const FRONTEND_URL = process.env.FRONTEND_URL || "https://seninsiten.com";
+const FRONTEND_URL = process.env.FRONTEND_URL || "https://sozderecekocluk.com";
 const TZ = "Europe/Istanbul";
 
 // Her saat başı, İstanbul saatine göre
