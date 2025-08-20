@@ -3,7 +3,7 @@ import dotenv from "dotenv";
 import cors from "cors";
 import allRoutes from "./routes/index.js"; // 👈 tek yerden tüm route'lar
 import path from "path";
-import "./cron/abandonedCart.js";
+import "./cron/abondonedCart.js";
 
 
 dotenv.config();
