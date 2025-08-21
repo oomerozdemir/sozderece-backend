@@ -21,8 +21,8 @@ router.post("/login", loginUser);
 
 router.post("/verify-contact", authenticateToken, verifyContact);
 
-router.post("/otp/send", sendOtp);
-router.post("/otp/verify",  verifyOtpAndLogin);
+router.post("/otp/send",sendOtp);
+router.post("/otp/verify", verifyOtpAndLogin);
 router.get("/me", authenticateToken, getMe);
 router.put("/update-profile", authenticateToken, updateProfile);
 
