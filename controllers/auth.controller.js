@@ -323,32 +323,33 @@ export const updatePassword = async (req, res) => {
   }
 };
 
+function makeDisplayName() {
+  const n = Math.floor(1000 + Math.random() * 9000); // 1000–9999
+  return `Kullanıcı${n}`;
+}
 
 export const sendOtp = async (req, res) => {
   try {
-    const raw = (req.body?.email || "").trim().toLowerCase();
-    const email = raw.includes("@") ? raw : null;
-    if (!email) return res.status(400).json({ success: false, message: "Geçerli bir e-posta gerekli." });
-
-    let user = await prisma.user.findUnique({ where: { email } });
-    if (!user) {
-// minimal kullanıcı (password yok) + random görünen ad
-user = await prisma.user.create({
-  data: {
-    email,
-    role: "student",
-    emailVerified: false,
-    name: makeDisplayName(),
-  
-  },
-  select: {id: true, email: true}
-});
+    const email = (req.body?.email || "").trim().toLowerCase();
+    if (!email || !email.includes("@")) {
+      return res.status(400).json({ success: false, message: "Geçerli bir e-posta gerekli." });
     }
 
-    // OTP üret + gönder (servis içinde süre/ratelimit zaten olmalı)
+    // idempotent: aynı email için ikinci kayıt oluşmaz
+    const user = await prisma.user.upsert({
+      where: { email },
+      update: {}, // var olanı değiştirme
+      create: {
+        email,
+        role: "student",
+        emailVerified: false,
+        name: makeDisplayName(), // sadece ilk yaratmada atanır
+      },
+      select: { id: true, email: true },
+    });
+
     await createVerificationCode({ userId: user.id, type: "email", target: email });
 
-    // enumeration engellemek için 200
     return res.status(200).json({ success: true, message: "Doğrulama kodu gönderildi." });
   } catch (err) {
     console.error("sendOtp error:", err);
@@ -357,11 +358,6 @@ user = await prisma.user.create({
 };
 
 
-// auth.controller.js (yardımcı)
-function makeDisplayName() {
-  const n = Math.floor(1000 + Math.random() * 9000); // 1000–9999
-  return `Kullanıcı${n}`;
-}
 
 // --- verifyOtpAndLogin (kopyala-değiştir) ---
 export const verifyOtpAndLogin = async (req, res) => {
@@ -373,25 +369,24 @@ export const verifyOtpAndLogin = async (req, res) => {
       return res.status(400).json({ success: false, message: "E-posta ve kod zorunludur." });
     }
 
-    // 1) Kullanıcıyı bul; yoksa oluştur (passwordless kayıt)
-    let user = await prisma.user.findUnique({ where: { email } });
-    if (!user) {
-      user = await prisma.user.create({
-        data: {
-          email,
-          role: "student",
-          emailVerified: false,
-          name: makeDisplayName(),
-        },
-      });
-    }
+    // idempotent kullanıcı edinimi
+    let user = await prisma.user.upsert({
+      where: { email },
+      update: {}, // var olanı değiştirme
+      create: {
+        email,
+        role: "student",
+        emailVerified: false,
+        name: makeDisplayName(),
+      },
+    });
 
-    // 2) OTP doğrula
+    // OTP doğrulama (başarısızsa throw)
     await verifyCode({ userId: user.id, type: "email", target: email, code });
 
-    // 3) Email doğrulandı + ad boşsa doldur
+    // Email doğrulandı; ad boşsa doldur
     const needsName = !user.name || user.name.trim().length === 0;
-    await prisma.user.update({
+    user = await prisma.user.update({
       where: { id: user.id },
       data: {
         emailVerified: true,
@@ -400,14 +395,14 @@ export const verifyOtpAndLogin = async (req, res) => {
       },
     });
 
-    // 4) JWT üret
+    // JWT
     const token = jwt.sign(
       { id: user.id, email: user.email, role: user.role || "student" },
       process.env.JWT_SECRET,
       { expiresIn: process.env.JWT_EXPIRES_IN || "7d" }
     );
 
-    // 5) Güncel kullanıcıyı döndür
+    // Güncel kullanıcıyı döndür
     const fresh = await prisma.user.findUnique({
       where: { id: user.id },
       select: {
@@ -432,9 +427,6 @@ export const verifyOtpAndLogin = async (req, res) => {
     });
   } catch (err) {
     console.error("verifyOtpAndLogin error:", err);
-    return res
-      .status(400)
-      .json({ success: false, message: "Kod geçersiz veya süresi dolmuş." });
+    return res.status(400).json({ success: false, message: "Kod geçersiz veya süresi dolmuş." });
   }
 };
-
