@@ -364,7 +364,7 @@ export const verifyOtpAndLogin = async (req, res) => {
   try {
     const email = (req.body?.email || "").trim().toLowerCase();
     const code  = (req.body?.code  || "").trim();
-
+    const rememberMe = Boolean(req.body?.rememberMe);
     if (!email || !code) {
       return res.status(400).json({ success: false, message: "E-posta ve kod zorunludur." });
     }
@@ -399,7 +399,7 @@ export const verifyOtpAndLogin = async (req, res) => {
     const token = jwt.sign(
       { id: user.id, email: user.email, role: user.role || "student" },
       process.env.JWT_SECRET,
-      { expiresIn: process.env.JWT_EXPIRES_IN || "7d" }
+      { expiresIn: rememberMe ? "30d" : (process.env.JWT_EXPIRES_IN || "7d") }
     );
 
     // Güncel kullanıcıyı döndür
