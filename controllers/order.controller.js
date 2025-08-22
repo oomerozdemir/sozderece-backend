@@ -44,17 +44,17 @@ export const prepareOrder = async (req, res) => {
       totalPrice,
       discountRate,
       couponCode,
-      useServerCart, // ✅ yeni: serverdaki sepeti kullan
+      useServerCart, // serverdaki sepeti kullan
     } = req.body;
 
     const userId = req.user?.id;
 
-    // Temel doğrulama: server cart kullanılmıyorsa 'cart' ve 'totalPrice' zorunlu
+    // Temel doğrulama
     if ((!cart && !useServerCart) || !billingInfo || !packageName) {
       return res.status(400).json({ error: "Eksik sipariş verisi" });
     }
 
-    // ✅ 1) Server'daki aktif sepeti kullan (completed:false)
+    // 1) Server sepeti kullanılacaksa: aktif sepeti oku ve PayTR formatına çevir
     if (useServerCart) {
       const openCart = await prisma.cart.findFirst({
         where: { completed: false, userId },
@@ -65,10 +65,9 @@ export const prepareOrder = async (req, res) => {
         return res.status(400).json({ error: "Sepet boş." });
       }
 
-      // PayTR ve mevcut akışın beklediği forma dönüştür (price: TL string/number)
       cart = openCart.items.map((i) => ({
         name: i.title,
-        price: (i.unitPrice / 100).toFixed(2), // örn: 250000 -> "2500.00"
+        price: (i.unitPrice / 100).toFixed(2), // kuruş → "TL.xx"
         quantity: i.quantity || 1,
       }));
 
@@ -76,13 +75,13 @@ export const prepareOrder = async (req, res) => {
         openCart.items.reduce((s, i) => s + i.unitPrice * (i.quantity || 1), 0) / 100
       ).toFixed(2);
     } else {
-      // FE'den gelen cart ile ilerleniyorsa totalPrice sayı olmalı
+      // FE'den gelen cart ile ilerleniyorsa totalPrice sayıya çevrilebilir olmalı
       if (isNaN(parseFloat(totalPrice))) {
         return res.status(400).json({ error: "Geçersiz fiyat verisi" });
       }
     }
 
-    // 2) Cart'ı temizle (mevcut helper'larınla uyumlu)
+    // 2) Cart temizliği (fiyat ve miktar normalize)
     const cleanedCart = (cart || []).map((item) => ({
       ...item,
       price: cleanPrice(item.price),
@@ -90,17 +89,16 @@ export const prepareOrder = async (req, res) => {
     }));
 
     const test_mode = process.env.PAYTR_TEST_MODE || "1";
+    const merchantOid = cleanMerchantOid(uuidv4()); // özel karakter temizliği
 
-    // ✅ Özel karakter temizliği
-    const merchantOid = cleanMerchantOid(uuidv4());
-
+    // 3) PayTR token al
     const paytrPayload = {
       user: req.user,
       merchantOid,
       cart: cleanedCart,
       totalPrice,
       test_mode,
-      user_name: billingInfo.name + " " + billingInfo.surname,
+      user_name: `${billingInfo.name} ${billingInfo.surname}`.trim(),
       user_address: billingInfo.address,
       user_phone: billingInfo.phone,
     };
@@ -108,21 +106,16 @@ export const prepareOrder = async (req, res) => {
     const tokenResponse = await axios.post(
       `${process.env.BACKEND_URL}/api/paytr/initiate`,
       paytrPayload,
-      {
-        headers: {
-          Authorization: req.headers.authorization,
-        },
-      }
+      { headers: { Authorization: req.headers.authorization } }
     );
 
-    const { token } = tokenResponse.data;
-
+    const { token } = tokenResponse.data || {};
     if (!token) {
-      console.error("🚨 PayTR'den token alınamadı:");
+      console.error("🚨 PayTR'den token alınamadı.");
       return res.status(500).json({ error: "Ödeme token alınamadı" });
     }
 
-    // 3) Ödeme meta kaydı
+    // 4) paymentMeta kaydı
     await prisma.paymentMeta.create({
       data: {
         merchantOid,
@@ -136,12 +129,37 @@ export const prepareOrder = async (req, res) => {
       },
     });
 
-    return res.json({ token });
+    // 5) (ÖNERİLEN) Siparişi hemen 'pending' oluştur ki OrdersPage'de görünsün
+    // Callback geldiğinde sadece status 'paid' yapılacak.
+    await prisma.order.upsert({
+      where: { merchantOid }, // merchantOid unique olmalı
+      update: {},             // mevcutsa dokunma; status callback'te güncellenecek
+      create: {
+        merchantOid,
+        status: "pending",
+        totalPrice: Number(cleanPrice(totalPrice)), // sayıya çevir
+        package: packageName,
+        endDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000), // örnek: 30 gün sonraya erişim
+        ...(userId ? { user: { connect: { id: userId } } } : {}),
+        billingInfo: { create: billingInfo },
+        orderItems: {
+          create: cleanedCart.map((it) => ({
+            name: it.name,
+            price: Number(cleanPrice(it.price)),
+            quantity: it.quantity,
+          })),
+        },
+      },
+    });
+
+    // 6) Token'ı döndür (FE iframe'e yönlendirecek)
+    return res.json({ token, merchantOid });
   } catch (err) {
     console.error("❌ prepareOrder hatası:", err);
     return res.status(500).json({ error: "Sipariş hazırlanırken hata oluştu" });
   }
 };
+
 
 
 
