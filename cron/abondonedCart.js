@@ -55,7 +55,7 @@ cron.schedule("0 * * * *", async () => {
               </ul>
               <p>Şimdi geri dönün ve alışverişinizi kolayca tamamlayın!</p>
               <div style="text-align:center; margin:30px 0;">
-                <a href="${FRONTEND_URL}/cart"
+                <a href="${FRONTEND_URL}/sepet"
                   style="background:#4f46e5; color:#ffffff; text-decoration:none; padding:12px 24px; border-radius:6px; font-size:16px; font-weight:bold;">
                   Sepetime Git →
                 </a>
