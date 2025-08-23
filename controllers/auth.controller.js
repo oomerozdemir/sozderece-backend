@@ -4,7 +4,7 @@ import jwt from "jsonwebtoken";
 import { sendPasswordResetEmail } from "../utils/sendEmail.js";
 import crypto from "crypto";
 import { createVerificationCode, verifyCode } from "../services/verificationService.js";
-import { generateToken } from "../middlewares/authMiddleware.js"; // 👈 token üretimi burada
+import { generateToken } from "../middleware/authMiddleware.js"; // 👈 token üretimi burada
 
 const prisma = new PrismaClient();
 
