@@ -4,15 +4,20 @@ import jwt from "jsonwebtoken";
 import { sendPasswordResetEmail } from "../utils/sendEmail.js";
 import crypto from "crypto";
 import { createVerificationCode, verifyCode } from "../services/verificationService.js";
-
+import { generateToken } from "../middlewares/authMiddleware.js"; // 👈 token üretimi burada
 
 const prisma = new PrismaClient();
 
+/* --------- Helper --------- */
+function makeDisplayName() {
+  const n = Math.floor(1000 + Math.random() * 9000); // 1000–9999
+  return `Kullanıcı${n}`;
+}
 
+/* --------- REGISTER --------- */
 export const registerUser = async (req, res) => {
   try {
     const { name, email, password, role, phone, grade, track } = req.body;
-
     const normalizedEmail = email.trim().toLowerCase();
 
     const existingUser = await prisma.user.findUnique({ where: { email: normalizedEmail } });
@@ -45,33 +50,26 @@ export const registerUser = async (req, res) => {
   }
 };
 
+/* --------- PASSWORD LOGIN (opsiyonel akış) --------- */
 export const loginUser = async (req, res) => {
   try {
-    const { email, password } = req.body;
+    const { email, password, rememberMe } = req.body;
     const normalizedEmail = email.trim().toLowerCase();
 
-    const user = await prisma.user.findUnique({
-      where: { email: normalizedEmail }
-    });
-
+    const user = await prisma.user.findUnique({ where: { email: normalizedEmail } });
     if (!user) {
       return res.status(401).json({ success: false, message: "Kullanıcı bulunamadı." });
     }
-
 
     const isMatch = await bcrypt.compare(password, user.password);
     if (!isMatch) {
       return res.status(401).json({ success: false, message: "Şifre yanlış." });
     }
 
-    const token = jwt.sign(
-      {
-        id: user.id,
-        email: user.email,
-        role: user.role
-      },
-      process.env.JWT_SECRET,
-      { expiresIn: process.env.JWT_EXPIRES_IN || "7d" }
+    // 👇 rememberMe destekli token
+    const token = generateToken(
+      { id: user.id, email: user.email, role: user.role },
+      Boolean(rememberMe)
     );
 
     res.status(200).json({
@@ -86,19 +84,16 @@ export const loginUser = async (req, res) => {
         emailVerified: user.emailVerified || false
       }
     });
-
   } catch (error) {
     console.error("Login error:", error);
     res.status(500).json({ success: false, message: "Bir hata oluştu." });
   }
 };
 
-
-
-
+/* --------- ME --------- */
 export const getMe = async (req, res) => {
   try {
-    const { id: userId } = req.user; 
+    const { id: userId } = req.user;
 
     const user = await prisma.user.findUnique({
       where: { id: userId },
@@ -128,7 +123,7 @@ export const getMe = async (req, res) => {
   }
 };
 
-
+/* --------- UPDATE PROFILE --------- */
 export const updateProfile = async (req, res) => {
   try {
     const userId = req.user.id;
@@ -138,7 +133,7 @@ export const updateProfile = async (req, res) => {
       where: { id: userId },
       data: {
         ...(name && { name }),
-        ...(email && {email,emailVerified: false }),
+        ...(email && { email, emailVerified: false }),
         ...(phone && { phone }),
         ...(grade && { grade }),
         ...(track !== undefined && { track: track || null }),
@@ -162,8 +157,7 @@ export const updateProfile = async (req, res) => {
   }
 };
 
-
-
+/* --------- CHANGE PASSWORD --------- */
 export const changePassword = async (req, res) => {
   try {
     const { userId } = req.user;
@@ -190,34 +184,26 @@ export const changePassword = async (req, res) => {
   }
 };
 
+/* --------- FORGOT / RESET PASSWORD --------- */
 export const forgotPassword = async (req, res) => {
-
   try {
     const input = req.body.input || req.body.email;
-    console.log("Gönderilen input:", input);
-
     const email = input?.trim().toLowerCase();
 
-  if (!email || !email.includes("@")) {
-  return res.status(400).json({ message: "Geçerli bir e-posta gerekli." });
-}
+    if (!email || !email.includes("@")) {
+      return res.status(400).json({ message: "Geçerli bir e-posta gerekli." });
+    }
 
-    const user = await prisma.user.findUnique({ where: { email: input.trim().toLowerCase() } });
+    const user = await prisma.user.findUnique({ where: { email } });
     if (!user) return res.status(404).json({ message: "Kullanıcı bulunamadı." });
 
-    // 🔐 Token üret
     const token = crypto.randomBytes(32).toString("hex");
-    const expiresAt = new Date(Date.now() + 1000 * 60 * 15); // 15 dakika geçerli
+    const expiresAt = new Date(Date.now() + 1000 * 60 * 15); // 15 dk
 
     await prisma.passwordResetToken.create({
-      data: {
-        token,
-        userId: user.id,
-        expiresAt,
-      },
+      data: { token, userId: user.id, expiresAt },
     });
 
-    // 📧 Mail gönder
     const resetUrl = `${process.env.FRONTEND_URL}/reset-password?token=${token}`;
     await sendPasswordResetEmail(user.email, resetUrl);
 
@@ -255,7 +241,6 @@ export const resetPassword = async (req, res) => {
       },
     });
 
-    // 🔒 Token'i siliyoruz
     await prisma.passwordResetToken.delete({ where: { id: resetToken.id } });
 
     return res.status(200).json({ message: "Şifre başarıyla güncellendi." });
@@ -265,12 +250,11 @@ export const resetPassword = async (req, res) => {
   }
 };
 
-
-
+/* --------- CONTACT VERIFY FLAGGING --------- */
 export const verifyContact = async (req, res) => {
   try {
     const { userId } = req.user;
-    const { type } = req.body; 
+    const { type } = req.body;
 
     if (!["email", "phone"].includes(type)) {
       return res.status(400).json({ message: "Geçersiz doğrulama türü." });
@@ -299,7 +283,6 @@ export const verifyContact = async (req, res) => {
   }
 };
 
-
 export const updatePassword = async (req, res) => {
   const { newPassword } = req.body;
   const userId = req.user.id;
@@ -323,11 +306,7 @@ export const updatePassword = async (req, res) => {
   }
 };
 
-function makeDisplayName() {
-  const n = Math.floor(1000 + Math.random() * 9000); // 1000–9999
-  return `Kullanıcı${n}`;
-}
-
+/* --------- OTP SEND --------- */
 export const sendOtp = async (req, res) => {
   try {
     const email = (req.body?.email || "").trim().toLowerCase();
@@ -338,12 +317,12 @@ export const sendOtp = async (req, res) => {
     // idempotent: aynı email için ikinci kayıt oluşmaz
     const user = await prisma.user.upsert({
       where: { email },
-      update: {}, // var olanı değiştirme
+      update: {},
       create: {
         email,
         role: "student",
         emailVerified: false,
-        name: makeDisplayName(), // sadece ilk yaratmada atanır
+        name: makeDisplayName(),
       },
       select: { id: true, email: true },
     });
@@ -357,22 +336,21 @@ export const sendOtp = async (req, res) => {
   }
 };
 
-
-
-// --- verifyOtpAndLogin (kopyala-değiştir) ---
+/* --------- OTP VERIFY + LOGIN (REMEMBER ME DÂHİL) --------- */
 export const verifyOtpAndLogin = async (req, res) => {
   try {
     const email = (req.body?.email || "").trim().toLowerCase();
     const code  = (req.body?.code  || "").trim();
     const rememberMe = Boolean(req.body?.rememberMe);
+
     if (!email || !code) {
       return res.status(400).json({ success: false, message: "E-posta ve kod zorunludur." });
     }
 
-    // idempotent kullanıcı edinimi
+    // idempotent kullanıcı
     let user = await prisma.user.upsert({
       where: { email },
-      update: {}, // var olanı değiştirme
+      update: {},
       create: {
         email,
         role: "student",
@@ -381,7 +359,7 @@ export const verifyOtpAndLogin = async (req, res) => {
       },
     });
 
-    // OTP doğrulama (başarısızsa throw)
+    // OTP doğrulama
     await verifyCode({ userId: user.id, type: "email", target: email, code });
 
     // Email doğrulandı; ad boşsa doldur
@@ -395,11 +373,10 @@ export const verifyOtpAndLogin = async (req, res) => {
       },
     });
 
-    // JWT
-    const token = jwt.sign(
+    // 👇 rememberMe destekli token
+    const token = generateToken(
       { id: user.id, email: user.email, role: user.role || "student" },
-      process.env.JWT_SECRET,
-      { expiresIn: rememberMe ? "30d" : (process.env.JWT_EXPIRES_IN || "7d") }
+      rememberMe
     );
 
     // Güncel kullanıcıyı döndür

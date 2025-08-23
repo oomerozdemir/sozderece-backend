@@ -34,14 +34,13 @@ export const authorizeRoles = (...allowedRoles) => {
   };
 };
 
-export const generateToken = (user) => {
+export const generateToken = (user, rememberMe = false) => {
+  const fallback = process.env.JWT_EXPIRES_IN || "7d";
+  const expiresIn = rememberMe ? "30d" : fallback;
+
   return jwt.sign(
-    {
-      id: user.id,          // 🟢 Mutlaka gerekli
-      email: user.email,
-      role: user.role,
-    },
+    { id: user.id, email: user.email, role: user.role },
     process.env.JWT_SECRET,
-    { expiresIn: "7d" }
+    { expiresIn }
   );
 };
