@@ -440,19 +440,20 @@ export const silentLogin = async (req, res) => {
 
 
 /* --------------- LOGOUT (COOKIE SİL + DB REVOKE) --------------- */
+// LOGOUT (remember revoke + cookie clear)
 export const logout = async (req, res) => {
   try {
-    // varsayılan: bu cihazı unut (cookie + DB revoke)
+    // Varsayılan: bu cihazı unut (cookie + DB revoke)
+    // İstersen FE {forgetDevice:false} gönderebilirsin.
     const forgetDevice = req.body?.forgetDevice !== false;
 
     if (forgetDevice) {
-      await clearRememberCookie(req, res); // cookie'yi aynı options ile sil + DB revoke
+      await clearRememberCookie(req, res); // DB'de revoke + cookie'yi siler
     }
 
     return res.sendStatus(204);
   } catch (err) {
     console.error("Logout error:", err);
-    // idempotent kalsın
-    return res.status(200).json({ success: true });
+    return res.status(200).json({ success: true }); // idempotent kalsın
   }
 };
