@@ -3,7 +3,6 @@ import dotenv from "dotenv";
 import cors from "cors";
 import cookieParser from "cookie-parser";
 import path from "path";
-
 import allRoutes from "./routes/index.js";
 import "./cron/abondonedCart.js";
 
@@ -18,7 +17,6 @@ app.set("trust proxy", 1);
 const allowedOrigins = [
   "https://sozderecekocluk.com",
   "https://www.sozderecekocluk.com",
-  // "http://localhost:5173", // geliştirirken aç
 ];
 
 app.use(cors({
@@ -29,9 +27,10 @@ app.use(cors({
   },
   credentials: true,
   methods: ["GET","POST","PUT","PATCH","DELETE","OPTIONS"],
-  allowedHeaders: ["Content-Type", "Authorization"],
-}));
+  allowedHeaders: ["Content-Type", "Authorization", "X-Requested-With"],
 
+}));
+app.options("*", cors())
 /* Body parsers */
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
