@@ -48,6 +48,8 @@ model User {
   passwordResetTokens PasswordResetToken[]
   paymentMetas        PaymentMeta[]
   carts               Cart[]
+
+  rememberTokens      RememberToken[]
 }
 
 model Coach {
@@ -197,4 +199,24 @@ model PaymentMeta {
   createdAt    DateTime @default(now())
 
   user User @relation(fields: [userId], references: [id])
+}
+
+model RememberToken {
+  // Cookie formatı: "<id>.<secret>"
+  // id -> bu modelin id'si (cuid), secret -> bcrypt hash'lenip DB'de secretHash olarak saklanır
+  id         String   @id @default(cuid())
+  userId     Int
+  user       User     @relation(fields: [userId], references: [id])
+
+  secretHash String   // raw secret'in bcrypt hash'i
+  userAgent  String?
+  ip         String?
+
+  createdAt  DateTime @default(now())
+  expiresAt  DateTime
+  revoked    Boolean  @default(false)
+
+  @@index([userId])
+  @@index([expiresAt])
+  @@index([revoked])
 }

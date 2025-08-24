@@ -4,7 +4,7 @@ import cors from "cors";
 import allRoutes from "./routes/index.js"; // 👈 tek yerden tüm route'lar
 import path from "path";
 import "./cron/abondonedCart.js";
-
+import cookieParser from "cookie-parser";
 
 dotenv.config();
 const app = express();
@@ -12,7 +12,9 @@ const PORT = process.env.PORT || 5000;
 
 app.use(cors({
   origin: "https://sozderecekocluk.com", // Vercel'deki frontend URL
-  credentials: true
+  credentials: true,
+  allowedHeaders: ["Content-Type", "Authorization"],
+  methods: ["GET","POST","PUT","PATCH","DELETE","OPTIONS"],
 }));
 app.use(express.json());
 
@@ -23,6 +25,7 @@ app.get("/", (req, res) => {
 app.use("/api", allRoutes); // 👈 hepsini /api altında toplar
 app.use("/uploads", express.static(path.join(process.cwd(), "uploads")));
 
+app.use(cookieParser());
 
 
 app.listen(PORT, () => {

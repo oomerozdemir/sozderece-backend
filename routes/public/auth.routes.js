@@ -1,35 +1,41 @@
 import express from "express";
-import { forgotPassword, resetPassword } from "../../controllers/auth.controller.js";
 import {
   registerUser,
   loginUser,
   getMe,
   updateProfile,
-  changePassword,
-  updatePassword,
+  // changePassword, 
+  // updatePassword, 
+  // forgotPassword, 
+  // resetPassword,  
   sendOtp,
-  verifyOtpAndLogin
+  verifyOtpAndLogin,
+  verifyContact,
+  silentLogin,            
+  logout,               
 } from "../../controllers/auth.controller.js";
-
 import { authenticateToken } from "../../middleware/authMiddleware.js";
-import { verifyContact } from "../../controllers/auth.controller.js";
 
 const router = express.Router();
 
+/* Public */
 router.post("/register", registerUser);
 router.post("/login", loginUser);
-
-router.post("/verify-contact", authenticateToken, verifyContact);
-
-router.post("/otp/send",sendOtp);
+router.post("/otp/send", sendOtp);
 router.post("/otp/verify", verifyOtpAndLogin);
+
+/* Remember cookie akışı */
+router.get("/auth/silent-login", silentLogin);  // ✅ FE axios.withCredentials ile çağıracak
+router.post("/auth/logout", logout);            // ✅ çıkışta cookie + DB revoke
+
+/* Protected */
 router.get("/me", authenticateToken, getMe);
 router.put("/update-profile", authenticateToken, updateProfile);
+router.post("/verify-contact", authenticateToken, verifyContact);
 
-/*
-router.patch("/change-password", authenticateToken, changePassword);
-router.post("/forgot-password", forgotPassword);
-router.post("/reset-password", resetPassword);
-router.put("/change-password", authenticateToken, updatePassword);
-*/
+// router.patch("/change-password", authenticateToken, changePassword);
+// router.put("/change-password", authenticateToken, updatePassword);
+// router.post("/forgot-password", forgotPassword);
+// router.post("/reset-password", resetPassword);
+
 export default router;

@@ -1,20 +1,66 @@
 import { PrismaClient } from "@prisma/client";
 import bcrypt from "bcrypt";
-import jwt from "jsonwebtoken";
-import { sendPasswordResetEmail } from "../utils/sendEmail.js";
 import crypto from "crypto";
+import { sendPasswordResetEmail } from "../utils/sendEmail.js";
 import { createVerificationCode, verifyCode } from "../services/verificationService.js";
-import { generateToken } from "../middleware/authMiddleware.js"; // 👈 token üretimi burada
+import { generateToken } from "../middleware/authMiddleware.js"; // access token (kısa)
+import { REMEMBER_COOKIE_NAME, rememberCookieOptions } from "../cron/cookies.js";
 
 const prisma = new PrismaClient();
 
-/* --------- Helper --------- */
+/* ---------------- Helpers ---------------- */
+
 function makeDisplayName() {
   const n = Math.floor(1000 + Math.random() * 9000); // 1000–9999
   return `Kullanıcı${n}`;
 }
 
-/* --------- REGISTER --------- */
+function makeRememberSecret() {
+  // yüksek entropi secret
+  return crypto.randomBytes(32).toString("hex");
+}
+
+async function setRememberCookieForUser(userId, req, res) {
+  const secret = makeRememberSecret();
+  const secretHash = await bcrypt.hash(secret, 10);
+  const expiresAt = new Date(Date.now() + 1000 * 60 * 60 * 24 * 30); // 30 gün
+
+  const rec = await prisma.rememberToken.create({
+    data: {
+      userId,
+      secretHash,
+      userAgent: req.get("user-agent") || null,
+      ip: req.ip || null,
+      expiresAt,
+    },
+    select: { id: true },
+  });
+
+  // cookie değeri: "<id>.<secret>"
+  res.cookie(REMEMBER_COOKIE_NAME, `${rec.id}.${secret}`, rememberCookieOptions);
+}
+
+async function clearRememberCookie(req, res) {
+  try {
+    const raw = req.cookies?.[REMEMBER_COOKIE_NAME];
+    if (raw && typeof raw === "string" && raw.includes(".")) {
+      const [id, secret] = raw.split(".");
+      const rec = await prisma.rememberToken.findUnique({ where: { id } });
+      if (rec && !rec.revoked && rec.expiresAt > new Date()) {
+        const ok = await bcrypt.compare(secret, rec.secretHash);
+        if (ok) {
+          await prisma.rememberToken.update({
+            where: { id: rec.id },
+            data: { revoked: true },
+          });
+        }
+      }
+    }
+  } catch {}
+  res.clearCookie(REMEMBER_COOKIE_NAME, rememberCookieOptions);
+}
+
+/* --------------- REGISTER --------------- */
 export const registerUser = async (req, res) => {
   try {
     const { name, email, password, role, phone, grade, track } = req.body;
@@ -42,15 +88,15 @@ export const registerUser = async (req, res) => {
     res.status(201).json({
       success: true,
       message: "Kayıt başarılı",
-      user: { id: newUser.id, email: newUser.email, role: newUser.role }
+      user: { id: newUser.id, email: newUser.email, role: newUser.role },
     });
   } catch (error) {
-    console.error("Register error:");
+    console.error("Register error:", error);
     res.status(500).json({ success: false, message: "Bir hata oluştu." });
   }
 };
 
-/* --------- PASSWORD LOGIN (opsiyonel akış) --------- */
+/* --------------- PASSWORD LOGIN (opsiyonel) --------------- */
 export const loginUser = async (req, res) => {
   try {
     const { email, password, rememberMe } = req.body;
@@ -61,16 +107,21 @@ export const loginUser = async (req, res) => {
       return res.status(401).json({ success: false, message: "Kullanıcı bulunamadı." });
     }
 
-    const isMatch = await bcrypt.compare(password, user.password);
+    const isMatch = await bcrypt.compare(password, user.password || "");
     if (!isMatch) {
       return res.status(401).json({ success: false, message: "Şifre yanlış." });
     }
 
-    // 👇 rememberMe destekli token
+    // kısa access token
     const token = generateToken(
-      { id: user.id, email: user.email, role: user.role },
-      Boolean(rememberMe)
+      { id: user.id, email: user.email, role: user.role || "student" },
+      false
     );
+
+    // "Beni Hatırla" → remember cookie + DB kaydı
+    if (rememberMe) {
+      await setRememberCookieForUser(user.id, req, res);
+    }
 
     res.status(200).json({
       success: true,
@@ -81,8 +132,8 @@ export const loginUser = async (req, res) => {
         name: user.name,
         email: user.email,
         role: user.role,
-        emailVerified: user.emailVerified || false
-      }
+        emailVerified: user.emailVerified || false,
+      },
     });
   } catch (error) {
     console.error("Login error:", error);
@@ -90,7 +141,7 @@ export const loginUser = async (req, res) => {
   }
 };
 
-/* --------- ME --------- */
+/* --------------- ME --------------- */
 export const getMe = async (req, res) => {
   try {
     const { id: userId } = req.user;
@@ -108,8 +159,8 @@ export const getMe = async (req, res) => {
         emailVerified: true,
         grade: true,
         track: true,
-        phoneVerified: true
-      }
+        phoneVerified: true,
+      },
     });
 
     if (!user) {
@@ -118,12 +169,12 @@ export const getMe = async (req, res) => {
 
     res.status(200).json({ success: true, user });
   } catch (error) {
-    console.error("getMe error:");
+    console.error("getMe error:", error);
     res.status(500).json({ success: false, message: "Sunucu hatası" });
   }
 };
 
-/* --------- UPDATE PROFILE --------- */
+/* --------------- UPDATE PROFILE --------------- */
 export const updateProfile = async (req, res) => {
   try {
     const userId = req.user.id;
@@ -146,26 +197,27 @@ export const updateProfile = async (req, res) => {
         grade: true,
         track: true,
         role: true,
-        isVerified: true
-      }
+        isVerified: true,
+      },
     });
 
     res.status(200).json({ user: updatedUser });
   } catch (error) {
-    console.error("Profil güncelleme hatası:");
+    console.error("Profil güncelleme hatası:", error);
     res.status(500).json({ message: "Profil güncellenemedi" });
   }
 };
 
-/* --------- CHANGE PASSWORD --------- */
+/* --------------- CHANGE PASSWORD --------------- */
 export const changePassword = async (req, res) => {
   try {
     const { userId } = req.user;
     const { currentPassword, newPassword } = req.body;
 
     const user = await prisma.user.findUnique({ where: { id: userId } });
+    if (!user) return res.status(404).json({ success: false, message: "Kullanıcı bulunamadı." });
 
-    const isMatch = await bcrypt.compare(currentPassword, user.password);
+    const isMatch = await bcrypt.compare(currentPassword, user.password || "");
     if (!isMatch) {
       return res.status(400).json({ success: false, message: "Mevcut şifre hatalı." });
     }
@@ -174,17 +226,17 @@ export const changePassword = async (req, res) => {
 
     await prisma.user.update({
       where: { id: userId },
-      data: { password: hashed }
+      data: { password: hashed },
     });
 
     res.status(200).json({ success: true, message: "Şifre başarıyla değiştirildi." });
   } catch (error) {
-    console.error("Şifre değişim hatası:");
+    console.error("Şifre değişim hatası:", error);
     res.status(500).json({ success: false, message: "Şifre değiştirilemedi." });
   }
 };
 
-/* --------- FORGOT / RESET PASSWORD --------- */
+/* --------------- FORGOT / RESET PASSWORD --------------- */
 export const forgotPassword = async (req, res) => {
   try {
     const input = req.body.input || req.body.email;
@@ -250,10 +302,10 @@ export const resetPassword = async (req, res) => {
   }
 };
 
-/* --------- CONTACT VERIFY FLAGGING --------- */
+/* --------------- CONTACT VERIFY FLAGGING --------------- */
 export const verifyContact = async (req, res) => {
   try {
-    const { userId } = req.user;
+    const userId = req.user.id; // <-- düzeltildi
     const { type } = req.body;
 
     if (!["email", "phone"].includes(type)) {
@@ -266,19 +318,14 @@ export const verifyContact = async (req, res) => {
       where: { id: userId },
       data: updateField,
       select: {
-        id: true,
-        name: true,
-        email: true,
-        phone: true,
-        role: true,
-        emailVerified: true,
-        phoneVerified: true
-      }
+        id: true, name: true, email: true, phone: true, role: true,
+        emailVerified: true, phoneVerified: true
+      },
     });
 
     res.status(200).json({ user: updatedUser });
   } catch (error) {
-    console.error("Doğrulama güncelleme hatası:");
+    console.error("Doğrulama güncelleme hatası:", error);
     res.status(500).json({ message: "Doğrulama kaydedilemedi." });
   }
 };
@@ -301,12 +348,12 @@ export const updatePassword = async (req, res) => {
 
     res.json({ message: "Şifre başarıyla güncellendi." });
   } catch (error) {
-    console.error("Şifre güncelleme hatası:");
+    console.error("Şifre güncelleme hatası:", error);
     res.status(500).json({ message: "Şifre güncellenemedi." });
   }
 };
 
-/* --------- OTP SEND --------- */
+/* --------------- OTP SEND --------------- */
 export const sendOtp = async (req, res) => {
   try {
     const email = (req.body?.email || "").trim().toLowerCase();
@@ -336,11 +383,11 @@ export const sendOtp = async (req, res) => {
   }
 };
 
-/* --------- OTP VERIFY + LOGIN (REMEMBER ME DÂHİL) --------- */
+/* --------------- OTP VERIFY + LOGIN (REMEMBER COOKIE DÂHİL) --------------- */
 export const verifyOtpAndLogin = async (req, res) => {
   try {
     const email = (req.body?.email || "").trim().toLowerCase();
-    const code  = (req.body?.code  || "").trim();
+    const code = (req.body?.code || "").trim();
     const rememberMe = Boolean(req.body?.rememberMe);
 
     if (!email || !code) {
@@ -373,11 +420,16 @@ export const verifyOtpAndLogin = async (req, res) => {
       },
     });
 
-    // 👇 rememberMe destekli token
+    // kısa access token
     const token = generateToken(
       { id: user.id, email: user.email, role: user.role || "student" },
-      rememberMe
+      false
     );
+
+    // remember cookie (beni hatırla)
+    if (rememberMe) {
+      await setRememberCookieForUser(user.id, req, res);
+    }
 
     // Güncel kullanıcıyı döndür
     const fresh = await prisma.user.findUnique({
@@ -405,5 +457,74 @@ export const verifyOtpAndLogin = async (req, res) => {
   } catch (err) {
     console.error("verifyOtpAndLogin error:", err);
     return res.status(400).json({ success: false, message: "Kod geçersiz veya süresi dolmuş." });
+  }
+};
+
+/* --------------- SILENT LOGIN (COOKIE → ACCESS TOKEN) --------------- */
+export const silentLogin = async (req, res) => {
+  try {
+    const raw = req.cookies?.[REMEMBER_COOKIE_NAME];
+    if (!raw || typeof raw !== "string" || !raw.includes(".")) {
+      return res.status(401).json({ success: false, message: "Remember yok." });
+    }
+
+    const [id, secret] = raw.split(".");
+    if (!id || !secret) {
+      return res.status(401).json({ success: false, message: "Geçersiz remember." });
+    }
+
+    const rec = await prisma.rememberToken.findUnique({
+      where: { id },
+      include: { user: true },
+    });
+
+    if (!rec || rec.revoked || rec.expiresAt <= new Date()) {
+      return res.status(401).json({ success: false, message: "Remember geçersiz." });
+    }
+
+    const ok = await bcrypt.compare(secret, rec.secretHash);
+    if (!ok) {
+      return res.status(401).json({ success: false, message: "Remember hatalı." });
+    }
+
+    const user = rec.user;
+    if (!user) return res.status(401).json({ success: false });
+
+    const accessToken = generateToken(
+      { id: user.id, email: user.email, role: user.role || "student" },
+      false
+    );
+
+    return res.status(200).json({
+      success: true,
+      token: accessToken,
+      user: {
+        id: user.id,
+        name: user.name,
+        email: user.email,
+        role: user.role,
+        emailVerified: user.emailVerified,
+        phoneVerified: user.phoneVerified,
+        phone: user.phone,
+        grade: user.grade,
+        track: user.track,
+      },
+    });
+  } catch (e) {
+    return res.status(401).json({ success: false });
+  }
+};
+
+/* --------------- LOGOUT (COOKIE SİL + DB REVOKE) --------------- */
+export const logout = async (req, res) => {
+  try {
+    // ❌ Artık remember token'ı revoke etmiyoruz
+    // ❌ Cookie'yi de silmiyoruz
+
+    // FE tarafında sadece localStorage temizlenecek
+    res.status(200).json({ success: true, message: "Çıkış yapıldı (remember cookie korunuyor)." });
+  } catch (err) {
+    console.error("Logout error:", err);
+    res.status(500).json({ success: false, message: "Çıkış yapılamadı." });
   }
 };
