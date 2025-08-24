@@ -1,32 +1,50 @@
 import express from "express";
 import dotenv from "dotenv";
 import cors from "cors";
-import allRoutes from "./routes/index.js"; // 👈 tek yerden tüm route'lar
-import path from "path";
-import "./cron/abondonedCart.js";
 import cookieParser from "cookie-parser";
+import path from "path";
+
+import allRoutes from "./routes/index.js";
+import "./cron/abondonedCart.js";
 
 dotenv.config();
 const app = express();
 const PORT = process.env.PORT || 5000;
 
+/* Proxy arkasında gerçek IP/cookie için önerilir (Render/CF/Nginx vb.) */
+app.set("trust proxy", 1);
+
+/* CORS: credentials için origin whitelist şart */
+const allowedOrigins = [
+  "https://sozderecekocluk.com",
+  "https://www.sozderecekocluk.com",
+  // "http://localhost:5173", // geliştirirken aç
+];
+
 app.use(cors({
-  origin: "https://sozderecekocluk.com", // Vercel'deki frontend URL
+  origin: (origin, cb) => {
+    // Postman/curl gibi origin'siz istekleri kabul et
+    if (!origin) return cb(null, true);
+    return cb(null, allowedOrigins.includes(origin));
+  },
   credentials: true,
-  allowedHeaders: ["Content-Type", "Authorization"],
   methods: ["GET","POST","PUT","PATCH","DELETE","OPTIONS"],
+  allowedHeaders: ["Content-Type", "Authorization"],
 }));
+
+/* Body parsers */
 app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
 
-app.get("/", (req, res) => {
-  res.send("🚀 API çalışıyor!");
-});
-
-app.use("/api", allRoutes); // 👈 hepsini /api altında toplar
-app.use("/uploads", express.static(path.join(process.cwd(), "uploads")));
-
+/* COOKIE PARSER MUTLAKA ROUTE'LARDAN ÖNCE OLMALI */
 app.use(cookieParser());
 
+/* Statik ve health */
+app.get("/", (req, res) => res.send("🚀 API çalışıyor!"));
+app.use("/uploads", express.static(path.join(process.cwd(), "uploads")));
+
+/* API Routes (/api/...) */
+app.use("/api", allRoutes);
 
 app.listen(PORT, () => {
   console.log(`🚀 Sunucu ${PORT} portunda çalışıyor`);
