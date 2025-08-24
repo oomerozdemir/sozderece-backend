@@ -440,18 +440,15 @@ export const silentLogin = async (req, res) => {
 
 
 /* --------------- LOGOUT (COOKIE SİL + DB REVOKE) --------------- */
-// ⬇️ BU FONKSİYONLA DEĞİŞTİR
 export const logout = async (req, res) => {
   try {
-    // Varsayılan true: çoğu kullanıcı "çıkış" deyince bu cihazda hatırlamayı da kapatmak ister
+    // varsayılan: bu cihazı unut (cookie + DB revoke)
     const forgetDevice = req.body?.forgetDevice !== false;
 
     if (forgetDevice) {
-      // DB revoke + cookie temizleme (aynı opsiyonlarla)
-      await clearRememberCookie(req, res);
+      await clearRememberCookie(req, res); // cookie'yi aynı options ile sil + DB revoke
     }
 
-    // Access token stateless olduğu için server tarafında ekstra iş yok
     return res.sendStatus(204);
   } catch (err) {
     console.error("Logout error:", err);
@@ -459,4 +456,3 @@ export const logout = async (req, res) => {
     return res.status(200).json({ success: true });
   }
 };
-

@@ -7,5 +7,4 @@ export const rememberCookieOptions = {
   sameSite: "none",
   path: "/",
   maxAge: 1000 * 60 * 60 * 24 * 30, // 30 gün (ms)
-  ...(process.env.COOKIE_DOMAIN ? { domain: process.env.COOKIE_DOMAIN } : {}),
 };
