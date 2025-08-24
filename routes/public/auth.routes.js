@@ -25,8 +25,8 @@ router.post("/otp/send", sendOtp);
 router.post("/otp/verify", verifyOtpAndLogin);
 
 /* Remember cookie akışı */
-router.get("/auth/silent-login", silentLogin);  // ✅ FE axios.withCredentials ile çağıracak
-router.post("/auth/logout", logout);            // ✅ çıkışta cookie + DB revoke
+router.get("/silent-login", silentLogin);  // ✅ FE axios.withCredentials ile çağıracak
+router.post("/logout", logout);            // ✅ çıkışta cookie + DB revoke
 
 /* Protected */
 router.get("/me", authenticateToken, getMe);
