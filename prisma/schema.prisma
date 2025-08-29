@@ -49,6 +49,9 @@ model User {
   paymentMetas        PaymentMeta[]
   carts               Cart[]
 
+  teacherProfile   TeacherProfile?   @relation("TeacherProfileUser")
+  teacherReviews      TeacherReview[]      @relation("UserTeacherReviews")
+
   rememberTokens      RememberToken[]
 }
 
@@ -219,4 +222,64 @@ model RememberToken {
   @@index([userId])
   @@index([expiresAt])
   @@index([revoked])
+}
+
+enum LessonMode {
+  ONLINE
+  FACE_TO_FACE
+  BOTH
+}
+
+// Ek alanlar
+model TeacherProfile {
+  id            String          @id @default(cuid())
+  userId        Int             @unique
+  user          User            @relation("TeacherProfileUser", fields: [userId], references: [id], onDelete: Cascade)
+
+  firstName     String
+  lastName      String
+  subjects      String[]
+  grades        String[]
+  city          String
+  district      String
+  mode          LessonMode      @default(BOTH)
+  priceOnline   Int?
+  priceF2F      Int?
+  bio           String?
+  photoUrl      String?
+  slug          String          @unique
+  isPublic      Boolean         @default(true)
+
+  // NEW
+  isApproved    Boolean         @default(true)   // ileride admin onayı
+  viewCount     Int             @default(0)
+  ratingAverage Float           @default(0)
+  ratingCount   Int             @default(0)
+  reviews       TeacherReview[]
+
+  createdAt     DateTime        @default(now())
+  updatedAt     DateTime        @updatedAt
+
+  @@index([city])
+  @@index([district])
+  @@index([mode])
+  @@index([viewCount])
+  @@index([ratingAverage])
+  @@index([ratingCount])
+}
+
+model TeacherReview {
+  id               String         @id @default(cuid())
+  teacherProfileId String
+  teacher          TeacherProfile @relation(fields: [teacherProfileId], references: [id], onDelete: Cascade)
+
+  userId           Int?           
+  user             User?          @relation("UserTeacherReviews", fields: [userId], references: [id], onDelete: SetNull)
+
+  rating           Int            // 1..5
+  comment          String?
+  createdAt        DateTime       @default(now())
+
+  @@index([teacherProfileId])
+  @@index([rating])
 }

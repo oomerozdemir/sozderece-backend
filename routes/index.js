@@ -12,6 +12,9 @@ import coachRoutes from "./public/coach.routes.js";
 import couponRoutes from "./public/coupon.routes.js";
 import verificationRoutes from "./public/verification.routes.js";
 import cartRoutes from "./public/cart.routes.js";
+import ogretmenPrivateRoutes from "./public/teacher.private.routes.js";
+import ogretmenlerPublicRoutes from "./public/teacher.public.routes.js";
+
 
 // 🔐 Admin routes
 import adminRoutes from "./admin/adminRoutes.js";
@@ -31,6 +34,8 @@ router.use("/coaches", coachRoutes);
 router.use("/coupon", couponRoutes);
 router.use("/verification", verificationRoutes);
 router.use("/", cartRoutes);
+router.use("/v1/ogretmen", ogretmenPrivateRoutes);
+router.use("/v1/ogretmenler", ogretmenlerPublicRoutes);
 
 
 
