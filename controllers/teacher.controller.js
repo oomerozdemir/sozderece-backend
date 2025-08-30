@@ -2,6 +2,7 @@ import { PrismaClient } from "@prisma/client";
 import bcrypt from "bcrypt";
 import slugify from "slugify";
 import { generateToken } from "../middleware/authMiddleware.js";
+import { createVerificationCode, verifyCode } from "../services/verificationService.js";
 
 const prisma = new PrismaClient();
 
@@ -24,7 +25,7 @@ export const registerTeacher = async (req, res) => {
       grades = [],
       city,
       district,
-      mode,              // "ONLINE" | "FACE_TO_FACE" | "BOTH"
+      mode,
       priceOnline,
       priceF2F,
       bio,
@@ -43,7 +44,6 @@ export const registerTeacher = async (req, res) => {
 
     const hashed = await bcrypt.hash(password, 10);
 
-    // Body'den gelen role'u KESİNLİKLE kullanmıyoruz; güvenlik için sabitliyoruz.
     const user = await prisma.user.create({
       data: {
         name: `${firstName} ${lastName}`,
@@ -58,6 +58,9 @@ export const registerTeacher = async (req, res) => {
     });
 
     const slug = makeSlug(firstName, lastName);
+    const normMode = ["ONLINE", "FACE_TO_FACE", "BOTH"].includes(String(mode || "").toUpperCase())
+      ? String(mode).toUpperCase()
+      : "BOTH";
 
     const profile = await prisma.teacherProfile.create({
       data: {
@@ -68,7 +71,7 @@ export const registerTeacher = async (req, res) => {
         grades,
         city,
         district,
-        mode,
+        mode: normMode,
         priceOnline: priceOnline ?? null,
         priceF2F: priceF2F ?? null,
         bio: bio ?? null,
@@ -78,20 +81,28 @@ export const registerTeacher = async (req, res) => {
       }
     });
 
+    await createVerificationCode({
+      userId: user.id,
+      type: "email",
+      target: user.email
+    });
+
     const token = generateToken({ id: user.id, email: user.email, role: user.role });
 
     return res.status(201).json({
       success: true,
-      message: "Öğretmen kaydı tamamlandı.",
+      message: "Öğretmen kaydı tamamlandı. E-posta doğrulama kodu gönderildi.",
       token,
       user,
-      profile
+      profile,
+      verification: { emailSent: true }
     });
   } catch (err) {
     console.error("registerTeacher error:", err);
     return res.status(500).json({ success: false, message: "Kayıt başarısız." });
   }
 };
+
 
 /** Öğretmen giriş (şifreli) */
 export const loginTeacher = async (req, res) => {
@@ -346,5 +357,52 @@ export const listTeacherReviews = async (req, res) => {
     res.json({ success: true, reviews });
   } catch {
     res.status(500).json({ success: false, message: "Değerlendirmeler alınamadı." });
+  }
+};
+
+
+export const resendTeacherEmailCode = async (req, res) => {
+  try {
+    const userId = req.user?.id; 
+    if (!userId) return res.status(401).json({ message: "Yetkisiz." });
+
+    const user = await prisma.user.findUnique({ where: { id: userId } });
+    if (!user) return res.status(404).json({ message: "Kullanıcı bulunamadı." });
+
+    await createVerificationCode({
+      userId,
+      type: "email",
+      target: user.email,
+    });
+
+    res.json({ success: true, message: "Kod gönderildi." });
+  } catch (e) {
+    res.status(400).json({ success: false, message: e.message || "Kod gönderilemedi." });
+  }
+};
+
+export const verifyTeacherEmailCode = async (req, res) => {
+  try {
+    const userId = req.user?.id; 
+    const { code } = req.body;
+    if (!userId) return res.status(401).json({ message: "Yetkisiz." });
+    if (!code) return res.status(400).json({ message: "Kod gerekli." });
+
+    const user = await prisma.user.findUnique({ where: { id: userId } });
+    if (!user) return res.status(404).json({ message: "Kullanıcı bulunamadı." });
+
+    await verifyCode({
+      userId,
+      type: "email",
+      target: user.email,
+      code: String(code).trim(),
+    });
+
+    
+    const fresh = await prisma.user.findUnique({ where: { id: userId } });
+
+    res.json({ success: true, message: "E-posta doğrulandı.", user: fresh });
+  } catch (e) {
+    res.status(400).json({ success: false, message: e.message || "Kod doğrulanamadı." });
   }
 };
