@@ -2,13 +2,15 @@ import { PrismaClient } from "@prisma/client";
 import bcrypt from "bcrypt";
 import slugify from "slugify";
 import { generateToken } from "../middleware/authMiddleware.js";
-import { createVerificationCode, verifyCode } from "../services/verificationService.js";
-import {addMinutes, eachDayOfInterval, isBefore, isAfter} from "date-fns";
-import { createRequire } from "module";
+import { createVerificationCode } from "../services/verificationService.js";
+import { DateTime } from "luxon";
+
+import { isBefore } from "date-fns";
 
 const prisma = new PrismaClient();
-const require = createRequire(import.meta.url);
-const { zonedTimeToUtc, utcToZonedTime } = require("date-fns-tz");
+
+// Tek bir overlap helper yeterli
+const overlaps = (aStart, aEnd, bStart, bEnd) => aStart < bEnd && bStart < aEnd;
 
 function makeSlug(firstName, lastName) {
   const base = slugify(`${firstName}-${lastName}`, { lower: true, strict: true });
@@ -16,10 +18,6 @@ function makeSlug(firstName, lastName) {
   return `${base}-${rnd}`;
 }
 
-// helper: overlap kontrolü
-function overlaps(aStart, aEnd, bStart, bEnd) {
-  return aStart < bEnd && bStart < aEnd;
-}
 
 /** Öğretmen kayıt (şifreli) */
 export const registerTeacher = async (req, res) => {
@@ -576,69 +574,73 @@ export const getMySlots = async (req, res) => {
     if (!teacher) return res.status(404).json({ message: "Profil bulunamadı." });
 
     const timeZone = tz || teacher.timeZone || "Europe/Istanbul";
-    const startDate = new Date(String(from));
-    const endDate = new Date(String(to));
-    if (isNaN(startDate) || isNaN(endDate) || !isBefore(startDate, endDate)) {
+    const start = DateTime.fromISO(String(from), { zone: timeZone }).startOf("day");
+    const end   = DateTime.fromISO(String(to),   { zone: timeZone }).endOf("day");
+
+    if (!start.isValid || !end.isValid || start >= end) {
       return res.status(400).json({ success: false, message: "Geçersiz tarih aralığı." });
     }
 
     const wantedMode = String(mode || "BOTH").toUpperCase();
     const dur = Number(duration) || 60;
 
-    // gün gün slot üret
-    const days = eachDayOfInterval({ start: startDate, end: endDate });
+    // DB'deki blokaj ve randevuları UTC DateTime'a çevir
+    const offIntervals = teacher.timeOffs.map(off => ({
+      start: DateTime.fromJSDate(off.startsAt, { zone: "utc" }),
+      end:   DateTime.fromJSDate(off.endsAt,   { zone: "utc" }),
+    }));
+    const apptIntervals = teacher.appointments.map(ap => ({
+      start: DateTime.fromJSDate(ap.startsAt, { zone: "utc" }),
+      end:   DateTime.fromJSDate(ap.endsAt,   { zone: "utc" }),
+    }));
+
     const slots = [];
 
-    for (const day of days) {
-      const zDay = utcToZonedTime(day, timeZone);
-      const weekday = zDay.getDay(); // 0..6
+    // Gün gün ilerle
+    for (let day = start; day <= end; day = day.plus({ days: 1 }).startOf("day")) {
+      // Luxon: 1=Mon..7=Sun → şemanda 0=Sun..6=Sat
+      const schemaWeekday = day.weekday % 7;
 
       const windows = teacher.availabilities.filter(a =>
-        a.weekday === weekday && (a.mode === "BOTH" || a.mode === wantedMode || wantedMode === "BOTH")
+        a.weekday === schemaWeekday &&
+        (a.mode === "BOTH" || a.mode === wantedMode || wantedMode === "BOTH")
       );
 
       for (const w of windows) {
-        // günün başlangıcına göre dakikaları localde Date'e çevir → sonra UTC'ye
-        const localStart = new Date(zDay);
-        localStart.setHours(0, 0, 0, 0);
-        const sLocal = addMinutes(localStart, w.startMin);
-        const eLocal = addMinutes(localStart, w.endMin);
+        const ws = day.startOf("day").plus({ minutes: w.startMin }); // local TZ
+        const we = day.startOf("day").plus({ minutes: w.endMin });   // local TZ
 
-        // slotları duration adımıyla böl
-        for (let t = sLocal; isBefore(t, eLocal); t = addMinutes(t, dur)) {
-          const slotEndLocal = addMinutes(t, dur);
-          if (isAfter(slotEndLocal, eLocal)) break;
+        // duration adımıyla slot üret
+        for (let t = ws; t.plus({ minutes: dur }) <= we; t = t.plus({ minutes: dur })) {
+          const tEnd = t.plus({ minutes: dur });
 
-          // UTC’ye çevir
-          const slotStartUTC = zonedTimeToUtc(t, timeZone);
-          const slotEndUTC = zonedTimeToUtc(slotEndLocal, timeZone);
+          // UTC'ye çevir
+          const startUTC = t.toUTC();
+          const endUTC   = tEnd.toUTC();
 
-          // ÇAKIŞMA kontrolü: timeOff & appointments
-          const blockedByTimeOff = teacher.timeOffs.some(off =>
-            overlaps(slotStartUTC, slotEndUTC, off.startsAt, off.endsAt)
-          );
-          if (blockedByTimeOff) continue;
+          // ÇAKIŞMA: timeOff veya appointment ile kesişiyor mu?
+          const blockedByOff  = offIntervals.some(off => overlaps(startUTC, endUTC, off.start, off.end));
+          if (blockedByOff) continue;
 
-          const blockedByAppt = teacher.appointments.some(ap =>
-            overlaps(slotStartUTC, slotEndUTC, ap.startsAt, ap.endsAt)
-          );
+          const blockedByAppt = apptIntervals.some(ap => overlaps(startUTC, endUTC, ap.start, ap.end));
           if (blockedByAppt) continue;
 
           slots.push({
-            start: slotStartUTC.toISOString(),
-            end: slotEndUTC.toISOString(),
-            mode: wantedMode === "BOTH" ? w.mode : wantedMode
+            start: startUTC.toISO(),
+            end:   endUTC.toISO(),
+            mode:  wantedMode === "BOTH" ? w.mode : wantedMode
           });
         }
       }
     }
 
-    res.json({ success: true, slots, timeZone });
+    return res.json({ success: true, slots, timeZone });
   } catch (e) {
     console.error(e);
-    res.status(500).json({ success: false, message: "Slotlar oluşturulamadı." });
+    return res.status(500).json({ success: false, message: "Slotlar oluşturulamadı." });
   }
 };
+
 
 // --- 2.5 Öğretmen randevuları (liste/ekle/güncelle - öğretmen paneli için) ---
 export const listMyAppointments = async (req, res) => {
