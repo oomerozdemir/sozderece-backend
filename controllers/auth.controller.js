@@ -4,6 +4,7 @@ import crypto from "crypto";
 import { createVerificationCode, verifyCode } from "../services/verificationService.js";
 import { generateToken } from "../middleware/authMiddleware.js"; // access token (kısa)
 import { REMEMBER_COOKIE_NAME, rememberCookieOptions } from "../cron/cookies.js";
+import { sendEmail } from "../utils/sendEmail.js";
 
 const prisma = new PrismaClient();
 
