@@ -33,9 +33,9 @@ router.get("/me", authenticateToken, getMe);
 router.put("/update-profile", authenticateToken, updateProfile);
 router.post("/verify-contact", authenticateToken, verifyContact);
 
-// router.patch("/change-password", authenticateToken, changePassword);
-// router.put("/change-password", authenticateToken, updatePassword);
-// router.post("/forgot-password", forgotPassword);
-// router.post("/reset-password", resetPassword);
+router.patch("/change-password", authenticateToken, changePassword);
+router.put("/change-password", authenticateToken, updatePassword);
+router.post("/forgot-password", forgotPassword);
+router.post("/reset-password", resetPassword);
 
 export default router;

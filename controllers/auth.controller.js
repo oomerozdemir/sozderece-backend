@@ -369,7 +369,6 @@ export const verifyOtpAndLogin = async (req, res) => {
 };
 
 /* --------------- SILENT LOGIN (COOKIE → ACCESS TOKEN) --------------- */
-// ⬇️ BU FONKSİYONLA DEĞİŞTİR
 export const silentLogin = async (req, res) => {
   const soft = req.query.soft === "1" || req.query.soft === "true";
   try {
@@ -455,5 +454,101 @@ export const logout = async (req, res) => {
   } catch (err) {
     console.error("Logout error:", err);
     return res.status(200).json({ success: true }); // idempotent kalsın
+  }
+};
+
+export const forgotPassword = async (req, res) => {
+  try {
+    const email =
+      (req.body?.email || req.body?.input || "").trim().toLowerCase();
+    if (!email || !email.includes("@")) {
+      return res
+        .status(200)
+        .json({ success: true, message: "Eğer kayıtlıysanız e-posta gönderildi." });
+    }
+
+    const user = await prisma.user.findUnique({ where: { email } });
+    // Kullanıcı yoksa da enumeration engellemek için aynı yanıt:
+    if (!user) {
+      return res
+        .status(200)
+        .json({ success: true, message: "Eğer kayıtlıysanız e-posta gönderildi." });
+    }
+
+    // Önceki token’ı temizle (idempotent)
+    await prisma.passwordResetToken.deleteMany({
+      where: { userId: user.id },
+    });
+
+    const token = crypto.randomBytes(32).toString("hex");
+    const expiresAt = new Date(Date.now() + 1000 * 60 * 30); // 30 dk
+
+    await prisma.passwordResetToken.create({
+      data: { token, userId: user.id, expiresAt },
+    });
+
+    const FRONTEND_URL = process.env.FRONTEND_URL || "https://sozderece.com";
+    const resetLink = `${FRONTEND_URL}/reset-password?token=${token}`;
+
+    await sendEmail({
+      to: email,
+      subject: "Şifre Sıfırlama",
+      html: `
+        <p>Merhaba,</p>
+        <p>Şifrenizi sıfırlamak için aşağıdaki bağlantıya tıklayın:</p>
+        <p><a href="${resetLink}" target="_blank">${resetLink}</a></p>
+        <p>Bu bağlantı <b>30 dakika</b> içinde geçerlidir.</p>
+      `,
+    });
+
+    return res.status(200).json({
+      success: true,
+      message:
+        "Şifre sıfırlama bağlantısı e-postanıza gönderildi. Lütfen spam klasörünü de kontrol edin.",
+    });
+  } catch (err) {
+    console.error("forgotPassword error:", err);
+    return res
+      .status(200)
+      .json({ success: true, message: "Eğer kayıtlıysanız e-posta gönderildi." });
+  }
+};
+
+export const resetPassword = async (req, res) => {
+  try {
+    const { token, newPassword, confirmPassword } = req.body;
+    if (!token || !newPassword || !confirmPassword) {
+      return res.status(400).json({ success: false, message: "Eksik alan." });
+    }
+    if (newPassword !== confirmPassword) {
+      return res
+        .status(400)
+        .json({ success: false, message: "Şifreler uyuşmuyor." });
+    }
+
+    const rec = await prisma.passwordResetToken.findUnique({ where: { token } });
+    if (!rec || rec.expiresAt <= new Date()) {
+      return res
+        .status(400)
+        .json({ success: false, message: "Token geçersiz veya süresi dolmuş." });
+    }
+
+    const hashed = await bcrypt.hash(newPassword, 10);
+    await prisma.user.update({
+      where: { id: rec.userId },
+      data: { password: hashed },
+    });
+
+    // Token’ı tek kullanımlık yap
+    await prisma.passwordResetToken.delete({ where: { token } });
+
+    return res
+      .status(200)
+      .json({ success: true, message: "Şifreniz güncellendi." });
+  } catch (err) {
+    console.error("resetPassword error:", err);
+    return res
+      .status(500)
+      .json({ success: false, message: "Şifre sıfırlama başarısız." });
   }
 };
