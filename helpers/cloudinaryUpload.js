@@ -6,9 +6,9 @@ export const uploadBufferToCloudinary = (buffer, filenameHint = "coach", folder 
       {
         folder,
         resource_type: "image",
-        public_id: undefined, // Cloudinary unique id üretsin
+        public_id: undefined, 
         overwrite: true,
-        transformation: [{ fetch_format: "auto", quality: "auto" }],
+        transformation: [{ fetch_format: "webp", quality: "auto" }],
       },
       (error, result) => (error ? reject(error) : resolve(result))
     );

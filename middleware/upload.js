@@ -14,7 +14,7 @@ const storage = new CloudinaryStorage({
     folder: "sozderece",
     resource_type: "image",
     allowed_formats: ["jpg", "jpeg", "png", "webp"],
-    transformation: [{ fetch_format: "auto", quality: "auto" }],
+    transformation: [{ fetch_format: "webp", quality: "auto" }],
     use_filename: false,
     unique_filename: true,
     overwrite: true,
@@ -22,11 +22,7 @@ const storage = new CloudinaryStorage({
 });
 
 
-/**
- * Multer ayarları:
- * - 5MB limit (ihtiyaca göre artır/azalt)
- * - sadece image mime tiplerine izin
- */
+
 const limits = { fileSize: 5 * 1024 * 1024 }; // 5MB
 const fileFilter = (req, file, cb) => {
   const ok = /image\/(jpe?g|png|webp|gif)/i.test(file.mimetype);

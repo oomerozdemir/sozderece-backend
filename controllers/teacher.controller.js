@@ -406,3 +406,32 @@ export const verifyTeacherEmailCode = async (req, res) => {
     res.status(400).json({ success: false, message: e.message || "Kod doğrulanamadı." });
   }
 };
+
+
+export const uploadTeacherPhoto = async (req, res) => {
+  try {
+    const userId = req.user?.id;
+    if (!userId) return res.status(401).json({ success: false, message: "Yetkisiz." });
+
+    // Multer + CloudinaryStorage ile gelen dosya bilgisi
+    const file = req.file;
+    if (!file) return res.status(400).json({ success: false, message: "Fotoğraf gerekli." });
+
+    const url = file.secure_url || file.path;
+    if (!url) return res.status(500).json({ success: false, message: "Yükleme başarısız." });
+
+    const updated = await prisma.teacherProfile.update({
+      where: { userId },
+      data: { photoUrl: url },
+      select: {
+        id: true, firstName: true, lastName: true, photoUrl: true, slug: true,
+        city: true, district: true, mode: true, priceOnline: true, priceF2F: true
+      }
+    });
+
+    return res.json({ success: true, profile: updated });
+  } catch (e) {
+    console.error("uploadTeacherPhoto error:", e);
+    return res.status(500).json({ success: false, message: "Fotoğraf kaydedilemedi." });
+  }
+};

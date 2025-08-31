@@ -7,7 +7,9 @@ import {
   updateMyTeacherProfile,
   resendTeacherEmailCode,
   verifyTeacherEmailCode,
+  uploadTeacherPhoto,
 } from "../../controllers/teacher.controller.js";
+import upload from "../../middleware/upload.js";
 
 const router = express.Router();
 
@@ -22,5 +24,8 @@ router.put("/me/profil", authenticateToken, authorizeRoles("teacher"), updateMyT
 /* Teacher Regiset Mail Dogrulama Kodu*/
 router.post("/auth/email/resend", authenticateToken, authorizeRoles("teacher"), resendTeacherEmailCode);
 router.post("/auth/email/verify", authenticateToken, authorizeRoles("teacher"), verifyTeacherEmailCode);
+
+// Teacher Bio Photo
+router.post("/me/photo", authenticateToken, authorizeRoles("teacher"), upload.single("photo"), uploadTeacherPhoto);
 
 export default router;
