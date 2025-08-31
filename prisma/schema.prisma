@@ -48,11 +48,12 @@ model User {
   passwordResetTokens PasswordResetToken[]
   paymentMetas        PaymentMeta[]
   carts               Cart[]
+  rememberTokens      RememberToken[]
 
   teacherProfile   TeacherProfile?   @relation("TeacherProfileUser")
   teacherReviews      TeacherReview[]      @relation("UserTeacherReviews")
 
-  rememberTokens      RememberToken[]
+  studentAppointments Appointment[] @relation("StudentAppointments")
 }
 
 model Coach {
@@ -260,6 +261,13 @@ model TeacherProfile {
   createdAt     DateTime        @default(now())
   updatedAt     DateTime        @updatedAt
 
+  timeZone      String?        @default("Europe/Istanbul") // takvim hesaplaması için
+
+  // appointments ilişkiler
+  availabilities  TeacherAvailability[]
+  timeOffs        TeacherTimeOff[]
+  appointments    Appointment[]
+
   @@index([city])
   @@index([district])
   @@index([mode])
@@ -283,3 +291,72 @@ model TeacherReview {
   @@index([teacherProfileId])
   @@index([rating])
 }
+
+// Appointment Schema
+
+enum AppointmentStatus {
+  PENDING
+  CONFIRMED
+  CANCELLED
+}
+
+// --- Haftalık uygunluk pencereleri (bir günde 0..n aralık) ---
+model TeacherAvailability {
+  id               String         @id @default(cuid())
+  teacherProfileId String
+  teacher          TeacherProfile @relation(fields: [teacherProfileId], references: [id], onDelete: Cascade)
+
+  // 0=Sun, 1=Mon ... 6=Sat (date-fns standardına uyduk)
+  weekday          Int
+  startMin         Int            // gün başından dakika (örn 9*60=540)
+  endMin           Int            // (örn 17*60=1020)
+  mode             LessonMode     @default(BOTH)
+  isActive         Boolean        @default(true)
+
+  createdAt        DateTime       @default(now())
+  updatedAt        DateTime       @updatedAt
+
+  @@index([teacherProfileId, weekday])
+}
+
+
+// --- Öğretmenin tatil/blokajları (tekil tarih aralıkları) ---
+model TeacherTimeOff {
+  id               String         @id @default(cuid())
+  teacherProfileId String
+  teacher          TeacherProfile @relation(fields: [teacherProfileId], references: [id], onDelete: Cascade)
+
+  startsAt         DateTime       // UTC
+  endsAt           DateTime       // UTC
+  reason           String?
+
+  createdAt        DateTime       @default(now())
+
+  @@index([teacherProfileId, startsAt, endsAt])
+}
+
+
+// --- Randevu ---
+model Appointment {
+  id               String          @id @default(cuid())
+  teacherProfileId String
+  teacher          TeacherProfile  @relation(fields: [teacherProfileId], references: [id], onDelete: Cascade)
+
+  studentUserId    Int?
+  student          User?           @relation(name: "StudentAppointments", fields: [studentUserId], references: [id], onDelete: SetNull)
+
+
+  startsAt         DateTime        // UTC
+  endsAt           DateTime        // UTC
+  mode             LessonMode
+  status           AppointmentStatus @default(PENDING)
+  price            Int?
+  title            String?
+  notes            String?
+
+  createdAt        DateTime        @default(now())
+  updatedAt        DateTime        @updatedAt
+
+  @@index([teacherProfileId, startsAt])
+}
+

@@ -4,7 +4,7 @@ import {
   getTeacherBySlug,
   trackTeacherView,
   addTeacherReview,
-  listTeacherReviews
+  listTeacherReviews,
 } from "../../controllers/teacher.controller.js";
 import { authenticateToken } from "../../middleware/authMiddleware.js";
 const router = express.Router();
