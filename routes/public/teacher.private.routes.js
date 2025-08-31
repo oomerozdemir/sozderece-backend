@@ -9,7 +9,7 @@ import {
   verifyTeacherEmailCode,
   uploadTeacherPhoto,
   getMyAvailability,getMySlots,upsertMyAvailability,listMyAppointments,listMyTimeOff,
-  createMyTimeOff,createMyAppointment,deleteMyTimeOff,updateMyAppointment,
+  createMyTimeOff,createMyAppointment,deleteMyTimeOff,updateMyAppointment,changeMyPassword,
 } from "../../controllers/teacher.controller.js";
 import upload from "../../middleware/upload.js";
 
@@ -48,5 +48,9 @@ router.get("/me/appointments", authenticateToken, authorizeRoles("teacher"), lis
 router.post("/me/appointments", authenticateToken, authorizeRoles("teacher"), createMyAppointment);
 router.put("/me/appointments/:id", authenticateToken, authorizeRoles("teacher"), updateMyAppointment);
 
+
+
+// Şifre değiştir
+router.put("/me/password", authenticateToken, authorizeRoles("teacher"), changeMyPassword);
 
 export default router;

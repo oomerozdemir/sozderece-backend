@@ -729,3 +729,55 @@ export const updateMyAppointment = async (req, res) => {
     res.status(400).json({ success: false, message: "Randevu güncellenemedi." });
   }
 };
+
+
+
+
+export const changeMyPassword = async (req, res) => {
+  try {
+    const userId = req.user?.id;
+    const { currentPassword, newPassword, confirmPassword } = req.body || {};
+
+    if (!newPassword || !confirmPassword) {
+      return res.status(400).json({ success: false, message: "Yeni şifre ve doğrulama zorunludur." });
+    }
+    if (newPassword !== confirmPassword) {
+      return res.status(400).json({ success: false, message: "Şifreler uyuşmuyor." });
+    }
+    if (newPassword.length < 8) {
+      return res.status(400).json({ success: false, message: "Yeni şifre en az 8 karakter olmalı." });
+    }
+
+    const user = await prisma.user.findUnique({
+      where: { id: userId },
+      select: { id: true, role: true, password: true },
+    });
+    if (!user || user.role !== "teacher") {
+      return res.status(403).json({ success: false, message: "Yetkisiz işlem." });
+    }
+
+    if (user.password) {
+      if (!currentPassword) {
+        return res.status(400).json({ success: false, message: "Mevcut şifre gerekli." });
+      }
+      const ok = await bcrypt.compare(currentPassword, user.password);
+      if (!ok) {
+        return res.status(400).json({ success: false, message: "Mevcut şifre yanlış." });
+      }
+    }
+
+    const hashed = await bcrypt.hash(newPassword, 10);
+    await prisma.user.update({
+      where: { id: userId },
+      data: { password: hashed },
+    });
+
+    await prisma.rememberToken.deleteMany({ where: { userId } });
+    await prisma.passwordResetToken.deleteMany({ where: { userId } });
+
+    return res.json({ success: true, message: "Şifre başarıyla güncellendi." });
+  } catch (e) {
+    console.error("changeMyPassword error:", e);
+    return res.status(500).json({ success: false, message: "Şifre güncellenemedi." });
+  }
+};
