@@ -4,13 +4,11 @@ import slugify from "slugify";
 import { generateToken } from "../middleware/authMiddleware.js";
 import { createVerificationCode, verifyCode } from "../services/verificationService.js";
 import {addMinutes, eachDayOfInterval, isBefore, isAfter} from "date-fns";
-import * as dfnsTz from "date-fns-tz";
-
+import { createRequire } from "module";
 
 const prisma = new PrismaClient();
-
-
-const { zonedTimeToUtc, utcToZonedTime } = dfnsTz;
+const require = createRequire(import.meta.url);
+const { zonedTimeToUtc, utcToZonedTime } = require("date-fns-tz");
 
 function makeSlug(firstName, lastName) {
   const base = slugify(`${firstName}-${lastName}`, { lower: true, strict: true });
