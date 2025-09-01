@@ -822,8 +822,6 @@ export const updateMyAppointment = async (req, res) => {
 };
 
 
-
-
 export const changeMyPassword = async (req, res) => {
   try {
     const userId = req.user?.id;
@@ -870,5 +868,167 @@ export const changeMyPassword = async (req, res) => {
   } catch (e) {
     console.error("changeMyPassword error:", e);
     return res.status(500).json({ success: false, message: "Şifre güncellenemedi." });
+  }
+};
+
+
+// === LESSONS ===
+
+// List + arama + sayfalama
+export const listMyLessons = async (req, res) => {
+  try {
+    const userId = req.user?.id;
+    const teacher = await prisma.teacherProfile.findUnique({
+      where: { userId },
+      select: { id: true }
+    });
+    if (!teacher) return res.status(404).json({ success: false, message: "Profil bulunamadı." });
+
+    const q = String(req.query.q || "").trim();
+    const page = Math.max(1, parseInt(req.query.page || "1", 10));
+    const pageSize = Math.max(1, Math.min(50, parseInt(req.query.pageSize || "10", 10)));
+    const skip = (page - 1) * pageSize;
+
+    const where = {
+      teacherProfileId: teacher.id,
+      isActive: true,
+      ...(q
+        ? {
+            OR: [
+              { subject: { contains: q, mode: "insensitive" } },
+              { topic:   { contains: q, mode: "insensitive" } },
+            ],
+          }
+        : {}),
+    };
+
+    const [items, total] = await prisma.$transaction([
+      prisma.teacherLesson.findMany({
+        where,
+        orderBy: [{ createdAt: "desc" }],
+        skip,
+        take: pageSize,
+      }),
+      prisma.teacherLesson.count({ where }),
+    ]);
+
+    res.json({
+      success: true,
+      items,
+      page,
+      pageSize,
+      total,
+      totalPages: Math.ceil(total / pageSize) || 1,
+    });
+  } catch (e) {
+    console.error("listMyLessons error:", e);
+    res.status(500).json({ success: false, message: "Dersler getirilemedi." });
+  }
+};
+
+// Create
+export const createMyLesson = async (req, res) => {
+  try {
+    const userId = req.user?.id;
+    const teacher = await prisma.teacherProfile.findUnique({
+      where: { userId },
+      select: { id: true, mode: true },
+    });
+    if (!teacher) return res.status(404).json({ success: false, message: "Profil bulunamadı." });
+
+    let { subject, topic, durationMin, priceOnline, priceF2F } = req.body || {};
+
+    subject = String(subject || "").trim();
+    topic   = topic != null ? String(topic).trim() : null;
+
+    if (!subject) return res.status(400).json({ success: false, message: "Ders alanı boş olamaz." });
+
+    durationMin = Number(durationMin) || 60;
+    if (durationMin <= 0) durationMin = 60;
+
+    const toIntOrNull = (v) => (v === "" || v === undefined ? null : Math.max(0, Math.round(Number(v))));
+    const po = toIntOrNull(priceOnline);
+    const pf = toIntOrNull(priceF2F);
+
+    const created = await prisma.teacherLesson.create({
+      data: {
+        teacherProfileId: teacher.id,
+        subject,
+        topic: topic || null,
+        durationMin,
+        priceOnline: po,
+        priceF2F: pf,
+      },
+    });
+
+    res.status(201).json({ success: true, item: created });
+  } catch (e) {
+    console.error("createMyLesson error:", e);
+    res.status(500).json({ success: false, message: "Ders eklenemedi." });
+  }
+};
+
+// Update
+export const updateMyLesson = async (req, res) => {
+  try {
+    const userId = req.user?.id;
+    const { id } = req.params;
+
+    // sahiplik kontrolü
+    const lesson = await prisma.teacherLesson.findUnique({
+      where: { id },
+      select: { id: true, teacherProfileId: true, teacher: { select: { userId: true } } },
+    });
+    if (!lesson || lesson.teacher.userId !== userId) {
+      return res.status(404).json({ success: false, message: "Ders bulunamadı." });
+    }
+
+    let { subject, topic, durationMin, priceOnline, priceF2F, isActive } = req.body || {};
+    const data = {};
+
+    if (subject !== undefined) {
+      subject = String(subject || "").trim();
+      if (!subject) return res.status(400).json({ success: false, message: "Ders alanı boş olamaz." });
+      data.subject = subject;
+    }
+    if (topic !== undefined) data.topic = topic ? String(topic).trim() : null;
+    if (durationMin !== undefined) {
+      const d = Number(durationMin);
+      if (!Number.isFinite(d) || d <= 0) return res.status(400).json({ success: false, message: "Geçersiz süre." });
+      data.durationMin = Math.round(d);
+    }
+
+    const toIntOrNull = (v) => (v === "" || v === undefined ? null : Math.max(0, Math.round(Number(v))));
+    if (priceOnline !== undefined) data.priceOnline = toIntOrNull(priceOnline);
+    if (priceF2F   !== undefined) data.priceF2F    = toIntOrNull(priceF2F);
+    if (isActive   !== undefined) data.isActive    = Boolean(isActive);
+
+    const updated = await prisma.teacherLesson.update({ where: { id }, data });
+    res.json({ success: true, item: updated });
+  } catch (e) {
+    console.error("updateMyLesson error:", e);
+    res.status(500).json({ success: false, message: "Ders güncellenemedi." });
+  }
+};
+
+// Delete (soft değil; istersen soft-delete'e çevirebiliriz)
+export const deleteMyLesson = async (req, res) => {
+  try {
+    const userId = req.user?.id;
+    const { id } = req.params;
+
+    const lesson = await prisma.teacherLesson.findUnique({
+      where: { id },
+      select: { id: true, teacher: { select: { userId: true } } },
+    });
+    if (!lesson || lesson.teacher.userId !== userId) {
+      return res.status(404).json({ success: false, message: "Ders bulunamadı." });
+    }
+
+    await prisma.teacherLesson.delete({ where: { id } });
+    res.json({ success: true });
+  } catch (e) {
+    console.error("deleteMyLesson error:", e);
+    res.status(500).json({ success: false, message: "Ders silinemedi." });
   }
 };

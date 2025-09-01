@@ -360,3 +360,26 @@ model Appointment {
   @@index([teacherProfileId, startsAt])
 }
 
+
+model TeacherLesson {
+  id               String         @id @default(cuid())
+  teacherProfileId String
+  teacher          TeacherProfile @relation(fields: [teacherProfileId], references: [id], onDelete: Cascade)
+
+  // Görünüm: “Matematik > Genel Matematik”
+  subject   String                // Ana ders (Matematik)
+  topic     String?               // Alt başlık (Genel Matematik) - opsiyonel
+  durationMin Int                 @default(60)
+
+  priceOnline Int?
+  priceF2F   Int?
+
+  isActive   Boolean              @default(true)
+
+  createdAt  DateTime             @default(now())
+  updatedAt  DateTime             @updatedAt
+
+  @@index([teacherProfileId])
+  @@index([subject])
+  @@index([topic])
+}
