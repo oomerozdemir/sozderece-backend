@@ -22,7 +22,7 @@ function makeSlug(firstName, lastName) {
 /** Öğretmen kayıt (şifreli) */
 export const registerTeacher = async (req, res) => {
   try {
-    const {
+    let {
       firstName,
       lastName,
       email,
@@ -33,27 +33,62 @@ export const registerTeacher = async (req, res) => {
       city,
       district,
       mode,
-      priceOnline,
-      priceF2F,
       bio,
       photoUrl
-    } = req.body;
+    } = req.body || {};
 
-    const normalizedEmail = (email || "").trim().toLowerCase();
+    // --- Zorunlu kontroller ---
+    const normalizedEmail = String(email || "").trim().toLowerCase();
     if (!normalizedEmail || !password || !firstName || !lastName) {
-      return res.status(400).json({ success: false, message: "Zorunlu alanlar eksik." });
+      return res
+        .status(400)
+        .json({ success: false, message: "Zorunlu alanlar eksik." });
     }
 
+    // E-posta tekil mi?
     const exists = await prisma.user.findUnique({ where: { email: normalizedEmail } });
     if (exists) {
-      return res.status(400).json({ success: false, message: "Bu e-posta zaten kayıtlı." });
+      return res
+        .status(400)
+        .json({ success: false, message: "Bu e-posta zaten kayıtlı." });
     }
 
+    // --- Normalize ---
+    firstName = String(firstName).trim();
+    lastName  = String(lastName).trim();
+    city      = typeof city === "string" ? city.trim() : city;
+    district  = typeof district === "string" ? district.trim() : district;
+
+    const normArray = (arr) =>
+      Array.isArray(arr)
+        ? Array.from(
+            new Set(
+              arr
+                .filter((x) => typeof x === "string")
+                .map((x) => x.trim())
+                .filter(Boolean)
+            )
+          )
+        : [];
+
+    subjects = normArray(subjects);
+    grades   = normArray(grades);
+
+    const allowedModes = new Set(["ONLINE", "FACE_TO_FACE", "BOTH"]);
+    const normMode = (() => {
+      const m = String(mode || "BOTH").toUpperCase().trim();
+      return allowedModes.has(m) ? m : "BOTH";
+    })();
+
+    bio = typeof bio === "string" ? bio.trim() : null;
+    photoUrl = typeof photoUrl === "string" ? photoUrl.trim() : null;
+
+    // --- Kullanıcı oluştur ---
     const hashed = await bcrypt.hash(password, 10);
 
     const user = await prisma.user.create({
       data: {
-        name: `${firstName} ${lastName}`,
+        name: `${firstName} ${lastName}`.trim(),
         email: normalizedEmail,
         password: hashed,
         role: "teacher",
@@ -64,10 +99,8 @@ export const registerTeacher = async (req, res) => {
       select: { id: true, email: true, role: true, name: true }
     });
 
+    // --- Profil oluştur (FİYATLAR YOK) ---
     const slug = makeSlug(firstName, lastName);
-    const normMode = ["ONLINE", "FACE_TO_FACE", "BOTH"].includes(String(mode || "").toUpperCase())
-      ? String(mode).toUpperCase()
-      : "BOTH";
 
     const profile = await prisma.teacherProfile.create({
       data: {
@@ -79,36 +112,48 @@ export const registerTeacher = async (req, res) => {
         city,
         district,
         mode: normMode,
-        priceOnline: priceOnline ?? null,
-        priceF2F: priceF2F ?? null,
-        bio: bio ?? null,
-        photoUrl: photoUrl ?? null,
+        bio,
+        photoUrl,
         slug,
         isPublic: true
       }
     });
 
-    await createVerificationCode({
-      userId: user.id,
-      type: "email",
-      target: user.email
-    });
+    // --- E-posta doğrulama kodu gönder ---
+    let emailSent = false;
+    try {
+      await createVerificationCode({
+        userId: user.id,
+        type: "email",
+        target: user.email
+      });
+      emailSent = true;
+    } catch (e) {
+      // doğrulama kodu gönderilemese de kayıt tamamdır; logla ve devam et
+      console.error("send verification code error:", e);
+    }
 
+    // --- JWT ---
     const token = generateToken({ id: user.id, email: user.email, role: user.role });
 
     return res.status(201).json({
       success: true,
-      message: "Öğretmen kaydı tamamlandı. E-posta doğrulama kodu gönderildi.",
+      message: emailSent
+        ? "Öğretmen kaydı tamamlandı. E-posta doğrulama kodu gönderildi."
+        : "Öğretmen kaydı tamamlandı. (Uyarı: Doğrulama e-postası gönderilemedi)",
       token,
       user,
       profile,
-      verification: { emailSent: true }
+      verification: { emailSent }
     });
   } catch (err) {
     console.error("registerTeacher error:", err);
-    return res.status(500).json({ success: false, message: "Kayıt başarısız." });
+    return res
+      .status(500)
+      .json({ success: false, message: "Kayıt başarısız." });
   }
 };
+
 
 
 /** Öğretmen giriş (şifreli) */
@@ -159,12 +204,15 @@ export const updateMyTeacherProfile = async (req, res) => {
     }
 
     let {
-      firstName, lastName,
-      subjects, grades,
-      city, district,
-      mode,                 // "ONLINE" | "FACE_TO_FACE" | "BOTH"
-      priceOnline, priceF2F,
-      bio, photoUrl,
+      firstName,
+      lastName,
+      subjects,
+      grades,
+      city,
+      district,
+      mode,        // "ONLINE" | "FACE_TO_FACE" | "BOTH"
+      bio,
+      photoUrl,
       isPublic
     } = req.body || {};
 
@@ -174,7 +222,7 @@ export const updateMyTeacherProfile = async (req, res) => {
     if (typeof firstName === "string") firstName = firstName.trim();
     if (typeof lastName === "string")  lastName  = lastName.trim();
 
-    // Dizi alanlar: subjects / grades
+    // Dizi alanlar
     const normArray = (arr) =>
       Array.isArray(arr)
         ? Array.from(
@@ -191,7 +239,7 @@ export const updateMyTeacherProfile = async (req, res) => {
     const normGrades   = normArray(grades);
 
     // Şehir / İlçe
-    if (typeof city === "string")    city    = city.trim();
+    if (typeof city === "string")     city     = city.trim();
     if (typeof district === "string") district = district.trim();
 
     // Mod
@@ -202,30 +250,10 @@ export const updateMyTeacherProfile = async (req, res) => {
         return res.status(400).json({ success: false, message: "Geçersiz ders modu." });
       }
     } else {
-      mode = undefined; 
+      mode = undefined;
     }
 
-    // Fiyatlar (Int? alanlar)
-    const toIntOrNull = (v) => {
-      if (v === null) return null;
-      if (v === undefined || v === "") return undefined; 
-      const n = Number(v);
-      if (!Number.isFinite(n) || n < 0) return undefined;
-      return Math.round(n);
-    };
-    let nPriceOnline = toIntOrNull(priceOnline);
-    let nPriceF2F    = toIntOrNull(priceF2F);
-
-    // Mod-fiyat uyumu: tek moda geçildiyse diğerini null’la
-    // (BOTH ise her ikisi de gönderildiyse güncellenir, gönderilmediyse dokunmayız)
-    if (mode === "ONLINE") {
-      // sadece online geçerli → F2F'i null’a çek (eğer alan gönderildiyse)
-      if (nPriceF2F !== undefined) nPriceF2F = null;
-    } else if (mode === "FACE_TO_FACE") {
-      if (nPriceOnline !== undefined) nPriceOnline = null;
-    }
-
-    // Bio / Photo
+    // Bio / Foto
     if (typeof bio === "string")      bio = bio.trim();
     if (typeof photoUrl === "string") photoUrl = photoUrl.trim();
 
@@ -233,23 +261,21 @@ export const updateMyTeacherProfile = async (req, res) => {
     if (typeof isPublic !== "undefined") {
       isPublic = Boolean(isPublic);
     } else {
-      isPublic = undefined; // gönderilmemişse değiştirme
+      isPublic = undefined;
     }
 
-    // --- Güncellenecek veri setini oluştur ---
+    // --- Güncellenecek veri seti (fiyat YOK) ---
     const data = {
-      ...(firstName !== undefined && { firstName }),
-      ...(lastName  !== undefined && { lastName }),
-      ...(normSubjects !== undefined && { subjects: normSubjects }),
-      ...(normGrades   !== undefined && { grades: normGrades }),
-      ...(city     !== undefined && { city }),
-      ...(district !== undefined && { district }),
-      ...(mode     !== undefined && { mode }),
-      ...(nPriceOnline !== undefined && { priceOnline: nPriceOnline }),
-      ...(nPriceF2F    !== undefined && { priceF2F: nPriceF2F }),
-      ...(bio      !== undefined && { bio }),
-      ...(photoUrl !== undefined && { photoUrl }),
-      ...(isPublic !== undefined && { isPublic }),
+      ...(firstName     !== undefined && { firstName }),
+      ...(lastName      !== undefined && { lastName }),
+      ...(normSubjects  !== undefined && { subjects: normSubjects }),
+      ...(normGrades    !== undefined && { grades: normGrades }),
+      ...(city          !== undefined && { city }),
+      ...(district      !== undefined && { district }),
+      ...(mode          !== undefined && { mode }),
+      ...(bio           !== undefined && { bio }),
+      ...(photoUrl      !== undefined && { photoUrl }),
+      ...(isPublic      !== undefined && { isPublic }),
     };
 
     // Kayıt var mı?
@@ -263,7 +289,7 @@ export const updateMyTeacherProfile = async (req, res) => {
       data
     });
 
-    // İsim değiştiyse User.name’i de güncelle (slug'a dokunmuyoruz)
+    // İsim değiştiyse User.name’i güncelle
     if (firstName !== undefined || lastName !== undefined) {
       const newFirst = firstName ?? updated.firstName;
       const newLast  = lastName  ?? updated.lastName;
@@ -280,6 +306,7 @@ export const updateMyTeacherProfile = async (req, res) => {
     return res.status(500).json({ success: false, message: "Güncelleme başarısız." });
   }
 };
+
 
 
 /** Public – listeleme/arama */
