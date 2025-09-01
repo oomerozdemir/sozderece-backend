@@ -9,7 +9,8 @@ import {
   verifyTeacherEmailCode,
   uploadTeacherPhoto,
   getMyAvailability,getMySlots,upsertMyAvailability,listMyAppointments,listMyTimeOff,
-  createMyTimeOff,createMyAppointment,deleteMyTimeOff,updateMyAppointment,changeMyPassword,
+  createMyTimeOff,createMyAppointment,deleteMyTimeOff,updateMyAppointment,changeMyPassword,listMyLessons,
+  createMyLesson, updateMyLesson, deleteMyLesson,
 } from "../../controllers/teacher.controller.js";
 import upload from "../../middleware/upload.js";
 
@@ -48,9 +49,13 @@ router.get("/me/appointments", authenticateToken, authorizeRoles("teacher"), lis
 router.post("/me/appointments", authenticateToken, authorizeRoles("teacher"), createMyAppointment);
 router.put("/me/appointments/:id", authenticateToken, authorizeRoles("teacher"), updateMyAppointment);
 
-
-
 // Şifre değiştir
 router.put("/me/password", authenticateToken, authorizeRoles("teacher"), changeMyPassword);
+
+// Derslerim
+router.get("/me/lessons", authenticateToken, authorizeRoles("teacher"), listMyLessons);
+router.post("/me/lessons", authenticateToken, authorizeRoles("teacher"), createMyLesson);
+router.put("/me/lessons/:id", authenticateToken, authorizeRoles("teacher"), updateMyLesson);
+router.delete("/me/lessons/:id", authenticateToken, authorizeRoles("teacher"), deleteMyLesson);
 
 export default router;
