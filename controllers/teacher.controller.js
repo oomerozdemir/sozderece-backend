@@ -152,36 +152,126 @@ export const getMyTeacherProfile = async (req, res) => {
 /** Öğretmen – profil güncelle */
 export const updateMyTeacherProfile = async (req, res) => {
   try {
-    const userId = req.user.id;
-    const {
-      firstName, lastName, subjects, grades, city, district,
-      mode, priceOnline, priceF2F, bio, photoUrl, isPublic
-    } = req.body;
+    const userId = req.user?.id;
+    const role = (req.user?.role || "").toLowerCase();
+    if (!userId || role !== "teacher") {
+      return res.status(403).json({ success: false, message: "Yetkisiz işlem." });
+    }
 
+    let {
+      firstName, lastName,
+      subjects, grades,
+      city, district,
+      mode,                 // "ONLINE" | "FACE_TO_FACE" | "BOTH"
+      priceOnline, priceF2F,
+      bio, photoUrl,
+      isPublic
+    } = req.body || {};
+
+    // --- Normalizasyon / Validasyon ---
+
+    // İsimler
+    if (typeof firstName === "string") firstName = firstName.trim();
+    if (typeof lastName === "string")  lastName  = lastName.trim();
+
+    // Dizi alanlar: subjects / grades
+    const normArray = (arr) =>
+      Array.isArray(arr)
+        ? Array.from(
+            new Set(
+              arr
+                .filter((x) => typeof x === "string")
+                .map((x) => x.trim())
+                .filter(Boolean)
+            )
+          )
+        : undefined;
+
+    const normSubjects = normArray(subjects);
+    const normGrades   = normArray(grades);
+
+    // Şehir / İlçe
+    if (typeof city === "string")    city    = city.trim();
+    if (typeof district === "string") district = district.trim();
+
+    // Mod
+    const allowedModes = new Set(["ONLINE", "FACE_TO_FACE", "BOTH"]);
+    if (typeof mode === "string") {
+      mode = mode.trim().toUpperCase();
+      if (!allowedModes.has(mode)) {
+        return res.status(400).json({ success: false, message: "Geçersiz ders modu." });
+      }
+    } else {
+      mode = undefined; 
+    }
+
+    // Fiyatlar (Int? alanlar)
+    const toIntOrNull = (v) => {
+      if (v === null) return null;
+      if (v === undefined || v === "") return undefined; 
+      const n = Number(v);
+      if (!Number.isFinite(n) || n < 0) return undefined;
+      return Math.round(n);
+    };
+    let nPriceOnline = toIntOrNull(priceOnline);
+    let nPriceF2F    = toIntOrNull(priceF2F);
+
+    // Mod-fiyat uyumu: tek moda geçildiyse diğerini null’la
+    // (BOTH ise her ikisi de gönderildiyse güncellenir, gönderilmediyse dokunmayız)
+    if (mode === "ONLINE") {
+      // sadece online geçerli → F2F'i null’a çek (eğer alan gönderildiyse)
+      if (nPriceF2F !== undefined) nPriceF2F = null;
+    } else if (mode === "FACE_TO_FACE") {
+      if (nPriceOnline !== undefined) nPriceOnline = null;
+    }
+
+    // Bio / Photo
+    if (typeof bio === "string")      bio = bio.trim();
+    if (typeof photoUrl === "string") photoUrl = photoUrl.trim();
+
+    // Yayın durumu
+    if (typeof isPublic !== "undefined") {
+      isPublic = Boolean(isPublic);
+    } else {
+      isPublic = undefined; // gönderilmemişse değiştirme
+    }
+
+    // --- Güncellenecek veri setini oluştur ---
     const data = {
       ...(firstName !== undefined && { firstName }),
-      ...(lastName !== undefined && { lastName }),
-      ...(subjects !== undefined && { subjects }),
-      ...(grades !== undefined && { grades }),
-      ...(city !== undefined && { city }),
+      ...(lastName  !== undefined && { lastName }),
+      ...(normSubjects !== undefined && { subjects: normSubjects }),
+      ...(normGrades   !== undefined && { grades: normGrades }),
+      ...(city     !== undefined && { city }),
       ...(district !== undefined && { district }),
-      ...(mode !== undefined && { mode }),
-      ...(priceOnline !== undefined && { priceOnline }),
-      ...(priceF2F !== undefined && { priceF2F }),
-      ...(bio !== undefined && { bio }),
+      ...(mode     !== undefined && { mode }),
+      ...(nPriceOnline !== undefined && { priceOnline: nPriceOnline }),
+      ...(nPriceF2F    !== undefined && { priceF2F: nPriceF2F }),
+      ...(bio      !== undefined && { bio }),
       ...(photoUrl !== undefined && { photoUrl }),
       ...(isPublic !== undefined && { isPublic }),
     };
+
+    // Kayıt var mı?
+    const exists = await prisma.teacherProfile.findUnique({ where: { userId } });
+    if (!exists) {
+      return res.status(404).json({ success: false, message: "Profil bulunamadı." });
+    }
 
     const updated = await prisma.teacherProfile.update({
       where: { userId },
       data
     });
 
-    // İsim değiştiyse User.name’i de güncelle
-    if (firstName || lastName) {
-      const full = `${firstName ?? updated.firstName} ${lastName ?? updated.lastName}`.trim();
-      await prisma.user.update({ where: { id: userId }, data: { name: full } });
+    // İsim değiştiyse User.name’i de güncelle (slug'a dokunmuyoruz)
+    if (firstName !== undefined || lastName !== undefined) {
+      const newFirst = firstName ?? updated.firstName;
+      const newLast  = lastName  ?? updated.lastName;
+      const full     = `${newFirst || ""} ${newLast || ""}`.trim();
+      await prisma.user.update({
+        where: { id: userId },
+        data: { name: full || null }
+      });
     }
 
     return res.json({ success: true, profile: updated });
@@ -190,6 +280,7 @@ export const updateMyTeacherProfile = async (req, res) => {
     return res.status(500).json({ success: false, message: "Güncelleme başarısız." });
   }
 };
+
 
 /** Public – listeleme/arama */
 export const searchTeachers = async (req, res) => {
