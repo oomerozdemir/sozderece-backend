@@ -5,7 +5,7 @@ import {
   getStudentRequest,
   attachPackageToRequest,
   markRequestPaid
-} from "../controllers/studentRequest.controller.js";
+} from "../../controllers/studentRequest.controller.js";
 
 const r = Router();
 

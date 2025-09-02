@@ -37,7 +37,7 @@ router.use("/verification", verificationRoutes);
 router.use("/", cartRoutes);
 router.use("/v1/ogretmen", ogretmenPrivateRoutes);
 router.use("/v1/ogretmenler", ogretmenlerPublicRoutes);
-router.use("/v1/student-requests", studentRequestsRouter);
+router.use("/v1/student-requests", studentRequestRouter);
 
 
 
