@@ -14,6 +14,7 @@ import verificationRoutes from "./public/verification.routes.js";
 import cartRoutes from "./public/cart.routes.js";
 import ogretmenPrivateRoutes from "./public/teacher.private.routes.js";
 import ogretmenlerPublicRoutes from "./public/teacher.public.routes.js";
+import studentRequestRouter from "./public/studentRequest.routes.js";
 
 
 // 🔐 Admin routes
@@ -36,6 +37,7 @@ router.use("/verification", verificationRoutes);
 router.use("/", cartRoutes);
 router.use("/v1/ogretmen", ogretmenPrivateRoutes);
 router.use("/v1/ogretmenler", ogretmenlerPublicRoutes);
+router.use("/v1/student-requests", studentRequestsRouter);
 
 
 
