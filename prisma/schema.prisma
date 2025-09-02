@@ -54,6 +54,7 @@ model User {
   teacherReviews      TeacherReview[]      @relation("UserTeacherReviews")
 
   studentAppointments Appointment[] @relation("StudentAppointments")
+  lessonRequests      StudentLessonRequest[]
 }
 
 model Coach {
@@ -84,6 +85,8 @@ model Order {
   billingInfo   BillingInfo @relation("BillingToOrder", fields: [billingInfoId], references: [id])
   user          User        @relation(fields: [userId], references: [id])
   orderItems    OrderItem[]
+  studentRequest StudentLessonRequest?
+
 }
 
 model Package {
@@ -270,6 +273,8 @@ model TeacherProfile {
 
   lessons       TeacherLesson[]
 
+  lessonRequests StudentLessonRequest[]
+
 
   @@index([city])
   @@index([district])
@@ -386,3 +391,55 @@ model TeacherLesson {
   @@index([subject])
   @@index([topic])
 }
+
+
+model StudentLessonRequest {
+  id               String   @id @default(cuid())
+
+  // 🔧 TIP DÜZELTME: String -> Int
+  studentId        Int
+  student          User     @relation(fields: [studentId], references: [id])
+
+  teacherProfileId String
+  teacherProfile   TeacherProfile @relation(fields: [teacherProfileId], references: [id])
+
+  // Öğrenci seçimleri:
+  subject          String
+  grade            String
+  mode             RequestMode
+  city             String?
+  district         String?
+  locationNote     String?
+  note             String?
+
+  // Akış:
+  status           RequestStatus
+  packageSlug      String?
+  packageTitle     String?
+  packageUnitPrice Int?
+  
+  orderId          Int?     @unique 
+  order            Order?   @relation(fields: [orderId], references: [id], onDelete: SetNull)
+
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  // 🆕 indeksler
+  @@index([studentId])
+  @@index([teacherProfileId])
+  @@index([status, createdAt])
+}
+
+enum RequestMode {
+  ONLINE
+  FACE_TO_FACE
+}
+
+enum RequestStatus {
+  DRAFT
+  SUBMITTED
+  PACKAGE_SELECTED
+  PAID
+  CANCELLED
+}
+
