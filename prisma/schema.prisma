@@ -85,7 +85,7 @@ model Order {
   billingInfo   BillingInfo @relation("BillingToOrder", fields: [billingInfoId], references: [id])
   user          User        @relation(fields: [userId], references: [id])
   orderItems    OrderItem[]
-  studentRequest StudentLessonRequest?
+  studentRequest StudentLessonRequest? @relation("OrderStudentRequest")
 
 }
 
@@ -418,8 +418,8 @@ model StudentLessonRequest {
   packageTitle     String?
   packageUnitPrice Int?
   
-  orderId          Int?     @unique 
-  order            Order?   @relation(fields: [orderId], references: [id], onDelete: SetNull)
+  orderId          Int?     @unique
+  order            Order?   @relation("OrderStudentRequest", fields: [orderId], references: [id], onDelete: SetNull)
 
   createdAt        DateTime @default(now())
   updatedAt        DateTime @updatedAt
