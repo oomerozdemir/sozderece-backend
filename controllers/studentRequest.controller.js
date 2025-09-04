@@ -149,3 +149,75 @@ export const markRequestPaid = async (req, res) => {
     res.status(500).json({ message: "Durum güncellenemedi.", error: e?.message || String(e) });
   }
 };
+
+
+export const saveRequestSlots = async (req, res) => {
+  try {
+    const rawUserId = req.user?.id;
+    if (!rawUserId) return res.status(401).json({ message: "Yetkisiz" });
+    const userId = Number(rawUserId);
+
+    const { id } = req.params;   // StudentLessonRequest.id (cuid)
+    const { slots } = req.body || {};
+
+    const reqRec = await prisma.studentLessonRequest.findUnique({ where: { id } });
+    if (!reqRec || reqRec.studentId !== userId) {
+      return res.status(404).json({ message: "Talep bulunamadı." });
+    }
+
+    // Paket adetini zorunlu tut
+    const lessonsCount =
+      reqRec.packageSlug === "paket-3" ? 3 :
+      reqRec.packageSlug === "paket-6" ? 6 : 1;
+
+    if (!Array.isArray(slots) || slots.length !== lessonsCount) {
+      return res.status(400).json({ message: `Lütfen ${lessonsCount} adet saat seçiniz.` });
+    }
+
+    // Çakışma kontrolü (öğretmenin mevcut PENDING/CONFIRMED randevuları ile)
+    const sMin = new Date(Math.min(...slots.map(s => +new Date(s.start))));
+    const eMax = new Date(Math.max(...slots.map(s => +new Date(s.end))));
+
+    const conflicts = await prisma.appointment.findMany({
+      where: {
+        teacherProfileId: reqRec.teacherProfileId,
+        status: { in: ["PENDING", "CONFIRMED"] },
+        OR: [
+          { startsAt: { lt: eMax }, endsAt: { gt: sMin } }
+        ]
+      },
+      select: { startsAt: true, endsAt: true }
+    });
+
+    const hasConflict = (s) => conflicts.some(c => (new Date(s.start) < c.endsAt && new Date(s.end) > c.startsAt));
+    if (slots.some(hasConflict)) {
+      return res.status(409).json({ message: "Seçilen saatlerden bazıları dolu görünüyor. Lütfen güncelleyiniz." });
+    }
+
+    // Randevuları PENDING oluştur
+    const perLessonPrice = reqRec.packageUnitPrice
+      ? Math.round(Number(reqRec.packageUnitPrice) / lessonsCount)
+      : null;
+
+    await prisma.$transaction(
+      slots.map(s => prisma.appointment.create({
+        data: {
+          teacherProfileId: reqRec.teacherProfileId,
+          studentUserId: userId,
+          startsAt: new Date(s.start),
+          endsAt:   new Date(s.end),
+          mode:     reqRec.mode,       // RequestMode ~ LessonMode
+          status:   "PENDING",
+          price:    perLessonPrice,
+          title:    "Özel ders talebi",
+          notes:    `requestId=${reqRec.id}`
+        }
+      }))
+    );
+
+    return res.json({ success: true });
+  } catch (e) {
+    console.error("saveRequestSlots error:", e);
+    return res.status(500).json({ message: "Seçilen saatler kaydedilemedi." });
+  }
+};

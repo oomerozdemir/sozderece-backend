@@ -10,7 +10,7 @@ import {
   uploadTeacherPhoto,
   getMyAvailability,getMySlots,upsertMyAvailability,listMyAppointments,listMyTimeOff,
   createMyTimeOff,createMyAppointment,deleteMyTimeOff,updateMyAppointment,changeMyPassword,listMyLessons,
-  createMyLesson, updateMyLesson, deleteMyLesson,
+  createMyLesson, updateMyLesson, deleteMyLesson,updateAppointmentStatus, getMyIncomingRequests
 } from "../../controllers/teacher.controller.js";
 import upload from "../../middleware/upload.js";
 
@@ -57,5 +57,9 @@ router.get("/me/lessons", authenticateToken, authorizeRoles("teacher"), listMyLe
 router.post("/me/lessons", authenticateToken, authorizeRoles("teacher"), createMyLesson);
 router.put("/me/lessons/:id", authenticateToken, authorizeRoles("teacher"), updateMyLesson);
 router.delete("/me/lessons/:id", authenticateToken, authorizeRoles("teacher"), deleteMyLesson);
+
+// Ders Talep
+router.get("/me/requests", authenticateToken, getMyIncomingRequests);
+router.patch("/appointments/:id/status", authenticateToken, updateAppointmentStatus);
 
 export default router;

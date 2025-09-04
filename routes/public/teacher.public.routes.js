@@ -5,6 +5,7 @@ import {
   trackTeacherView,
   addTeacherReview,
   listTeacherReviews,
+  getTeacherSlotsPublic,
 } from "../../controllers/teacher.controller.js";
 import { authenticateToken } from "../../middleware/authMiddleware.js";
 const router = express.Router();
@@ -21,6 +22,9 @@ router.post("/:slug/reviews", authenticateToken, addTeacherReview);
 
 // Profil — DİNAMİK en sonda
 router.get("/:slug", getTeacherBySlug);
+
+
+router.get("/:slug/slots", getTeacherSlotsPublic);
 
 
 export default router;

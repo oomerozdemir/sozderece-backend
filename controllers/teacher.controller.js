@@ -1059,3 +1059,201 @@ export const deleteMyLesson = async (req, res) => {
     res.status(500).json({ success: false, message: "Ders silinemedi." });
   }
 };
+
+
+
+export const getTeacherSlotsPublic = async (req, res) => {
+  try {
+    const { slug } = req.params;
+    const { from, to, mode = "BOTH", duration = 60, tz } = req.query;
+
+    const teacher = await prisma.teacherProfile.findUnique({
+      where: { slug },
+      include: {
+        availabilities: { where: { isActive: true } },
+        timeOffs: true,
+        appointments: {
+          where: { status: { in: ["PENDING", "CONFIRMED"] } },
+          select: { startsAt: true, endsAt: true }
+        }
+      }
+    });
+    if (!teacher || !teacher.isPublic || !teacher.isApproved) {
+      return res.status(404).json({ message: "Öğretmen bulunamadı." });
+    }
+
+    const timeZone = tz || teacher.timeZone || "Europe/Istanbul";
+    const start = DateTime.fromISO(String(from), { zone: timeZone }).startOf("day");
+    const end   = DateTime.fromISO(String(to),   { zone: timeZone }).endOf("day");
+    if (!start.isValid || !end.isValid || start >= end) {
+      return res.status(400).json({ message: "Geçersiz tarih aralığı." });
+    }
+
+    const wantedMode = String(mode || "BOTH").toUpperCase();
+    const dur = Number(duration) || 60;
+
+    const offIntervals = teacher.timeOffs.map(off => ({
+      start: DateTime.fromJSDate(off.startsAt, { zone: "utc" }),
+      end:   DateTime.fromJSDate(off.endsAt,   { zone: "utc" }),
+    }));
+    const apptIntervals = teacher.appointments.map(ap => ({
+      start: DateTime.fromJSDate(ap.startsAt, { zone: "utc" }),
+      end:   DateTime.fromJSDate(ap.endsAt,   { zone: "utc" }),
+    }));
+
+    const slots = [];
+
+    for (let day = start; day <= end; day = day.plus({ days: 1 }).startOf("day")) {
+      const schemaWeekday = day.weekday % 7; // 0..6
+
+      const windows = teacher.availabilities.filter(a =>
+        a.weekday === schemaWeekday &&
+        (a.mode === "BOTH" || a.mode === wantedMode || wantedMode === "BOTH")
+      );
+
+      for (const w of windows) {
+        const ws = day.startOf("day").plus({ minutes: w.startMin });
+        const we = day.startOf("day").plus({ minutes: w.endMin });
+
+        for (let t = ws; t.plus({ minutes: dur }) <= we; t = t.plus({ minutes: dur })) {
+          const tEnd = t.plus({ minutes: dur });
+          const startUTC = t.toUTC();
+          const endUTC   = tEnd.toUTC();
+
+          const blockedByOff  = offIntervals.some(off => overlaps(startUTC, endUTC, off.start, off.end));
+          if (blockedByOff) continue;
+
+          const blockedByAppt = apptIntervals.some(ap => overlaps(startUTC, endUTC, ap.start, ap.end));
+          if (blockedByAppt) continue;
+
+          slots.push({
+            start: startUTC.toISO(),
+            end:   endUTC.toISO(),
+            mode:  wantedMode === "BOTH" ? w.mode : wantedMode
+          });
+        }
+      }
+    }
+
+    return res.json({ success: true, slots, timeZone });
+  } catch (e) {
+    console.error(e);
+    return res.status(500).json({ message: "Slotlar oluşturulamadı." });
+  }
+};
+
+
+export const getMyIncomingRequests = async (req, res) => {
+  try {
+    const userId = Number(req.user?.id);
+    if (!userId) return res.status(401).json({ message: "Yetkisiz" });
+
+    const tp = await prisma.teacherProfile.findUnique({
+      where: { userId },
+      select: { id: true },
+    });
+    if (!tp) return res.status(403).json({ message: "Öğretmen profili bulunamadı." });
+
+    // İlgili talepler
+    const requests = await prisma.studentLessonRequest.findMany({
+      where: {
+        teacherProfileId: tp.id,
+        status: { in: ["SUBMITTED", "PACKAGE_SELECTED", "PAID"] },
+      },
+      orderBy: { createdAt: "desc" },
+      select: {
+        id: true,
+        createdAt: true,
+        status: true,
+        subject: true,
+        grade: true,
+        mode: true,
+        packageSlug: true,
+        packageTitle: true,
+        packageUnitPrice: true,
+        studentId: true,
+        student: { select: { id: true, name: true, email: true } },
+      },
+    });
+
+    // O öğretmene ait tüm PENDING randevular (son 90 günde)
+    const since = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000);
+    const pendingAppts = await prisma.appointment.findMany({
+      where: {
+        teacherProfileId: tp.id,
+        status: "PENDING",
+        startsAt: { gte: since },
+      },
+      select: {
+        id: true,
+        startsAt: true,
+        endsAt: true,
+        mode: true,
+        price: true,
+        notes: true, // requestId=...
+      },
+      orderBy: { startsAt: "asc" },
+    });
+
+    // requestId=... ile eşle
+    const mapByReq = new Map();
+    for (const r of requests) mapByReq.set(r.id, { ...r, appointments: [] });
+    for (const a of pendingAppts) {
+      const m = /requestId=([a-z0-9]+)/i.exec(a.notes || "");
+      const rid = m?.[1];
+      if (rid && mapByReq.has(rid)) {
+        mapByReq.get(rid).appointments.push(a);
+      }
+    }
+
+    return res.json({ success: true, items: Array.from(mapByReq.values()) });
+  } catch (e) {
+    console.error("getMyIncomingRequests error:", e);
+    return res.status(500).json({ message: "Talepler getirilemedi." });
+  }
+};
+
+/**
+ * Randevu durum güncelleme: CONFIRMED / CANCELLED
+ * Sadece ilgili öğretmen kendi randevusunu güncelleyebilir.
+ */
+export const updateAppointmentStatus = async (req, res) => {
+  try {
+    const userId = Number(req.user?.id);
+    if (!userId) return res.status(401).json({ message: "Yetkisiz" });
+
+    const { id } = req.params; // appointment id
+    const { status } = req.body;
+    const next = String(status || "").toUpperCase();
+
+    if (!["CONFIRMED", "CANCELLED"].includes(next)) {
+      return res.status(400).json({ message: "Geçersiz durum." });
+    }
+
+    // Öğretmen profili
+    const tp = await prisma.teacherProfile.findUnique({
+      where: { userId },
+      select: { id: true },
+    });
+    if (!tp) return res.status(403).json({ message: "Öğretmen profili bulunamadı." });
+
+    // İlgili randevu gerçekten bu öğretmeninkiyse
+    const appt = await prisma.appointment.findUnique({
+      where: { id },
+      select: { id: true, teacherProfileId: true },
+    });
+    if (!appt || appt.teacherProfileId !== tp.id) {
+      return res.status(404).json({ message: "Randevu bulunamadı." });
+    }
+
+    const updated = await prisma.appointment.update({
+      where: { id },
+      data: { status: next },
+    });
+
+    return res.json({ success: true, appointment: updated });
+  } catch (e) {
+    console.error("updateAppointmentStatus error:", e);
+    return res.status(500).json({ message: "Durum güncellenemedi." });
+  }
+};
