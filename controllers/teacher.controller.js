@@ -675,9 +675,8 @@ export const deleteMyTimeOff = async (req, res) => {
 export const getMySlots = async (req, res) => {
   try {
     const userId = Number(req.user?.id);
-    if (!userId) return res.status(401).json({ success: false, message: "Yetkisiz" });
+    if (!userId) return res.status(401).json({ success:false, message:"Yetkisiz" });
 
-    // FE senden from/to/tz gönderiyor
     const { from, to, tz, mode = "BOTH", duration = 60 } = req.query;
 
     const teacher = await prisma.teacherProfile.findUnique({
@@ -685,46 +684,61 @@ export const getMySlots = async (req, res) => {
       include: {
         availabilities: { where: { isActive: true } },
         timeOffs: true,
-        // PENDING + CONFIRMED randevuları engellemek için kullanacağız
         appointments: {
           where: { status: { in: ["PENDING", "CONFIRMED"] } },
-          select: { id: true, startsAt: true, endsAt: true, status: true, mode: true, notes: true },
+          select: { startsAt: true, endsAt: true },
         },
       },
     });
-    if (!teacher) return res.status(404).json({ success: false, message: "Profil bulunamadı." });
+    if (!teacher) return res.status(404).json({ success:false, message:"Profil bulunamadı." });
 
     const timeZone = tz || teacher.timeZone || "Europe/Istanbul";
-
-    // Kullanıcının TZ'sinde gün başı/sonu
-    const startLocal = DateTime.fromISO(String(from), { zone: timeZone }).startOf("day");
-    const endLocal   = DateTime.fromISO(String(to),   { zone: timeZone }).endOf("day");
-
-    if (!startLocal.isValid || !endLocal.isValid || startLocal >= endLocal) {
-      return res.status(400).json({ success: false, message: "Geçersiz tarih aralığı." });
+    const start = DateTime.fromISO(String(from), { zone: timeZone }).startOf("day");
+    const end   = DateTime.fromISO(String(to),   { zone: timeZone }).endOf("day");
+    if (!start.isValid || !end.isValid || start >= end) {
+      return res.status(400).json({ success:false, message:"Geçersiz tarih aralığı." });
     }
 
     const wantedMode = String(mode || "BOTH").toUpperCase();
     const dur = Number(duration) || 60;
 
-    // DB aralıklarını UTC olarak hazırla
+    // blokajlar ve bekleyen/onaylı randevular (çakışma için)
     const offIntervals = teacher.timeOffs.map(off => ({
       start: DateTime.fromJSDate(off.startsAt, { zone: "utc" }),
       end:   DateTime.fromJSDate(off.endsAt,   { zone: "utc" }),
     }));
-
-    // Hem pending hem confirmed randevular — boş slot üretiminden düşmek için
     const apptIntervals = teacher.appointments.map(ap => ({
       start: DateTime.fromJSDate(ap.startsAt, { zone: "utc" }),
       end:   DateTime.fromJSDate(ap.endsAt,   { zone: "utc" }),
     }));
 
+    // ✅ Onaylı randevuları AYRI çekiyoruz ve öğrenci bilgisiyle döndürüyoruz
+    const confirmedAppts = await prisma.appointment.findMany({
+      where: {
+        teacherProfileId: teacher.id,
+        status: "CONFIRMED",
+        startsAt: {
+          gte: start.toUTC().toJSDate(),
+        },
+        endsAt: {
+          lte: end.toUTC().toJSDate(),
+        },
+      },
+      select: {
+        id: true,
+        startsAt: true,
+        endsAt: true,
+        mode: true,
+        student: { select: { id: true, name: true, email: true } },
+      },
+      orderBy: { startsAt: "asc" },
+    });
+
     const slots = [];
 
-    // Gün gün slot üret (müsaitler)
-    for (let day = startLocal; day <= endLocal; day = day.plus({ days: 1 }).startOf("day")) {
-      // Luxon weekday: 1=Mon..7=Sun → şemanda 0=Sun..6=Sat
-      const schemaWeekday = day.weekday % 7;
+    // gün gün slot üret
+    for (let day = start; day <= end; day = day.plus({ days: 1 }).startOf("day")) {
+      const schemaWeekday = day.weekday % 7; // 0..6 (Pazar..Cumartesi)
 
       const windows = teacher.availabilities.filter(a =>
         a.weekday === schemaWeekday &&
@@ -732,17 +746,14 @@ export const getMySlots = async (req, res) => {
       );
 
       for (const w of windows) {
-        const ws = day.startOf("day").plus({ minutes: w.startMin }); // local TZ
-        const we = day.startOf("day").plus({ minutes: w.endMin });   // local TZ
+        const ws = day.startOf("day").plus({ minutes: w.startMin });
+        const we = day.startOf("day").plus({ minutes: w.endMin });
 
         for (let t = ws; t.plus({ minutes: dur }) <= we; t = t.plus({ minutes: dur })) {
           const tEnd = t.plus({ minutes: dur });
-
-          // UTC'ye çevir
           const startUTC = t.toUTC();
           const endUTC   = tEnd.toUTC();
 
-          // ÇAKIŞMA kontrolü
           const blockedByOff  = offIntervals.some(off => overlaps(startUTC, endUTC, off.start, off.end));
           if (blockedByOff) continue;
 
@@ -752,51 +763,27 @@ export const getMySlots = async (req, res) => {
           slots.push({
             start: startUTC.toISO(),
             end:   endUTC.toISO(),
-            mode:  wantedMode === "BOTH" ? w.mode : wantedMode,
+            mode:  wantedMode === "BOTH" ? w.mode : wantedMode
           });
         }
       }
     }
 
-    // ✅ CONFIRMED randevuları ayrıca dön (yeşil katman için)
-    // Not: Yukarıda include ile zaten aldık; ancak tarih aralığına göre filtreleyelim.
-    const startUTC = startLocal.toUTC();
-    const endUTC   = endLocal.toUTC();
-
-    const confirmed = teacher.appointments
-      .filter(a => a.status === "CONFIRMED")
-      .filter(a => {
-        const s = DateTime.fromJSDate(a.startsAt, { zone: "utc" });
-        const e = DateTime.fromJSDate(a.endsAt,   { zone: "utc" });
-        return s >= startUTC && e <= endUTC;
-      })
-      .map(a => ({
-        id: a.id,
-        startsAt: DateTime.fromJSDate(a.startsAt, { zone: "utc" }).toISO(),
-        endsAt:   DateTime.fromJSDate(a.endsAt,   { zone: "utc" }).toISO(),
-        mode: a.mode,
-        notes: a.notes,
-      }));
-
-    return res.json({
-  success: true,
-  slots,        // MÜSAİT slotlar (boş)
-  confirmed: teacher.appointments
-    .filter(a => a.status === "CONFIRMED")
-    .map(a => ({
+    // ✅ confirmed array’ini öğrenci bilgisiyle birlikte dönüyoruz
+    const confirmed = confirmedAppts.map(a => ({
       id: a.id,
-      startsAt: DateTime.fromJSDate(a.startsAt, { zone: 'utc' }).toISO(),
-      endsAt:   DateTime.fromJSDate(a.endsAt,   { zone: 'utc' }).toISO(),
-      mode: a.mode
-    })),
-  timeZone
-});
+      startsAt: a.startsAt.toISOString(),
+      endsAt:   a.endsAt.toISOString(),
+      mode:     a.mode,
+      student:  a.student ? { id: a.student.id, name: a.student.name, email: a.student.email } : null,
+    }));
+
+    return res.json({ success:true, timeZone, slots, confirmed });
   } catch (e) {
-    console.error("getMySlots error:", e);
-    return res.status(500).json({ success: false, message: "Slotlar oluşturulamadı." });
+    console.error(e);
+    return res.status(500).json({ success:false, message:"Slotlar oluşturulamadı." });
   }
 };
-
 
 // --- 2.5 Öğretmen randevuları (liste/ekle/güncelle - öğretmen paneli için) ---
 export const listMyAppointments = async (req, res) => {
@@ -1105,7 +1092,6 @@ export const getTeacherSlotsPublic = async (req, res) => {
     const { slug } = req.params;
     const { from, to, mode = "BOTH", durationMin = 60, tz } = req.query;
 
-    const overlaps = (aStart, aEnd, bStart, bEnd) => aStart < bEnd && bStart < aEnd;
 
     const teacher = await prisma.teacherProfile.findUnique({
       where: { slug },
