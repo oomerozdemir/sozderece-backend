@@ -24,7 +24,7 @@ router.post("/:slug/reviews", authenticateToken, addTeacherReview);
 router.get("/:slug", getTeacherBySlug);
 
 
-router.get("/ogretmenler/:slug/slots", getTeacherSlotsPublic);
+router.get("/:slug/slots", getTeacherSlotsPublic);
 
 
 
