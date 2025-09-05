@@ -1233,7 +1233,7 @@ export const getMyIncomingRequests = async (req, res) => {
         status: "CONFIRMED",
         startsAt: { gte: since },
       },
-      select: { id: true, startsAt: true, endsAt: true, mode: true, notes: true },
+      select: { id: true, startsAt: true, endsAt: true, mode: true, notes: true, email: true },
       orderBy: { startsAt: "asc" },
     });
 
