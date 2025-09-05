@@ -10,7 +10,7 @@ import {
   uploadTeacherPhoto,
   getMyAvailability,getMySlots,upsertMyAvailability,listMyAppointments,listMyTimeOff,
   createMyTimeOff,createMyAppointment,deleteMyTimeOff,updateMyAppointment,changeMyPassword,listMyLessons,
-  createMyLesson, updateMyLesson, deleteMyLesson,updateAppointmentStatus, getMyIncomingRequests
+  createMyLesson, updateMyLesson, deleteMyLesson,updateAppointmentStatus, getMyIncomingRequests, getMyConfirmedAppointments,
 } from "../../controllers/teacher.controller.js";
 import upload from "../../middleware/upload.js";
 
@@ -61,5 +61,12 @@ router.delete("/me/lessons/:id", authenticateToken, authorizeRoles("teacher"), d
 // Ders Talep
 router.get("/me/requests", authenticateToken, getMyIncomingRequests);
 router.patch("/appointments/:id/status", authenticateToken, updateAppointmentStatus);
+
+// onaylanmis ders Talep ogrenci bilgisi
+router.get(
+  "/ogretmen/me/appointments/confirmed",
+  authenticateToken,
+  getMyConfirmedAppointments
+);
 
 export default router;

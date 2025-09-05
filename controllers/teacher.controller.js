@@ -1371,3 +1371,49 @@ export const updateAppointmentStatus = async (req, res) => {
     return res.status(500).json({ message: "Durum güncellenemedi." });
   }
 };
+
+
+
+// GET /api/v1/ogretmen/me/appointments/confirmed
+export const getMyConfirmedAppointments = async (req, res) => {
+  try {
+    const userId = Number(req.user?.id);
+    if (!userId) return res.status(401).json({ message: "Yetkisiz" });
+
+    // Öğretmenin profilini bul
+    const tp = await prisma.teacherProfile.findUnique({
+      where: { userId },
+      select: { id: true },
+    });
+    if (!tp) return res.status(403).json({ message: "Öğretmen profili bulunamadı." });
+
+    // (Opsiyonel) son 90 gün filtre
+    const since = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000);
+
+    // CONFIRMED randevuları öğrenci bilgisiyle getir
+    const items = await prisma.appointment.findMany({
+      where: {
+        teacherProfileId: tp.id,
+        status: "CONFIRMED",
+        startsAt: { gte: since },
+      },
+      select: {
+        id: true,
+        startsAt: true,
+        endsAt: true,
+        mode: true,
+        notes: true,
+        // 🔴 Önemli kısım: öğrenciyi da seçiyoruz
+        student: {
+          select: { id: true, name: true, email: true },
+        },
+      },
+      orderBy: { startsAt: "asc" },
+    });
+
+    return res.json({ success: true, items });
+  } catch (e) {
+    console.error("getMyConfirmedAppointments error:", e);
+    return res.status(500).json({ message: "Onaylı randevular getirilemedi." });
+  }
+};
