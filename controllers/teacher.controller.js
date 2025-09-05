@@ -1186,6 +1186,7 @@ export const getMyIncomingRequests = async (req, res) => {
     const userId = Number(req.user?.id);
     if (!userId) return res.status(401).json({ message: "Yetkisiz" });
 
+    // Öğretmenin profilini bul
     const tp = await prisma.teacherProfile.findUnique({
       where: { userId },
       select: { id: true },
@@ -1214,34 +1215,50 @@ export const getMyIncomingRequests = async (req, res) => {
       },
     });
 
-    // Son 90 günde pending / confirmed randevular
+    // Son 90 gün
     const since = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000);
 
+    // PENDING randevular (butonla onay/iptal edeceğiz, o yüzden id'yi seç)
     const pendingAppts = await prisma.appointment.findMany({
       where: {
         teacherProfileId: tp.id,
         status: "PENDING",
         startsAt: { gte: since },
       },
-      select: { id: true, startsAt: true, endsAt: true, mode: true, price: true, notes: true },
+      select: {
+        id: true,                 // <- gerekli
+        startsAt: true,
+        endsAt: true,
+        mode: true,
+        notes: true,              // requestId=... parse için
+      },
       orderBy: { startsAt: "asc" },
     });
 
+    // CONFIRMED randevular (öğrenci ad/e-mail gösterimi için student ilişkisini seç)
     const confirmedAppts = await prisma.appointment.findMany({
       where: {
         teacherProfileId: tp.id,
         status: "CONFIRMED",
         startsAt: { gte: since },
       },
-      select: { id: true, startsAt: true, endsAt: true, mode: true, notes: true, email: true },
+      select: {
+        id: true,
+        startsAt: true,
+        endsAt: true,
+        mode: true,
+        notes: true,                   // requestId=... parse edebiliriz
+        student: {                     // <- email burada
+          select: { id: true, name: true, email: true }
+        },
+      },
       orderBy: { startsAt: "asc" },
     });
 
-    // requestId=... ile eşle
+    // Talepleri requestId üzerinden map'leyelim
     const mapByReq = new Map();
-
-    // Talepleri map’e koyarken lessonsCount & paidTL’yi hesapla
     for (const r of requests) {
+      // ek sahalar: lessonsCount & paidTL (kuruş -> TL)
       const lessonsCount =
         r.packageSlug === "paket-6" ? 6 :
         r.packageSlug === "paket-3" ? 3 : 1;
@@ -1250,34 +1267,40 @@ export const getMyIncomingRequests = async (req, res) => {
         ...r,
         lessonsCount,
         paidTL: typeof r.packageUnitPrice === "number" ? r.packageUnitPrice / 100 : null,
-        appointments: [],             // PENDING randevular
-        appointmentsConfirmed: [],    // CONFIRMED randevular
+        appointments: [],            // pending
+        appointmentsConfirmed: [],   // confirmed
       });
     }
 
-    const rex = /requestId=([a-z0-9]+)/i;
+    // "requestId=..." formatlı notu parse et
+    const getReqIdFromNotes = (notes) => {
+      const m = /requestId=([a-z0-9]+)/i.exec(notes || "");
+      return m?.[1] || null;
+    };
 
+    // Pending’leri map’e bas
     for (const a of pendingAppts) {
-      const rid = rex.exec(a.notes || "")?.[1];
+      const rid = getReqIdFromNotes(a.notes);
       if (rid && mapByReq.has(rid)) {
         mapByReq.get(rid).appointments.push(a);
       }
     }
 
+    // Confirmed’leri map’e bas (öğrenci bilgisi ile birlikte)
     for (const a of confirmedAppts) {
-      const rid = rex.exec(a.notes || "")?.[1];
+      const rid = getReqIdFromNotes(a.notes);
       if (rid && mapByReq.has(rid)) {
         mapByReq.get(rid).appointmentsConfirmed.push(a);
       }
     }
 
-    const items = Array.from(mapByReq.values());
-    return res.json({ success: true, items });
+    return res.json({ success: true, items: Array.from(mapByReq.values()) });
   } catch (e) {
     console.error("getMyIncomingRequests error:", e);
     return res.status(500).json({ message: "Talepler getirilemedi." });
   }
 };
+
 
 
 /**
