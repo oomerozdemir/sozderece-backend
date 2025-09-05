@@ -1103,7 +1103,9 @@ export const deleteMyLesson = async (req, res) => {
 export const getTeacherSlotsPublic = async (req, res) => {
   try {
     const { slug } = req.params;
-    const { from, to, mode = "BOTH", duration = 60, tz } = req.query;
+    const { from, to, mode = "BOTH", durationMin = 60, tz } = req.query;
+
+    const overlaps = (aStart, aEnd, bStart, bEnd) => aStart < bEnd && bStart < aEnd;
 
     const teacher = await prisma.teacherProfile.findUnique({
       where: { slug },
@@ -1112,10 +1114,19 @@ export const getTeacherSlotsPublic = async (req, res) => {
         timeOffs: true,
         appointments: {
           where: { status: { in: ["PENDING", "CONFIRMED"] } },
-          select: { startsAt: true, endsAt: true }
-        }
-      }
+          select: {
+            id: true,
+            startsAt: true,
+            endsAt: true,
+            status: true,
+            mode: true,
+            notes: true,
+            student: { select: { id: true, name: true, email: true } }, // opsiyonel: öğrenci bilgisi
+          },
+        },
+      },
     });
+
     if (!teacher || !teacher.isPublic || !teacher.isApproved) {
       return res.status(404).json({ message: "Öğretmen bulunamadı." });
     }
@@ -1123,26 +1134,58 @@ export const getTeacherSlotsPublic = async (req, res) => {
     const timeZone = tz || teacher.timeZone || "Europe/Istanbul";
     const start = DateTime.fromISO(String(from), { zone: timeZone }).startOf("day");
     const end   = DateTime.fromISO(String(to),   { zone: timeZone }).endOf("day");
+
     if (!start.isValid || !end.isValid || start >= end) {
       return res.status(400).json({ message: "Geçersiz tarih aralığı." });
     }
 
     const wantedMode = String(mode || "BOTH").toUpperCase();
-    const dur = Number(duration) || 60;
+    const dur = Number(durationMin) || 60;
 
+    // Blokajlar
     const offIntervals = teacher.timeOffs.map(off => ({
       start: DateTime.fromJSDate(off.startsAt, { zone: "utc" }),
       end:   DateTime.fromJSDate(off.endsAt,   { zone: "utc" }),
     }));
-    const apptIntervals = teacher.appointments.map(ap => ({
+
+    // Randevular
+    const appts = teacher.appointments.map(ap => ({
+      id: ap.id,
       start: DateTime.fromJSDate(ap.startsAt, { zone: "utc" }),
       end:   DateTime.fromJSDate(ap.endsAt,   { zone: "utc" }),
+      status: ap.status,  // PENDING / CONFIRMED
+      mode: ap.mode,
+      notes: ap.notes,
+      student: ap.student,
     }));
 
+    const busyPending = appts
+      .filter(a => a.status === "PENDING")
+      .map(a => ({
+        id: a.id,
+        start: a.start.toISO(),
+        end: a.end.toISO(),
+        mode: a.mode,
+        notes: a.notes,
+        student: a.student,
+      }));
+
+    const busyConfirmed = appts
+      .filter(a => a.status === "CONFIRMED")
+      .map(a => ({
+        id: a.id,
+        start: a.start.toISO(),
+        end: a.end.toISO(),
+        mode: a.mode,
+        notes: a.notes,
+        student: a.student,
+      }));
+
+    // Müsait slotlar
     const slots = [];
 
     for (let day = start; day <= end; day = day.plus({ days: 1 }).startOf("day")) {
-      const schemaWeekday = day.weekday % 7; // 0..6
+      const schemaWeekday = day.weekday % 7; // 0=Sunday..6=Saturday
 
       const windows = teacher.availabilities.filter(a =>
         a.weekday === schemaWeekday &&
@@ -1161,21 +1204,29 @@ export const getTeacherSlotsPublic = async (req, res) => {
           const blockedByOff  = offIntervals.some(off => overlaps(startUTC, endUTC, off.start, off.end));
           if (blockedByOff) continue;
 
-          const blockedByAppt = apptIntervals.some(ap => overlaps(startUTC, endUTC, ap.start, ap.end));
+          const blockedByAppt = appts.some(ap => overlaps(startUTC, endUTC, ap.start, ap.end));
           if (blockedByAppt) continue;
 
           slots.push({
             start: startUTC.toISO(),
             end:   endUTC.toISO(),
-            mode:  wantedMode === "BOTH" ? w.mode : wantedMode
+            mode:  wantedMode === "BOTH" ? w.mode : wantedMode,
           });
         }
       }
     }
 
-    return res.json({ success: true, slots, timeZone });
+    return res.json({
+      success: true,
+      timeZone,
+      slots, // müsait
+      busy: {
+        pending: busyPending,
+        confirmed: busyConfirmed,
+      },
+    });
   } catch (e) {
-    console.error(e);
+    console.error("getTeacherSlotsPublic error:", e);
     return res.status(500).json({ message: "Slotlar oluşturulamadı." });
   }
 };
