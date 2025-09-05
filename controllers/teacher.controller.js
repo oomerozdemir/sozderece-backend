@@ -1176,53 +1176,83 @@ export const getMyIncomingRequests = async (req, res) => {
       },
     });
 
-    // O öğretmene ait tüm PENDING randevular (son 90 günde)
+    // Son 90 günde pending / confirmed randevular
     const since = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000);
+
     const pendingAppts = await prisma.appointment.findMany({
       where: {
         teacherProfileId: tp.id,
         status: "PENDING",
         startsAt: { gte: since },
       },
-      select: {
-        id: true,
-        startsAt: true,
-        endsAt: true,
-        mode: true,
-        price: true,
-        notes: true, // requestId=...
+      select: { id: true, startsAt: true, endsAt: true, mode: true, price: true, notes: true },
+      orderBy: { startsAt: "asc" },
+    });
+
+    const confirmedAppts = await prisma.appointment.findMany({
+      where: {
+        teacherProfileId: tp.id,
+        status: "CONFIRMED",
+        startsAt: { gte: since },
       },
+      select: { id: true, startsAt: true, endsAt: true, mode: true, notes: true },
       orderBy: { startsAt: "asc" },
     });
 
     // requestId=... ile eşle
     const mapByReq = new Map();
-    for (const r of requests) mapByReq.set(r.id, { ...r, appointments: [] });
+
+    // Talepleri map’e koyarken lessonsCount & paidTL’yi hesapla
+    for (const r of requests) {
+      const lessonsCount =
+        r.packageSlug === "paket-6" ? 6 :
+        r.packageSlug === "paket-3" ? 3 : 1;
+
+      mapByReq.set(r.id, {
+        ...r,
+        lessonsCount,
+        paidTL: typeof r.packageUnitPrice === "number" ? r.packageUnitPrice / 100 : null,
+        appointments: [],             // PENDING randevular
+        appointmentsConfirmed: [],    // CONFIRMED randevular
+      });
+    }
+
+    const rex = /requestId=([a-z0-9]+)/i;
+
     for (const a of pendingAppts) {
-      const m = /requestId=([a-z0-9]+)/i.exec(a.notes || "");
-      const rid = m?.[1];
+      const rid = rex.exec(a.notes || "")?.[1];
       if (rid && mapByReq.has(rid)) {
         mapByReq.get(rid).appointments.push(a);
       }
     }
 
-    return res.json({ success: true, items: Array.from(mapByReq.values()) });
+    for (const a of confirmedAppts) {
+      const rid = rex.exec(a.notes || "")?.[1];
+      if (rid && mapByReq.has(rid)) {
+        mapByReq.get(rid).appointmentsConfirmed.push(a);
+      }
+    }
+
+    const items = Array.from(mapByReq.values());
+    return res.json({ success: true, items });
   } catch (e) {
     console.error("getMyIncomingRequests error:", e);
     return res.status(500).json({ message: "Talepler getirilemedi." });
   }
 };
 
+
 /**
  * Randevu durum güncelleme: CONFIRMED / CANCELLED
  * Sadece ilgili öğretmen kendi randevusunu güncelleyebilir.
  */
+
 export const updateAppointmentStatus = async (req, res) => {
   try {
     const userId = Number(req.user?.id);
     if (!userId) return res.status(401).json({ message: "Yetkisiz" });
 
-    const { id } = req.params; // appointment id
+    const { id } = req.params;      // appointment id
     const { status } = req.body;
     const next = String(status || "").toUpperCase();
 
@@ -1230,26 +1260,72 @@ export const updateAppointmentStatus = async (req, res) => {
       return res.status(400).json({ message: "Geçersiz durum." });
     }
 
-    // Öğretmen profili
     const tp = await prisma.teacherProfile.findUnique({
       where: { userId },
       select: { id: true },
     });
     if (!tp) return res.status(403).json({ message: "Öğretmen profili bulunamadı." });
 
-    // İlgili randevu gerçekten bu öğretmeninkiyse
+    // Randevu gerçekten bu öğretmene mi ait?
     const appt = await prisma.appointment.findUnique({
       where: { id },
-      select: { id: true, teacherProfileId: true },
+      select: { id: true, teacherProfileId: true, startsAt: true, endsAt: true },
     });
     if (!appt || appt.teacherProfileId !== tp.id) {
       return res.status(404).json({ message: "Randevu bulunamadı." });
     }
 
+    // 1) Randevu durumunu güncelle
     const updated = await prisma.appointment.update({
       where: { id },
       data: { status: next },
     });
+
+    // 2) Takvime işle (TimeOff) — CONFIRMED -> Ekle, CANCELLED -> Kaldır
+    const reasonTag = `APPT#${id}`; // eşleştirme için benzersiz etiket
+    if (next === "CONFIRMED") {
+      // aynı etikete sahip bir timeoff yoksa oluştur
+      await prisma.teacherTimeOff.upsert({
+        where: {
+          // composite unique yoksa şu pattern: id üreterek çözebiliriz,
+          // ya da findFirst + create yaparız; burada findFirst + create güvenli:
+          // (upsert için unique gerekiyor; yoksa aşağıdaki iki adımı uygula)
+        },
+        update: {},
+        create: {
+          teacherProfileId: tp.id,
+          startsAt: appt.startsAt,
+          endsAt: appt.endsAt,
+          reason: reasonTag, // "APPT#<id>"
+        },
+      }).catch(async () => {
+        // Unique constraint yoksa:
+        const existing = await prisma.teacherTimeOff.findFirst({
+          where: {
+            teacherProfileId: tp.id,
+            reason: reasonTag,
+          },
+        });
+        if (!existing) {
+          await prisma.teacherTimeOff.create({
+            data: {
+              teacherProfileId: tp.id,
+              startsAt: appt.startsAt,
+              endsAt: appt.endsAt,
+              reason: reasonTag,
+            },
+          });
+        }
+      });
+    } else if (next === "CANCELLED") {
+      // ilgili timeoff’u sil
+      await prisma.teacherTimeOff.deleteMany({
+        where: {
+          teacherProfileId: tp.id,
+          reason: reasonTag,
+        },
+      });
+    }
 
     return res.json({ success: true, appointment: updated });
   } catch (e) {
