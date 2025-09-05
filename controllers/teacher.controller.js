@@ -1223,7 +1223,7 @@ export const getMyIncomingRequests = async (req, res) => {
     const userId = Number(req.user?.id);
     if (!userId) return res.status(401).json({ message: "Yetkisiz" });
 
-    // Öğretmenin profilini bul
+    // Öğretmenin profili
     const tp = await prisma.teacherProfile.findUnique({
       where: { userId },
       select: { id: true },
@@ -1255,7 +1255,7 @@ export const getMyIncomingRequests = async (req, res) => {
     // Son 90 gün
     const since = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000);
 
-    // PENDING randevular (butonla onay/iptal edeceğiz, o yüzden id'yi seç)
+    // Bekleyen (PENDING) randevular
     const pendingAppts = await prisma.appointment.findMany({
       where: {
         teacherProfileId: tp.id,
@@ -1263,16 +1263,17 @@ export const getMyIncomingRequests = async (req, res) => {
         startsAt: { gte: since },
       },
       select: {
-        id: true,                 // <- gerekli
+        id: true,
         startsAt: true,
         endsAt: true,
         mode: true,
-        notes: true,              // requestId=... parse için
+        notes: true,
+        price: true,
       },
       orderBy: { startsAt: "asc" },
     });
 
-    // CONFIRMED randevular (öğrenci ad/e-mail gösterimi için student ilişkisini seç)
+    // Onaylı (CONFIRMED) randevular — öğrenci adı/e-posta dahil
     const confirmedAppts = await prisma.appointment.findMany({
       where: {
         teacherProfileId: tp.id,
@@ -1284,18 +1285,17 @@ export const getMyIncomingRequests = async (req, res) => {
         startsAt: true,
         endsAt: true,
         mode: true,
-        notes: true,                   // requestId=... parse edebiliriz
-        student: {                     // <- email burada
-          select: { id: true, name: true, email: true }
-        },
+        notes: true,
+        price: true,
+        studentUserId: true,
+        student: { select: { id: true, name: true, email: true } }, // <-- ÖĞRENCİ BİLGİSİ
       },
       orderBy: { startsAt: "asc" },
     });
 
-    // Talepleri requestId üzerinden map'leyelim
+    // Talepleri requestId ile eşle
     const mapByReq = new Map();
     for (const r of requests) {
-      // ek sahalar: lessonsCount & paidTL (kuruş -> TL)
       const lessonsCount =
         r.packageSlug === "paket-6" ? 6 :
         r.packageSlug === "paket-3" ? 3 : 1;
@@ -1303,19 +1303,21 @@ export const getMyIncomingRequests = async (req, res) => {
       mapByReq.set(r.id, {
         ...r,
         lessonsCount,
-        paidTL: typeof r.packageUnitPrice === "number" ? r.packageUnitPrice / 100 : null,
-        appointments: [],            // pending
-        appointmentsConfirmed: [],   // confirmed
+        paidTL:
+          typeof r.packageUnitPrice === "number"
+            ? r.packageUnitPrice / 100
+            : null,
+        appointments: [],            // bekleyenler
+        appointmentsConfirmed: [],   // onaylılar
       });
     }
 
-    // "requestId=..." formatlı notu parse et
     const getReqIdFromNotes = (notes) => {
       const m = /requestId=([a-z0-9]+)/i.exec(notes || "");
       return m?.[1] || null;
     };
 
-    // Pending’leri map’e bas
+    // Bekleyenleri taleplere ekle
     for (const a of pendingAppts) {
       const rid = getReqIdFromNotes(a.notes);
       if (rid && mapByReq.has(rid)) {
@@ -1323,7 +1325,7 @@ export const getMyIncomingRequests = async (req, res) => {
       }
     }
 
-    // Confirmed’leri map’e bas (öğrenci bilgisi ile birlikte)
+    // Onaylıları taleplere ekle (öğrenci bilgisiyle)
     for (const a of confirmedAppts) {
       const rid = getReqIdFromNotes(a.notes);
       if (rid && mapByReq.has(rid)) {
