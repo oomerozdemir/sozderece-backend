@@ -778,7 +778,19 @@ export const getMySlots = async (req, res) => {
         notes: a.notes,
       }));
 
-    return res.json({ success: true, slots, confirmed, timeZone });
+    return res.json({
+  success: true,
+  slots,        // MÜSAİT slotlar (boş)
+  confirmed: teacher.appointments
+    .filter(a => a.status === "CONFIRMED")
+    .map(a => ({
+      id: a.id,
+      startsAt: DateTime.fromJSDate(a.startsAt, { zone: 'utc' }).toISO(),
+      endsAt:   DateTime.fromJSDate(a.endsAt,   { zone: 'utc' }).toISO(),
+      mode: a.mode
+    })),
+  timeZone
+});
   } catch (e) {
     console.error("getMySlots error:", e);
     return res.status(500).json({ success: false, message: "Slotlar oluşturulamadı." });
