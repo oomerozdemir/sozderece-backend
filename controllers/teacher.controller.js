@@ -387,8 +387,16 @@ export const searchTeachers = async (req, res) => {
       const priceF2FFromLessons    = normalizeTL(minF2F);
 
       // türev bulunamazsa profil fiyatlarına düş
-      const priceOnline = priceOnlineFromLessons ?? normalizeTL(t.priceOnline) ?? null;
-      const priceF2F    = priceF2FFromLessons    ?? normalizeTL(t.priceF2F)    ?? null;
+      let priceOnline = priceOnlineFromLessons ?? normalizeTL(t.priceOnline) ?? null;
+      let priceF2F    = priceF2FFromLessons    ?? normalizeTL(t.priceF2F)    ?? null;
+
+
+        // 0 veya negatif değerleri “yok” kabul et
+      if (!(priceOnline > 0)) priceOnline = null;
+      if (!(priceF2F > 0))    priceF2F    = null;
+      // Öğretmenin seçtiği moda göre karşı modu gizle
+      if (t.mode === "ONLINE")       priceF2F = null;
+      else if (t.mode === "FACE_TO_FACE") priceOnline = null;
 
       return {
         id: t.id,
