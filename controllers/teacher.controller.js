@@ -315,34 +315,14 @@ export const searchTeachers = async (req, res) => {
     const {
       city, district, subject, grade, mode, q,
       page = 1, limit = 20,
-      minPrice, maxPrice, sort // <-- NEW
+      minPrice, maxPrice, sort
     } = req.query;
 
-    const take = Math.min(Number(limit) || 20, 50);
-    const skip = (Math.max(Number(page) || 1, 1) - 1) * take;
+    // ---- sayfalama (FE istekleri için uygulanacak) ----
+    const pageNum  = Math.max(Number(page)  || 1, 1);
+    const perPage  = Math.min(Number(limit) || 20, 50);
 
-    // Fiyat filtresi
-    const priceFilter =
-      mode === "ONLINE" ? { priceOnline: {} } :
-      mode === "FACE_TO_FACE" ? { priceF2F: {} } :
-      { OR: [{ priceOnline: {} }, { priceF2F: {} }] };
-
-    if (minPrice) {
-      const v = Number(minPrice);
-      if (mode === "ONLINE") priceFilter.priceOnline.gte = v;
-      else if (mode === "FACE_TO_FACE") priceFilter.priceF2F.gte = v;
-      else priceFilter.OR = [{ priceOnline: { gte: v } }, { priceF2F: { gte: v } }];
-    }
-    if (maxPrice) {
-      const v = Number(maxPrice);
-      if (mode === "ONLINE") priceFilter.priceOnline.lte = v;
-      else if (mode === "FACE_TO_FACE") priceFilter.priceF2F.lte = v;
-      else priceFilter.OR = [
-        { priceOnline: { ...(priceFilter.OR?.[0]?.priceOnline || {}), lte: v } },
-        { priceF2F:    { ...(priceFilter.OR?.[1]?.priceF2F    || {}), lte: v } },
-      ];
-    }
-
+    // ---- temel filtreler (fiyatı DB'de değil, türetilmiş değerle JS tarafında filtreleyeceğiz) ----
     const where = {
       isPublic: true,
       isApproved: true,
@@ -350,7 +330,7 @@ export const searchTeachers = async (req, res) => {
       ...(district ? { district } : {}),
       ...(mode ? { mode } : {}),
       ...(subject ? { subjects: { has: subject } } : {}),
-      ...(grade ? { grades: { has: grade } } : {}),
+      ...(grade   ? { grades:   { has: grade   } } : {}),
       ...(q ? {
         OR: [
           { firstName: { contains: q, mode: "insensitive" } },
@@ -358,36 +338,168 @@ export const searchTeachers = async (req, res) => {
           { bio:       { contains: q, mode: "insensitive" } },
         ],
       } : {}),
-      ...(minPrice || maxPrice ? priceFilter : {}),
     };
 
-    // Sıralama
-    let orderBy = [{ createdAt: "desc" }]; // fallback
-    if (sort === "most_viewed") orderBy = [{ viewCount: "desc" }, { ratingAverage: "desc" }, { ratingCount: "desc" }];
-    if (sort === "top_rated")   orderBy = [{ ratingAverage: "desc" }, { ratingCount: "desc" }, { viewCount: "desc" }];
-    if (sort === "priceOnline_asc")  orderBy = [{ priceOnline: "asc" }, { createdAt: "desc" }];
-    if (sort === "priceOnline_desc") orderBy = [{ priceOnline: "desc" }, { createdAt: "desc" }];
-    if (sort === "priceF2F_asc")     orderBy = [{ priceF2F: "asc" }, { createdAt: "desc" }];
-    if (sort === "priceF2F_desc")    orderBy = [{ priceF2F: "desc" }, { createdAt: "desc" }];
+    // ---- veriyi çek (dersleri de al) ----
+    // Not: Burada teacherProfile -> lessons ilişkisi "lessons" varsayılmıştır.
+    // Sende farklıysa (ör. teacherLessons) "lessons" anahtarını ona göre değiştir.
+    const rows = await prisma.teacherProfile.findMany({
+      where,
+      // DB order'ını hafif tutuyoruz, asıl sıralamayı JS tarafında yapacağız
+      orderBy: [{ createdAt: "desc" }],
+      select: {
+        id: true, firstName: true, lastName: true, subjects: true, grades: true,
+        city: true, district: true, mode: true,
+        photoUrl: true, slug: true, viewCount: true,
+        ratingAverage: true, ratingCount: true,
+        // Eski profil fiyatları (fallback olarak kullanılacak)
+        priceOnline: true, priceF2F: true,
+        // Dersler: min fiyatı türetmek için
+        lessons: {
+          where: {
+            // aktif/publik gibi alanlar varsa burada filtreleyebilirsin:
+            // isActive: true,
+          },
+          select: { mode: true, price: true },
+        },
+      },
+    });
 
-    const [items, total] = await Promise.all([
-      prisma.teacherProfile.findMany({
-        where, skip, take, orderBy,
-        select: {
-          id: true, firstName: true, lastName: true, subjects: true, grades: true,
-          city: true, district: true, mode: true, priceOnline: true, priceF2F: true,
-          photoUrl: true, slug: true, viewCount: true, ratingAverage: true, ratingCount: true
+    // ---- yardımcılar ----
+    const normalizeTL = (val) => {
+      if (val == null) return undefined;
+      const n = Number(val);
+      if (!Number.isFinite(n)) return undefined;
+      // Kuruş tutuluyorsa (ör. 120000 = 1200,00 TL gibi) heuristik düzeltme:
+      return n >= 100000 ? Math.round(n / 100) : n;
+    };
+
+    // Derslerden min ONLINE / min F2F fiyatını çıkar
+    const materialize = (t) => {
+      let minOnline;
+      let minF2F;
+
+      for (const l of (t.lessons || [])) {
+        const p = Number(l.price);
+        if (!Number.isFinite(p)) continue;
+
+        if (l.mode === "ONLINE") {
+          minOnline = (minOnline == null) ? p : Math.min(minOnline, p);
+        } else if (l.mode === "FACE_TO_FACE") {
+          minF2F = (minF2F == null) ? p : Math.min(minF2F, p);
+        } else {
+          // "BOTH" gibi bir değer kullanıyorsan iki moda da yansıt
+          minOnline = (minOnline == null) ? p : Math.min(minOnline, p);
+          minF2F    = (minF2F    == null) ? p : Math.min(minF2F, p);
         }
-      }),
-      prisma.teacherProfile.count({ where })
-    ]);
+      }
 
-    res.json({ success: true, page: Number(page)||1, total, items });
+      const priceOnlineFromLessons = normalizeTL(minOnline);
+      const priceF2FFromLessons    = normalizeTL(minF2F);
+
+      // Türev fiyat yoksa profil fiyatlarını fallback olarak kullan
+      const priceOnline = priceOnlineFromLessons ?? normalizeTL(t.priceOnline) ?? null;
+      const priceF2F    = priceF2FFromLessons    ?? normalizeTL(t.priceF2F)    ?? null;
+
+      return {
+        id: t.id,
+        firstName: t.firstName,
+        lastName: t.lastName,
+        subjects: t.subjects,
+        grades: t.grades,
+        city: t.city,
+        district: t.district,
+        mode: t.mode,
+        photoUrl: t.photoUrl,
+        slug: t.slug,
+        viewCount: t.viewCount,
+        ratingAverage: t.ratingAverage,
+        ratingCount: t.ratingCount,
+        priceOnline,
+        priceF2F,
+      };
+    };
+
+    // ---- türetilmiş liste ----
+    let itemsAll = rows.map(materialize);
+
+    // ---- fiyat filtresi (türetilmiş fiyat üzerinden) ----
+    const minP = minPrice != null ? Number(minPrice) : null;
+    const maxP = maxPrice != null ? Number(maxPrice) : null;
+
+    if (minP != null || maxP != null) {
+      const inRange = (val) => {
+        if (val == null) return false;
+        if (minP != null && val < minP) return false;
+        if (maxP != null && val > maxP) return false;
+        return true;
+      };
+
+      if (mode === "ONLINE") {
+        itemsAll = itemsAll.filter(t => inRange(t.priceOnline));
+      } else if (mode === "FACE_TO_FACE") {
+        itemsAll = itemsAll.filter(t => inRange(t.priceF2F));
+      } else {
+        // mode belirtilmemişse: iki moddan en az biri aralığa uyuyorsa geçir
+        itemsAll = itemsAll.filter(t => inRange(t.priceOnline) || inRange(t.priceF2F));
+      }
+    }
+
+    // ---- sıralama ----
+    const sortByNumber = (arr, key, dir = "asc") => {
+      const s = [...arr].sort((a, b) => {
+        const va = a[key]; const vb = b[key];
+        // null/undefined en sona
+        const aa = (va == null) ? Number.POSITIVE_INFINITY : Number(va);
+        const bb = (vb == null) ? Number.POSITIVE_INFINITY : Number(vb);
+        return dir === "asc" ? (aa - bb) : (bb - aa);
+      });
+      return s;
+    };
+
+    if (sort === "most_viewed") {
+      itemsAll.sort((a, b) =>
+        (b.viewCount || 0) - (a.viewCount || 0)
+        || (b.ratingAverage || 0) - (a.ratingAverage || 0)
+        || (b.ratingCount || 0) - (a.ratingCount || 0)
+      );
+    } else if (sort === "top_rated") {
+      itemsAll.sort((a, b) =>
+        (b.ratingAverage || 0) - (a.ratingAverage || 0)
+        || (b.ratingCount || 0) - (a.ratingCount || 0)
+        || (b.viewCount || 0) - (a.viewCount || 0)
+      );
+    } else if (sort === "priceOnline_asc") {
+      itemsAll = sortByNumber(itemsAll, "priceOnline", "asc");
+    } else if (sort === "priceOnline_desc") {
+      itemsAll = sortByNumber(itemsAll, "priceOnline", "desc");
+    } else if (sort === "priceF2F_asc") {
+      itemsAll = sortByNumber(itemsAll, "priceF2F", "asc");
+    } else if (sort === "priceF2F_desc") {
+      itemsAll = sortByNumber(itemsAll, "priceF2F", "desc");
+    } else {
+      // fallback: en yeni oluşturulan profiller önce
+      itemsAll.sort((a, b) => (b.id > a.id ? 1 : -1)); // id-based approx; istersen createdAt seçip onunla sırala
+    }
+
+    // ---- sayfalama (JS tarafında, filtre/sıralama sonrası) ----
+    const total = itemsAll.length;
+    const start = (pageNum - 1) * perPage;
+    const end   = start + perPage;
+    const items = itemsAll.slice(start, end);
+
+    return res.json({
+      success: true,
+      page: pageNum,
+      total,
+      items,
+    });
   } catch (e) {
     console.error(e);
-    res.status(500).json({ success: false, message: "Listeleme hatası." });
+    return res.status(500).json({ success: false, message: "Listeleme hatası." });
   }
 };
+
 
 
 /** Public – tek öğretmen sayfası */
