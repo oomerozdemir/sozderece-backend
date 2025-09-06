@@ -1218,6 +1218,7 @@ export const getTeacherSlotsPublic = async (req, res) => {
 };
 
 
+
 export const getMyIncomingRequests = async (req, res) => {
   try {
     const userId = Number(req.user?.id);
@@ -1288,7 +1289,7 @@ export const getMyIncomingRequests = async (req, res) => {
         notes: true,
         price: true,
         studentUserId: true,
-        student: { select: { id: true, name: true, email: true } }, // <-- ÖĞRENCİ BİLGİSİ
+        student: { select: { id: true, name: true, email: true } },
       },
       orderBy: { startsAt: "asc" },
     });
@@ -1300,21 +1301,18 @@ export const getMyIncomingRequests = async (req, res) => {
         r.packageSlug === "paket-6" ? 6 :
         r.packageSlug === "paket-3" ? 3 : 1;
 
-      mapByReq.set(r.id, {
+      mapByReq.set(String(r.id), {
         ...r,
         lessonsCount,
-        paidTL:
-          typeof r.packageUnitPrice === "number"
-            ? r.packageUnitPrice / 100
-            : null,
-        appointments: [],            // bekleyenler
-        appointmentsConfirmed: [],   // onaylılar
+        paidTL: typeof r.packageUnitPrice === "number" ? r.packageUnitPrice / 100 : null,
+        appointments: [],           // bekleyenler
+        appointmentsConfirmed: [],  // onaylılar
       });
     }
 
     const getReqIdFromNotes = (notes) => {
       const m = /requestId=([a-z0-9]+)/i.exec(notes || "");
-      return m?.[1] || null;
+      return m?.[1] ? String(m[1]) : null;
     };
 
     // Bekleyenleri taleplere ekle
@@ -1341,12 +1339,10 @@ export const getMyIncomingRequests = async (req, res) => {
 };
 
 
-
 /**
  * Randevu durum güncelleme: CONFIRMED / CANCELLED
  * Sadece ilgili öğretmen kendi randevusunu güncelleyebilir.
  */
-
 export const updateAppointmentStatus = async (req, res) => {
   try {
     const userId = Number(req.user?.id);
@@ -1369,7 +1365,12 @@ export const updateAppointmentStatus = async (req, res) => {
     // Randevu gerçekten bu öğretmene mi ait?
     const appt = await prisma.appointment.findUnique({
       where: { id },
-      select: { id: true, teacherProfileId: true, startsAt: true, endsAt: true },
+      select: {
+        id: true,
+        teacherProfileId: true,
+        startsAt: true,
+        endsAt: true,
+      },
     });
     if (!appt || appt.teacherProfileId !== tp.id) {
       return res.status(404).json({ message: "Randevu bulunamadı." });
@@ -1379,51 +1380,39 @@ export const updateAppointmentStatus = async (req, res) => {
     const updated = await prisma.appointment.update({
       where: { id },
       data: { status: next },
+      select: {
+        id: true,
+        startsAt: true,
+        endsAt: true,
+        status: true,
+        mode: true,
+        notes: true,
+        price: true,
+      },
     });
 
     // 2) Takvime işle (TimeOff) — CONFIRMED -> Ekle, CANCELLED -> Kaldır
+    // Not: teacherTimeOff üzerinde unique bir alanınız yoksa "findFirst + create" / "deleteMany" stratejisi güvenli ve yeterli.
     const reasonTag = `APPT#${id}`; // eşleştirme için benzersiz etiket
+
     if (next === "CONFIRMED") {
-      // aynı etikete sahip bir timeoff yoksa oluştur
-      await prisma.teacherTimeOff.upsert({
-        where: {
-          // composite unique yoksa şu pattern: id üreterek çözebiliriz,
-          // ya da findFirst + create yaparız; burada findFirst + create güvenli:
-          // (upsert için unique gerekiyor; yoksa aşağıdaki iki adımı uygula)
-        },
-        update: {},
-        create: {
-          teacherProfileId: tp.id,
-          startsAt: appt.startsAt,
-          endsAt: appt.endsAt,
-          reason: reasonTag, // "APPT#<id>"
-        },
-      }).catch(async () => {
-        // Unique constraint yoksa:
-        const existing = await prisma.teacherTimeOff.findFirst({
-          where: {
+      const exists = await prisma.teacherTimeOff.findFirst({
+        where: { teacherProfileId: tp.id, reason: reasonTag },
+        select: { id: true },
+      });
+      if (!exists) {
+        await prisma.teacherTimeOff.create({
+          data: {
             teacherProfileId: tp.id,
+            startsAt: appt.startsAt,
+            endsAt: appt.endsAt,
             reason: reasonTag,
           },
         });
-        if (!existing) {
-          await prisma.teacherTimeOff.create({
-            data: {
-              teacherProfileId: tp.id,
-              startsAt: appt.startsAt,
-              endsAt: appt.endsAt,
-              reason: reasonTag,
-            },
-          });
-        }
-      });
+      }
     } else if (next === "CANCELLED") {
-      // ilgili timeoff’u sil
       await prisma.teacherTimeOff.deleteMany({
-        where: {
-          teacherProfileId: tp.id,
-          reason: reasonTag,
-        },
+        where: { teacherProfileId: tp.id, reason: reasonTag },
       });
     }
 
