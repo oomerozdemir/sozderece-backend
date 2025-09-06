@@ -1,7 +1,7 @@
 import { PrismaClient } from "@prisma/client";
 const prisma = new PrismaClient();
 
-import { sendNewRequestToTeacher } from "../utils/sendEmail";
+import { sendNewRequestToTeacher } from "../utils/sendEmail.js";
 
 export const createStudentRequest = async (req, res) => {
   try {
