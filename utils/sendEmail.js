@@ -231,7 +231,8 @@ export const sendOrderExpiryReminder = async (to, order) => {
 
 
 
-export async function sendNewRequestToTeacher(to, payload) {
+/** 🆕 Öğretmene “yeni talep” bildirimi */
+export async function sendNewRequestToTeacher(to, payload = {}) {
   const {
     teacherName,
     studentName,
@@ -239,14 +240,14 @@ export async function sendNewRequestToTeacher(to, payload) {
     studentPhone,
     subject,
     grade,
-    modeLabel,         // "Online" | "Yüz yüze"
-    packageTitle,      // örn: "Paket 3" (talep oluşturma anında genelde yok)
-    lessonsCount,      // 1 / 3 / 6 ... (genelde yok)
-    note,              // öğrencinin notu (schema: note)
+    modeLabel,        // "Online" | "Yüz yüze"
+    packageTitle,     // varsa
+    lessonsCount,     // varsa
+    note,             // öğrencinin notu
     requestId,
     createdAt,
     panelUrl = "https://sozderecekocluk.com/ogretmen/panel",
-  } = payload || {};
+  } = payload;
 
   const html = `
   <div style="font-family: Arial, sans-serif; background:#f8fafc; padding:20px;">
@@ -296,9 +297,5 @@ export async function sendNewRequestToTeacher(to, payload) {
     </table>
   </div>`;
 
-  await sendEmail({
-    to,
-    subject: "🆕 Yeni Ders Talebi Var",
-    html,
-  });
+  await sendEmail({ to, subject: "🆕 Yeni Ders Talebi Var", html });
 }

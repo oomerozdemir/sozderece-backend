@@ -7,21 +7,20 @@ export const createStudentRequest = async (req, res) => {
   try {
     const rawUserId = req.user?.id;
     if (!rawUserId) return res.status(401).json({ message: "Yetkisiz" });
-    const userId = Number(rawUserId); // şema: Int
+    const userId = Number(rawUserId);
 
     const {
       teacherSlug,
       subject = "",
       grade = "",
-      mode = "ONLINE",          // "ONLINE" | "FACE_TO_FACE" (RequestMode)
+      mode = "ONLINE",
       city = "",
       district = "",
       locationNote = "",
-      note = "",                // şema alanı: note
-      // not: paket bilgileri talep oluşturma anında genelde yok
+      note = "",
     } = req.body || {};
 
-    // 1) Öğretmeni çek (kısıtlar + mail için gerekli user.email)
+    // Öğretmeni e-posta için user.email ile çek
     const teacher = await prisma.teacherProfile.findUnique({
       where: { slug: teacherSlug },
       select: {
@@ -31,15 +30,13 @@ export const createStudentRequest = async (req, res) => {
         mode: true,
         subjects: true,
         grades: true,
-        user: { select: { email: true, name: true } }, // mail göndermek için
+        user: { select: { email: true, name: true } }, // ← mail için gerekli
       },
     });
-    if (!teacher) {
-      return res.status(404).json({ message: "Öğretmen bulunamadı" });
-    }
+    if (!teacher) return res.status(404).json({ message: "Öğretmen bulunamadı" });
 
-    // 2) Validasyonlar (ders/grade + mod)
-    const modeNorm = String(mode).toUpperCase(); // "ONLINE" | "FACE_TO_FACE"
+    const modeNorm = String(mode).toUpperCase();
+
     if (teacher.subjects && !teacher.subjects.includes(subject)) {
       return res.status(400).json({ message: "Öğretmen bu dersi vermiyor." });
     }
@@ -54,7 +51,7 @@ export const createStudentRequest = async (req, res) => {
       return res.status(400).json({ message: "Yüz yüze için şehir ve ilçe gerekli." });
     }
 
-    // 3) Talebi oluştur (şema: StudentLessonRequest)
+    // Talebi oluştur
     const request = await prisma.studentLessonRequest.create({
       data: {
         studentId: userId,              // Int
@@ -79,16 +76,14 @@ export const createStudentRequest = async (req, res) => {
       },
     });
 
-    // 4) Öğrenci bilgisi (mail içerik zenginliği için)
+    // Öğrenci bilgisi (mail içeriği için)
     const student = await prisma.user.findUnique({
       where: { id: userId },
       select: { name: true, email: true, phone: true },
     });
 
-    // 5) Öğretmenin mail adresi
+    // Öğretmene mail
     const teacherEmail = teacher.user?.email;
-
-    // 6) Maili gönder (mail hatası akışı bozmasın diye try/catch)
     if (teacherEmail) {
       const teacherName =
         `${teacher.firstName || ""} ${teacher.lastName || ""}`.trim() || teacher.user?.name || "";
@@ -104,7 +99,7 @@ export const createStudentRequest = async (req, res) => {
           subject: request.subject,
           grade: request.grade,
           modeLabel,
-          // paket alanları talep anında genelde boş:
+          // paket bu aşamada yok → boş bırak
           packageTitle: undefined,
           lessonsCount: undefined,
           note: request.note || "",
@@ -125,6 +120,7 @@ export const createStudentRequest = async (req, res) => {
     });
   }
 };
+
 
 export const getStudentRequest = async (req, res) => {
   try {
@@ -203,7 +199,6 @@ export const markRequestPaid = async (req, res) => {
   }
 };
 
-
 export const saveRequestSlots = async (req, res) => {
   try {
     const rawUserId = req.user?.id;
@@ -218,7 +213,6 @@ export const saveRequestSlots = async (req, res) => {
       return res.status(404).json({ message: "Talep bulunamadı." });
     }
 
-    // Paket adetini zorunlu tut
     const lessonsCount =
       reqRec.packageSlug === "paket-3" ? 3 :
       reqRec.packageSlug === "paket-6" ? 6 : 1;
@@ -227,7 +221,7 @@ export const saveRequestSlots = async (req, res) => {
       return res.status(400).json({ message: `Lütfen ${lessonsCount} adet saat seçiniz.` });
     }
 
-    // Çakışma kontrolü (öğretmenin mevcut PENDING/CONFIRMED randevuları ile)
+    // ✅ BUGFIX: .slots yerine ...slots
     const sMin = new Date(Math.min(...slots.map(s => +new Date(s.start))));
     const eMax = new Date(Math.max(...slots.map(s => +new Date(s.end))));
 
@@ -235,19 +229,17 @@ export const saveRequestSlots = async (req, res) => {
       where: {
         teacherProfileId: reqRec.teacherProfileId,
         status: { in: ["PENDING", "CONFIRMED"] },
-        OR: [
-          { startsAt: { lt: eMax }, endsAt: { gt: sMin } }
-        ]
+        OR: [{ startsAt: { lt: eMax }, endsAt: { gt: sMin } }],
       },
-      select: { startsAt: true, endsAt: true }
+      select: { startsAt: true, endsAt: true },
     });
 
-    const hasConflict = (s) => conflicts.some(c => (new Date(s.start) < c.endsAt && new Date(s.end) > c.startsAt));
+    const hasConflict = (s) =>
+      conflicts.some(c => (new Date(s.start) < c.endsAt && new Date(s.end) > c.startsAt));
     if (slots.some(hasConflict)) {
       return res.status(409).json({ message: "Seçilen saatlerden bazıları dolu görünüyor. Lütfen güncelleyiniz." });
     }
 
-    // Randevuları PENDING oluştur
     const perLessonPrice = reqRec.packageUnitPrice
       ? Math.round(Number(reqRec.packageUnitPrice) / lessonsCount)
       : null;
@@ -259,11 +251,11 @@ export const saveRequestSlots = async (req, res) => {
           studentUserId: userId,
           startsAt: new Date(s.start),
           endsAt:   new Date(s.end),
-          mode:     reqRec.mode,       // RequestMode ~ LessonMode
+          mode:     reqRec.mode,
           status:   "PENDING",
           price:    perLessonPrice,
           title:    "Özel ders talebi",
-          notes:    `requestId=${reqRec.id}`
+          notes:    `requestId=${reqRec.id}`,
         }
       }))
     );
