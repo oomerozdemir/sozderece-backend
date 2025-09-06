@@ -318,11 +318,10 @@ export const searchTeachers = async (req, res) => {
       minPrice, maxPrice, sort
     } = req.query;
 
-    // ---- sayfalama (FE istekleri için uygulanacak) ----
-    const pageNum  = Math.max(Number(page)  || 1, 1);
-    const perPage  = Math.min(Number(limit) || 20, 50);
+    const pageNum = Math.max(Number(page) || 1, 1);
+    const perPage = Math.min(Number(limit) || 20, 50);
 
-    // ---- temel filtreler (fiyatı DB'de değil, türetilmiş değerle JS tarafında filtreleyeceğiz) ----
+    // ---- temel filtreler (fiyat filtrelemesini türetilmiş değerle JS tarafında yapacağız) ----
     const where = {
       isPublic: true,
       isApproved: true,
@@ -340,27 +339,24 @@ export const searchTeachers = async (req, res) => {
       } : {}),
     };
 
-    // ---- veriyi çek (dersleri de al) ----
-    // Not: Burada teacherProfile -> lessons ilişkisi "lessons" varsayılmıştır.
-    // Sende farklıysa (ör. teacherLessons) "lessons" anahtarını ona göre değiştir.
+    // ---- veriyi çek (derslerle birlikte) ----
     const rows = await prisma.teacherProfile.findMany({
       where,
-      // DB order'ını hafif tutuyoruz, asıl sıralamayı JS tarafında yapacağız
-      orderBy: [{ createdAt: "desc" }],
+      orderBy: [{ createdAt: "desc" }], // fallback sıralama
       select: {
         id: true, firstName: true, lastName: true, subjects: true, grades: true,
         city: true, district: true, mode: true,
         photoUrl: true, slug: true, viewCount: true,
         ratingAverage: true, ratingCount: true,
-        // Eski profil fiyatları (fallback olarak kullanılacak)
+        // profil üzerindeki eski fiyatlar (fallback)
         priceOnline: true, priceF2F: true,
-        // Dersler: min fiyatı türetmek için
+        // 🔑 Dersler: burada 'mode' ve 'price' yok; priceOnline/priceF2F var
         lessons: {
           where: {
-            // aktif/publik gibi alanlar varsa burada filtreleyebilirsin:
-            // isActive: true,
+            // isActive alanın varsa aktif dersleri filtreleyebilirsin:
+            // isActive: true
           },
-          select: { mode: true, price: true },
+          select: { priceOnline: true, priceF2F: true, isActive: true },
         },
       },
     });
@@ -370,7 +366,7 @@ export const searchTeachers = async (req, res) => {
       if (val == null) return undefined;
       const n = Number(val);
       if (!Number.isFinite(n)) return undefined;
-      // Kuruş tutuluyorsa (ör. 120000 = 1200,00 TL gibi) heuristik düzeltme:
+      // değer kuruş bazında tutuluyorsa (ör. 120000) basit bir heuristik:
       return n >= 100000 ? Math.round(n / 100) : n;
     };
 
@@ -380,24 +376,17 @@ export const searchTeachers = async (req, res) => {
       let minF2F;
 
       for (const l of (t.lessons || [])) {
-        const p = Number(l.price);
-        if (!Number.isFinite(p)) continue;
+        const pOn  = Number(l.priceOnline);
+        const pF2F = Number(l.priceF2F);
 
-        if (l.mode === "ONLINE") {
-          minOnline = (minOnline == null) ? p : Math.min(minOnline, p);
-        } else if (l.mode === "FACE_TO_FACE") {
-          minF2F = (minF2F == null) ? p : Math.min(minF2F, p);
-        } else {
-          // "BOTH" gibi bir değer kullanıyorsan iki moda da yansıt
-          minOnline = (minOnline == null) ? p : Math.min(minOnline, p);
-          minF2F    = (minF2F    == null) ? p : Math.min(minF2F, p);
-        }
+        if (Number.isFinite(pOn))  minOnline = (minOnline == null) ? pOn  : Math.min(minOnline, pOn);
+        if (Number.isFinite(pF2F)) minF2F    = (minF2F    == null) ? pF2F : Math.min(minF2F, pF2F);
       }
 
       const priceOnlineFromLessons = normalizeTL(minOnline);
       const priceF2FFromLessons    = normalizeTL(minF2F);
 
-      // Türev fiyat yoksa profil fiyatlarını fallback olarak kullan
+      // türev bulunamazsa profil fiyatlarına düş
       const priceOnline = priceOnlineFromLessons ?? normalizeTL(t.priceOnline) ?? null;
       const priceF2F    = priceF2FFromLessons    ?? normalizeTL(t.priceF2F)    ?? null;
 
@@ -420,18 +409,17 @@ export const searchTeachers = async (req, res) => {
       };
     };
 
-    // ---- türetilmiş liste ----
     let itemsAll = rows.map(materialize);
 
     // ---- fiyat filtresi (türetilmiş fiyat üzerinden) ----
-    const minP = minPrice != null ? Number(minPrice) : null;
-    const maxP = maxPrice != null ? Number(maxPrice) : null;
+    const minP = (minPrice != null) ? Number(minPrice) : null;
+    const maxP = (maxPrice != null) ? Number(maxPrice) : null;
 
     if (minP != null || maxP != null) {
-      const inRange = (val) => {
-        if (val == null) return false;
-        if (minP != null && val < minP) return false;
-        if (maxP != null && val > maxP) return false;
+      const inRange = (v) => {
+        if (v == null) return false;
+        if (minP != null && v < minP) return false;
+        if (maxP != null && v > maxP) return false;
         return true;
       };
 
@@ -440,7 +428,7 @@ export const searchTeachers = async (req, res) => {
       } else if (mode === "FACE_TO_FACE") {
         itemsAll = itemsAll.filter(t => inRange(t.priceF2F));
       } else {
-        // mode belirtilmemişse: iki moddan en az biri aralığa uyuyorsa geçir
+        // iki moddan en az biri aralığa uyuyorsa geçir
         itemsAll = itemsAll.filter(t => inRange(t.priceOnline) || inRange(t.priceF2F));
       }
     }
@@ -449,7 +437,6 @@ export const searchTeachers = async (req, res) => {
     const sortByNumber = (arr, key, dir = "asc") => {
       const s = [...arr].sort((a, b) => {
         const va = a[key]; const vb = b[key];
-        // null/undefined en sona
         const aa = (va == null) ? Number.POSITIVE_INFINITY : Number(va);
         const bb = (vb == null) ? Number.POSITIVE_INFINITY : Number(vb);
         return dir === "asc" ? (aa - bb) : (bb - aa);
@@ -477,23 +464,16 @@ export const searchTeachers = async (req, res) => {
       itemsAll = sortByNumber(itemsAll, "priceF2F", "asc");
     } else if (sort === "priceF2F_desc") {
       itemsAll = sortByNumber(itemsAll, "priceF2F", "desc");
-    } else {
-      // fallback: en yeni oluşturulan profiller önce
-      itemsAll.sort((a, b) => (b.id > a.id ? 1 : -1)); // id-based approx; istersen createdAt seçip onunla sırala
     }
+    // aksi halde DB'deki createdAt desc sırası korunur
 
-    // ---- sayfalama (JS tarafında, filtre/sıralama sonrası) ----
+    // ---- sayfalama ----
     const total = itemsAll.length;
     const start = (pageNum - 1) * perPage;
     const end   = start + perPage;
     const items = itemsAll.slice(start, end);
 
-    return res.json({
-      success: true,
-      page: pageNum,
-      total,
-      items,
-    });
+    return res.json({ success: true, page: pageNum, total, items });
   } catch (e) {
     console.error(e);
     return res.status(500).json({ success: false, message: "Listeleme hatası." });
