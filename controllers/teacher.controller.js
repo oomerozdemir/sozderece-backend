@@ -1249,7 +1249,7 @@ export const getMyIncomingRequests = async (req, res) => {
         packageTitle: true,
         packageUnitPrice: true,
         studentId: true,
-        student: { select: { id: true, name: true, email: true } },
+        student: { select: { id: true, name: true, email: true, phone: true } },
       },
     });
 
@@ -1289,7 +1289,7 @@ export const getMyIncomingRequests = async (req, res) => {
         notes: true,
         price: true,
         studentUserId: true,
-        student: { select: { id: true, name: true, email: true } },
+        student: { select: { id: true, name: true, email: true, phone: true } },
       },
       orderBy: { startsAt: "asc" },
     });

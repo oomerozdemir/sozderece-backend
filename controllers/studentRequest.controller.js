@@ -1,36 +1,45 @@
 import { PrismaClient } from "@prisma/client";
 const prisma = new PrismaClient();
 
+import { sendNewRequestToTeacher } from "../utils/sendEmail";
+
 export const createStudentRequest = async (req, res) => {
   try {
-    const rawUserId = req.user?.id; // authenticateToken sonrası
+    const rawUserId = req.user?.id;
     if (!rawUserId) return res.status(401).json({ message: "Yetkisiz" });
-    const userId = Number(rawUserId); // 🔧 Int'e çevir
+    const userId = Number(rawUserId); // şema: Int
 
     const {
       teacherSlug,
       subject = "",
       grade = "",
-      mode = "ONLINE",          // "ONLINE" | "FACE_TO_FACE"
+      mode = "ONLINE",          // "ONLINE" | "FACE_TO_FACE" (RequestMode)
       city = "",
       district = "",
       locationNote = "",
-      note = "",
+      note = "",                // şema alanı: note
+      // not: paket bilgileri talep oluşturma anında genelde yok
     } = req.body || {};
 
-    // 🔧 Öğretmeni tüm gerekli alanlarla çek (subjects/grades lazım!)
+    // 1) Öğretmeni çek (kısıtlar + mail için gerekli user.email)
     const teacher = await prisma.teacherProfile.findUnique({
       where: { slug: teacherSlug },
-      select: { id: true, mode: true, subjects: true, grades: true },
+      select: {
+        id: true,
+        firstName: true,
+        lastName: true,
+        mode: true,
+        subjects: true,
+        grades: true,
+        user: { select: { email: true, name: true } }, // mail göndermek için
+      },
     });
     if (!teacher) {
       return res.status(404).json({ message: "Öğretmen bulunamadı" });
     }
 
-    // 🔧 Enum/harf doğrulaması
-    const modeNorm = String(mode).toUpperCase(); // ONLINE / FACE_TO_FACE
-
-    // BE validasyon – öğretmenin verdiği ders/grade & mod uygun mu?
+    // 2) Validasyonlar (ders/grade + mod)
+    const modeNorm = String(mode).toUpperCase(); // "ONLINE" | "FACE_TO_FACE"
     if (teacher.subjects && !teacher.subjects.includes(subject)) {
       return res.status(400).json({ message: "Öğretmen bu dersi vermiyor." });
     }
@@ -41,32 +50,76 @@ export const createStudentRequest = async (req, res) => {
     if (!allowedMode.includes(modeNorm)) {
       return res.status(400).json({ message: "Öğretmenin ders modu buna uygun değil." });
     }
-
-    // Yüz yüze ise şehir/ilçe gerekli
     if (modeNorm === "FACE_TO_FACE" && (!city || !district)) {
       return res.status(400).json({ message: "Yüz yüze için şehir ve ilçe gerekli." });
     }
 
-    const rec = await prisma.studentLessonRequest.create({
+    // 3) Talebi oluştur (şema: StudentLessonRequest)
+    const request = await prisma.studentLessonRequest.create({
       data: {
-        studentId: userId,                // 🔴 kritik: Int
-        teacherProfileId: teacher.id,     // 🔴 kritik: teacher FK
+        studentId: userId,              // Int
+        teacherProfileId: teacher.id,   // String (cuid)
         subject,
         grade,
-        mode: modeNorm,                   // "ONLINE" | "FACE_TO_FACE"
+        mode: modeNorm,
         city: city || null,
         district: district || null,
         locationNote: locationNote || null,
         note: note || null,
         status: "SUBMITTED",
       },
-      select: { id: true, studentId: true, status: true },
+      select: {
+        id: true,
+        createdAt: true,
+        subject: true,
+        grade: true,
+        mode: true,
+        note: true,
+        teacherProfileId: true,
+      },
     });
 
-    res.status(201).json({ success: true, request: rec, id: rec.id });
+    // 4) Öğrenci bilgisi (mail içerik zenginliği için)
+    const student = await prisma.user.findUnique({
+      where: { id: userId },
+      select: { name: true, email: true, phone: true },
+    });
+
+    // 5) Öğretmenin mail adresi
+    const teacherEmail = teacher.user?.email;
+
+    // 6) Maili gönder (mail hatası akışı bozmasın diye try/catch)
+    if (teacherEmail) {
+      const teacherName =
+        `${teacher.firstName || ""} ${teacher.lastName || ""}`.trim() || teacher.user?.name || "";
+
+      const modeLabel = modeNorm === "FACE_TO_FACE" ? "Yüz yüze" : "Online";
+
+      try {
+        await sendNewRequestToTeacher(teacherEmail, {
+          teacherName,
+          studentName: student?.name || "",
+          studentEmail: student?.email || "",
+          studentPhone: student?.phone || "",
+          subject: request.subject,
+          grade: request.grade,
+          modeLabel,
+          // paket alanları talep anında genelde boş:
+          packageTitle: undefined,
+          lessonsCount: undefined,
+          note: request.note || "",
+          requestId: request.id,
+          createdAt: request.createdAt,
+        });
+      } catch (err) {
+        console.error("Yeni talep maili gönderilemedi:", err?.message || err);
+      }
+    }
+
+    return res.status(201).json({ success: true, request, id: request.id });
   } catch (e) {
     console.error("createStudentRequest error:", e);
-    res.status(500).json({
+    return res.status(500).json({
       message: "Talep oluşturulamadı.",
       error: e?.message || String(e),
     });

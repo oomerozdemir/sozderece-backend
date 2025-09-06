@@ -228,3 +228,77 @@ export const sendOrderExpiryReminder = async (to, order) => {
     html,
   });
 };
+
+
+
+export async function sendNewRequestToTeacher(to, payload) {
+  const {
+    teacherName,
+    studentName,
+    studentEmail,
+    studentPhone,
+    subject,
+    grade,
+    modeLabel,         // "Online" | "Yüz yüze"
+    packageTitle,      // örn: "Paket 3" (talep oluşturma anında genelde yok)
+    lessonsCount,      // 1 / 3 / 6 ... (genelde yok)
+    note,              // öğrencinin notu (schema: note)
+    requestId,
+    createdAt,
+    panelUrl = "https://sozderecekocluk.com/ogretmen/panel",
+  } = payload || {};
+
+  const html = `
+  <div style="font-family: Arial, sans-serif; background:#f8fafc; padding:20px;">
+    <table width="100%" style="max-width:600px; margin:auto; background:#fff; border-radius:12px; overflow:hidden; box-shadow:0 2px 8px rgba(0,0,0,0.06);">
+      <tr>
+        <td style="padding:24px; text-align:center;">
+          <h2 style="margin:0; color:#111827;">🆕 Yeni Ders Talebi</h2>
+          <p style="margin:8px 0 0; color:#6b7280;">${teacherName ? `${teacherName}, ` : ""}size yeni bir talep ulaştı.</p>
+        </td>
+      </tr>
+      <tr>
+        <td style="padding:0 24px 24px;">
+          <div style="background:#f3f4f6; border:1px solid #e5e7eb; padding:16px; border-radius:8px;">
+            <p style="margin:0 0 6px;"><strong>📅 Talep Zamanı:</strong> ${new Date(createdAt || Date.now()).toLocaleString("tr-TR")}</p>
+            ${requestId ? `<p style="margin:0 0 6px;"><strong>🆔 Talep No:</strong> #${requestId}</p>` : ""}
+            <p style="margin:0 0 6px;"><strong>📚 Ders:</strong> ${subject || "—"}</p>
+            <p style="margin:0 0 6px;"><strong>🎓 Seviye:</strong> ${grade || "—"}</p>
+            <p style="margin:0 0 6px;"><strong>🧭 Tür:</strong> ${modeLabel || "—"}</p>
+            ${(packageTitle || lessonsCount) ? `<p style="margin:0 0 6px;"><strong>🏷️ Paket:</strong> ${packageTitle || "—"} ${lessonsCount ? `(${lessonsCount} ders)` : ""}</p>` : ""}
+          </div>
+
+          <div style="margin-top:14px; background:#ecfeff; border:1px solid #a5f3fc; padding:16px; border-radius:8px;">
+            <p style="margin:0 0 6px;"><strong>👤 Öğrenci:</strong> ${studentName || "Öğrenci"}</p>
+            <p style="margin:0 0 6px;"><strong>📧 E-posta:</strong> ${studentEmail || "—"}</p>
+            <p style="margin:0;"><strong>📞 Telefon:</strong> ${studentPhone || "—"}</p>
+          </div>
+
+          ${note ? `
+            <div style="margin-top:14px; background:#fefce8; border:1px solid #fde68a; padding:16px; border-radius:8px;">
+              <p style="margin:0 0 6px; color:#7c6d00;"><strong>📝 Öğrenci Notu:</strong></p>
+              <p style="margin:0; white-space:pre-wrap; color:#7c6d00;">${note}</p>
+            </div>` : ""
+          }
+
+          <div style="text-align:center; margin-top:22px;">
+            <a href="${panelUrl}" style="display:inline-block; background:#10b981; color:#fff; text-decoration:none; padding:12px 20px; border-radius:8px; font-weight:600;">
+              Öğretmen Paneline Git
+            </a>
+          </div>
+        </td>
+      </tr>
+      <tr>
+        <td style="background:#f3f4f6; padding:12px; text-align:center; color:#9ca3af; font-size:12px;">
+          © ${new Date().getFullYear()} SözDerece • Bu bir bilgilendirme mesajıdır.
+        </td>
+      </tr>
+    </table>
+  </div>`;
+
+  await sendEmail({
+    to,
+    subject: "🆕 Yeni Ders Talebi Var",
+    html,
+  });
+}
