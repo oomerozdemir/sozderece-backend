@@ -1,3 +1,4 @@
+// routes/public/studentRequest.routes.js
 import { Router } from "express";
 import { authenticateToken } from "../../middleware/authMiddleware.js";
 import {
@@ -11,17 +12,14 @@ import {
 
 const r = Router();
 
-/* Önce spesifik rotalar */
-r.get("/me", authenticateToken, listMyRequests);                 // ← /:id'den ÖNCE
+/* 1) Spesifik rota ÖNCE */
+r.get("/me", authenticateToken, listMyRequests);
 
-/* CRUD */
+/* 2) CRUD */
 r.post("/", authenticateToken, createStudentRequest);
-
-/* İsteğe bağlı: :id için basit cuid benzeri bir kısıt (harf-rakam, 10+ chars) */
-r.get("/:id([a-zA-Z0-9_-]{10,})", authenticateToken, getStudentRequest);
-
-r.put("/:id([a-zA-Z0-9_-]{10,})/package", authenticateToken, attachPackageToRequest);
-r.put("/:id([a-zA-Z0-9_-]{10,})/paid", authenticateToken, markRequestPaid);
-r.post("/:id([a-zA-Z0-9_-]{10,})/slots", authenticateToken, saveRequestSlots);
+r.get("/:id", authenticateToken, getStudentRequest);
+r.post("/:id/package", authenticateToken, attachPackageToRequest);
+r.post("/:id/paid", authenticateToken, markRequestPaid);
+r.post("/:id/slots", authenticateToken, saveRequestSlots);
 
 export default r;
