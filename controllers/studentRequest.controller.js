@@ -266,3 +266,115 @@ export const saveRequestSlots = async (req, res) => {
     return res.status(500).json({ message: "Seçilen saatler kaydedilemedi." });
   }
 };
+
+
+/** Öğrencinin kendi talepleri (paket ve randevu özetleriyle) */
+export const listMyRequests = async (req, res) => {
+  try {
+    const rawUserId = req.user?.id;
+    if (!rawUserId) return res.status(401).json({ message: "Yetkisiz" });
+    const userId = Number(rawUserId);
+
+    // Son 90 gün randevu eşlemesi için
+    const since = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000);
+
+    // Öğrencinin talepleri (öğretmen bilgisi dahil)
+    const requests = await prisma.studentLessonRequest.findMany({
+      where: { studentId: userId },
+      orderBy: { createdAt: "desc" },
+      select: {
+        id: true,
+        createdAt: true,
+        status: true,            // SUBMITTED | PACKAGE_SELECTED | PAID | CANCELLED
+        subject: true,
+        grade: true,
+        mode: true,              // ONLINE | FACE_TO_FACE
+        packageSlug: true,
+        packageTitle: true,
+        packageUnitPrice: true,
+        teacherProfileId: true,
+        teacherProfile: {
+          select: {
+            id: true,
+            firstName: true,
+            lastName: true,
+            user: { select: { email: true, phone: true } },
+          },
+        },
+      },
+    });
+
+    // Randevular (öğrenciye ait) — PENDING ve CONFIRMED
+    const [pendingAppts, confirmedAppts] = await Promise.all([
+      prisma.appointment.findMany({
+        where: {
+          studentUserId: userId,
+          status: "PENDING",
+          startsAt: { gte: since },
+        },
+        select: { id: true, startsAt: true, endsAt: true, mode: true, notes: true, price: true },
+        orderBy: { startsAt: "asc" },
+      }),
+      prisma.appointment.findMany({
+        where: {
+          studentUserId: userId,
+          status: "CONFIRMED",
+          startsAt: { gte: since },
+        },
+        select: { id: true, startsAt: true, endsAt: true, mode: true, notes: true, price: true },
+        orderBy: { startsAt: "asc" },
+      }),
+    ]);
+
+    // notes içinden requestId çekmek için yardımcı
+    const getReqIdFromNotes = (notes) => {
+      const m = /requestId=([a-z0-9]+)/i.exec(notes || "");
+      return m?.[1] || null;
+    };
+
+    // Talepleri map’e koy
+    const mapByReq = new Map();
+    for (const r of requests) {
+      const lessonsCount =
+        r.packageSlug === "paket-6" ? 6 :
+        r.packageSlug === "paket-3" ? 3 : 1;
+
+      mapByReq.set(r.id, {
+        id: r.id,
+        createdAt: r.createdAt,
+        status: r.status,
+        subject: r.subject,
+        grade: r.grade,
+        mode: r.mode,
+        packageSlug: r.packageSlug,
+        packageTitle: r.packageTitle,
+        packageUnitPrice: r.packageUnitPrice,
+        lessonsCount,
+        paidTL: typeof r.packageUnitPrice === "number" ? r.packageUnitPrice / 100 : null,
+        teacher: r.teacherProfile ? {
+          id: r.teacherProfile.id,
+          name: `${r.teacherProfile.firstName || ""} ${r.teacherProfile.lastName || ""}`.trim(),
+          email: r.teacherProfile.user?.email || null,
+          phone: r.teacherProfile.user?.phone || null,
+        } : null,
+        appointments: [],
+        appointmentsConfirmed: [],
+      });
+    }
+
+    // Randevuları taleplere dağıt
+    for (const a of pendingAppts) {
+      const rid = getReqIdFromNotes(a.notes);
+      if (rid && mapByReq.has(rid)) mapByReq.get(rid).appointments.push(a);
+    }
+    for (const a of confirmedAppts) {
+      const rid = getReqIdFromNotes(a.notes);
+      if (rid && mapByReq.has(rid)) mapByReq.get(rid).appointmentsConfirmed.push(a);
+    }
+
+    return res.json({ success: true, items: Array.from(mapByReq.values()) });
+  } catch (e) {
+    console.error("listMyRequests error:", e);
+    return res.status(500).json({ message: "Talepler getirilemedi." });
+  }
+};
