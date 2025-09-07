@@ -351,15 +351,12 @@ export const listMyRequests = async (req, res) => {
         packageUnitPrice: r.packageUnitPrice,
         lessonsCount,
         paidTL: typeof r.packageUnitPrice === "number" ? r.packageUnitPrice / 100 : null,
-        teacher: r.teacherProfile
-          ? {
-              id: r.teacherProfile.id,
-              slug: r.teacherProfile.slug, 
-              name: `${r.teacherProfile.firstName || ""} ${r.teacherProfile.lastName || ""}`.trim(),
-              email: r.teacherProfile.user?.email || null,
-              phone: r.teacherProfile.user?.phone || null,
-            }
-          : null,
+        teacher: r.teacherProfile ? {
+          id: r.teacherProfile.id,
+          name: `${r.teacherProfile.firstName || ""} ${r.teacherProfile.lastName || ""}`.trim(),
+          email: r.teacherProfile.user?.email || null,
+          phone: r.teacherProfile.user?.phone || null,
+        } : null,
         appointments: [],
         appointmentsConfirmed: [],
       });
