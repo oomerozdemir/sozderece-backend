@@ -5,18 +5,23 @@ import {
   getStudentRequest,
   attachPackageToRequest,
   markRequestPaid,
-  saveRequestSlots,listMyRequests,
+  saveRequestSlots,
+  listMyRequests,
 } from "../../controllers/studentRequest.controller.js";
 
 const r = Router();
 
-r.post("/", authenticateToken, createStudentRequest);
-r.get("/:id", authenticateToken, getStudentRequest);
-r.put("/:id/package", authenticateToken, attachPackageToRequest);
-r.put("/:id/paid", authenticateToken, markRequestPaid);
-r.post("/:id/slots", authenticateToken, saveRequestSlots);
+/* Önce spesifik rotalar */
+r.get("/me", authenticateToken, listMyRequests);                 // ← /:id'den ÖNCE
 
-// Öğrencinin kendi talepleri
-r.get("/me", authenticateToken, listMyRequests);
+/* CRUD */
+r.post("/", authenticateToken, createStudentRequest);
+
+/* İsteğe bağlı: :id için basit cuid benzeri bir kısıt (harf-rakam, 10+ chars) */
+r.get("/:id([a-zA-Z0-9_-]{10,})", authenticateToken, getStudentRequest);
+
+r.put("/:id([a-zA-Z0-9_-]{10,})/package", authenticateToken, attachPackageToRequest);
+r.put("/:id([a-zA-Z0-9_-]{10,})/paid", authenticateToken, markRequestPaid);
+r.post("/:id([a-zA-Z0-9_-]{10,})/slots", authenticateToken, saveRequestSlots);
 
 export default r;
