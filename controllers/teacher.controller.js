@@ -3,8 +3,9 @@ import bcrypt from "bcrypt";
 import slugify from "slugify";
 import { generateToken } from "../middleware/authMiddleware.js";
 import { createVerificationCode } from "../services/verificationService.js";
-import { DateTime } from "luxon";
+import { sendAppointmentConfirmedToStudent } from "../utils/sendEmail.js";
 
+import { DateTime } from "luxon";
 import { isBefore } from "date-fns";
 
 const prisma = new PrismaClient();
@@ -1442,6 +1443,7 @@ export const updateAppointmentStatus = async (req, res) => {
     const { id } = req.params;      // appointment id
     const { status } = req.body;
     const next = String(status || "").toUpperCase();
+
     if (!["CONFIRMED", "CANCELLED"].includes(next)) {
       return res.status(400).json({ message: "Geçersiz durum." });
     }
@@ -1452,73 +1454,82 @@ export const updateAppointmentStatus = async (req, res) => {
     });
     if (!tp) return res.status(403).json({ message: "Öğretmen profili bulunamadı." });
 
+    // Randevu gerçekten bu öğretmene mi ait?
     const appt = await prisma.appointment.findUnique({
       where: { id },
-      select: {
-        id: true,
-        teacherProfileId: true,
-        startsAt: true,
-        endsAt: true,
-        notes: true,   // requestId=... çekmek için gerekli
-      },
+      // ⬇️ öğrenci ve mod bilgisi mail için gerekiyor
+      select: { id: true, teacherProfileId: true, startsAt: true, endsAt: true, studentUserId: true, mode: true },
     });
     if (!appt || appt.teacherProfileId !== tp.id) {
       return res.status(404).json({ message: "Randevu bulunamadı." });
     }
 
-    // 1) Randevuyu güncelle
+    // 1) Randevu durumunu güncelle
     const updated = await prisma.appointment.update({
       where: { id },
       data: { status: next },
-      select: {
-        id: true, startsAt: true, endsAt: true,
-        status: true, mode: true, notes: true, price: true,
-      },
     });
 
-    // 2) Takvim blok yönetimi (CONFIRMED -> ekle, CANCELLED -> kaldır)
+    // 2) Takvime işle (TimeOff) — CONFIRMED -> Ekle, CANCELLED -> Kaldır
     const reasonTag = `APPT#${id}`;
     if (next === "CONFIRMED") {
-      const exists = await prisma.teacherTimeOff.findFirst({
-        where: { teacherProfileId: tp.id, reason: reasonTag },
-        select: { id: true },
-      });
-      if (!exists) {
-        await prisma.teacherTimeOff.create({
-          data: {
-            teacherProfileId: tp.id,
-            startsAt: appt.startsAt,
-            endsAt: appt.endsAt,
-            reason: reasonTag,
-          },
+      // timeoff ekle (varsa atla)
+      await prisma.teacherTimeOff.upsert({
+        where: {}, update: {}, create: {
+          teacherProfileId: tp.id,
+          startsAt: appt.startsAt,
+          endsAt: appt.endsAt,
+          reason: reasonTag,
+        },
+      }).catch(async () => {
+        const existing = await prisma.teacherTimeOff.findFirst({
+          where: { teacherProfileId: tp.id, reason: reasonTag },
         });
+        if (!existing) {
+          await prisma.teacherTimeOff.create({
+            data: {
+              teacherProfileId: tp.id,
+              startsAt: appt.startsAt,
+              endsAt: appt.endsAt,
+              reason: reasonTag,
+            },
+          });
+        }
+      });
+
+      // 3) ✅ Öğrenciye e-posta gönder
+      try {
+        if (appt.studentUserId) {
+          const [student, teacherInfo] = await Promise.all([
+            prisma.user.findUnique({ where: { id: appt.studentUserId }, select: { email: true, name: true } }),
+            prisma.teacherProfile.findUnique({ where: { id: tp.id }, select: { firstName: true, lastName: true } }),
+          ]);
+
+          const studentEmail = student?.email;
+          const teacherName = `${teacherInfo?.firstName || ""} ${teacherInfo?.lastName || ""}`.trim();
+
+          if (studentEmail) {
+            await sendAppointmentConfirmedToStudent(studentEmail, {
+              studentName: student?.name || "",
+              teacherName,
+              // ders/grade bilgisini bulmak için gerekirse appointment.notes içindeki requestId ile request’e bakabilirsiniz.
+              // Basit versiyon: yalnızca mod + zaman bilgisi
+              subject: "", // opsiyonel
+              grade: "",   // opsiyonel
+              modeLabel: appt.mode === "FACE_TO_FACE" ? "Yüz yüze" : "Online",
+              startsAt: appt.startsAt,
+              endsAt: appt.endsAt,
+            });
+          }
+        }
+      } catch (mailErr) {
+        console.error("Onay maili gönderilemedi:", mailErr?.message || mailErr);
+        // mail hatası akışı bozmasın
       }
     } else if (next === "CANCELLED") {
       await prisma.teacherTimeOff.deleteMany({
         where: { teacherProfileId: tp.id, reason: reasonTag },
       });
-    }
-
-    // 3) Eğer iptal ise ve talepte başka aktif randevu kalmadıysa → talebi CANCELLED yap
-    if (next === "CANCELLED") {
-      const ridMatch = /requestId=([a-z0-9]+)/i.exec(appt.notes || "");
-      const reqId = ridMatch?.[1];
-      if (reqId) {
-        const stillActive = await prisma.appointment.count({
-          where: {
-            teacherProfileId: tp.id,
-            status: { in: ["PENDING", "CONFIRMED"] },
-            notes: { contains: `requestId=${reqId}`, mode: "insensitive" },
-          },
-        });
-        if (stillActive === 0) {
-          // öğretmenin talebini iptal edilmişe çek
-          await prisma.studentLessonRequest.updateMany({
-            where: { id: reqId, teacherProfileId: tp.id },
-            data: { status: "CANCELLED" },
-          });
-        }
-      }
     }
 
     return res.json({ success: true, appointment: updated });
@@ -1527,6 +1538,7 @@ export const updateAppointmentStatus = async (req, res) => {
     return res.status(500).json({ message: "Durum güncellenemedi." });
   }
 };
+
 
 
 

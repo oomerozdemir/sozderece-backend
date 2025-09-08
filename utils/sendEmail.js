@@ -299,3 +299,57 @@ export async function sendNewRequestToTeacher(to, payload = {}) {
 
   await sendEmail({ to, subject: "🆕 Yeni Ders Talebi Var", html });
 }
+
+
+
+export async function sendAppointmentConfirmedToStudent(to, payload = {}) {
+  const {
+    studentName = "",
+    teacherName = "",
+    subject = "",
+    grade = "",
+    modeLabel = "",           // "Online" | "Yüz yüze"
+    startsAt,                 // Date or ISO
+    endsAt,                   // Date or ISO
+    panelUrl = "https://sozderecekocluk.com/ogrenci/panel",
+  } = payload;
+
+  const when =
+    startsAt && endsAt
+      ? `${new Date(startsAt).toLocaleString("tr-TR", { dateStyle: "medium", timeStyle: "short" })} – ${new Date(endsAt).toLocaleTimeString("tr-TR", { hour: "2-digit", minute: "2-digit" })}`
+      : "Planlanan saat";
+
+  const html = `
+  <div style="font-family: Arial, sans-serif; background:#f8fafc; padding:20px;">
+    <table width="100%" style="max-width:600px; margin:auto; background:#fff; border-radius:12px; overflow:hidden; box-shadow:0 2px 8px rgba(0,0,0,0.06);">
+      <tr>
+        <td style="padding:24px; text-align:center;">
+          <h2 style="margin:0; color:#111827;">✅ Talebiniz Onaylandı</h2>
+          <p style="margin:8px 0 0; color:#6b7280;">${studentName ? `${studentName}, ` : ""}randevunuz onaylandı.</p>
+        </td>
+      </tr>
+      <tr>
+        <td style="padding:0 24px 24px;">
+          <div style="background:#ecfdf5; border:1px solid #bbf7d0; padding:16px; border-radius:8px;">
+            <p style="margin:0 0 6px;"><strong>👨‍🏫 Öğretmen:</strong> ${teacherName || "Öğretmen"}</p>
+            <p style="margin:0 0 6px;"><strong>📚 Ders:</strong> ${subject || "—"} ${grade ? `(${grade})` : ""}</p>
+            <p style="margin:0 0 6px;"><strong>🧭 Tür:</strong> ${modeLabel || "—"}</p>
+            <p style="margin:0;"><strong>🗓 Tarih/Saat:</strong> ${when}</p>
+          </div>
+
+          <div style="text-align:center; margin-top:22px;">
+            <a href="${panelUrl}" style="display:inline-block; background:#10b981; color:#fff; text-decoration:none; padding:12px 20px; border-radius:8px; font-weight:600;">
+              Öğrenci Panelini Aç
+            </a>
+          </div>
+        </td>
+      </tr>
+      <tr>
+        <td style="background:#f3f4f6; padding:12px; text-align:center; color:#9ca3af; font-size:12px;">
+          © ${new Date().getFullYear()} SözDerece • Bu bir bilgilendirme mesajıdır.
+        </td>
+      </tr>
+    </table>
+  </div>`;
+  await sendEmail({ to, subject: "✅ Talebiniz Onaylandı", html });
+}
