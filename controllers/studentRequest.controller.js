@@ -5,9 +5,8 @@ import { sendNewRequestToTeacher } from "../utils/sendEmail.js";
 
 export const createStudentRequest = async (req, res) => {
   try {
-    const rawUserId = req.user?.id;
-    if (!rawUserId) return res.status(401).json({ message: "Yetkisiz" });
-    const userId = Number(rawUserId);
+    const userId = Number(req.user?.id);
+    if (!userId) return res.status(401).json({ message: "Yetkisiz" });
 
     const {
       teacherSlug,
@@ -18,31 +17,24 @@ export const createStudentRequest = async (req, res) => {
       district = "",
       locationNote = "",
       note = "",
-      // yeni akış
-      slots = [],                 // [{ start, end, mode? }]
-      packageSlug = "",
-      packageTitle = "",
-      unitPrice,                  // kuruş (Number)
+      slots = [],                 // [{ start, end }]
+      packageSlug = null,
+      packageTitle = null,
+      unitPrice = null,           // kuruş
     } = req.body || {};
 
-    // öğretmen
+    // Öğretmeni çek (mail için user.email dahil)
     const teacher = await prisma.teacherProfile.findUnique({
       where: { slug: teacherSlug },
       select: {
-        id: true,
-        firstName: true,
-        lastName: true,
-        mode: true,
-        subjects: true,
-        grades: true,
+        id: true, firstName: true, lastName: true, mode: true,
+        subjects: true, grades: true,
         user: { select: { email: true, name: true } },
       },
     });
-    if (!teacher) return res.status(404).json({ message: "Öğretmen bulunamadı" });
+    if (!teacher) return res.status(404).json({ message: "Öğretmen bulunamadı." });
 
     const modeNorm = String(mode).toUpperCase();
-
-    // doğrulamalar
     if (teacher.subjects && !teacher.subjects.includes(subject)) {
       return res.status(400).json({ message: "Öğretmen bu dersi vermiyor." });
     }
@@ -57,16 +49,10 @@ export const createStudentRequest = async (req, res) => {
       return res.status(400).json({ message: "Yüz yüze için şehir ve ilçe gerekli." });
     }
     if (!Array.isArray(slots) || slots.length === 0) {
-      return res.status(400).json({ message: "En az bir ders saati seçmelisiniz." });
-    }
-    if (!packageSlug || !packageTitle || typeof unitPrice !== "number") {
-      return res.status(400).json({ message: "Paket bilgileri eksik (slug/title/unitPrice)." });
+      return res.status(400).json({ message: "Lütfen en az bir saat seçiniz." });
     }
 
-    // 🎯 yeni akışta request direkt 'PACKAGE_SELECTED'
-    const reqStatus = "PACKAGE_SELECTED";
-
-    // 1) Request'i oluştur
+    // Talep
     const request = await prisma.studentLessonRequest.create({
       data: {
         studentId: userId,
@@ -78,57 +64,46 @@ export const createStudentRequest = async (req, res) => {
         district: district || null,
         locationNote: locationNote || null,
         note: note || null,
-        status: reqStatus,
-        packageSlug: packageSlug,
-        packageTitle: packageTitle,
-        packageUnitPrice: unitPrice, // kuruş
+        status: "SUBMITTED",
+        packageSlug: packageSlug || null,
+        packageTitle: packageTitle || null,
+        packageUnitPrice: typeof unitPrice === "number" ? unitPrice : null,
       },
       select: {
-        id: true,
-        createdAt: true,
-        subject: true,
-        grade: true,
-        mode: true,
-        note: true,
+        id: true, createdAt: true, subject: true, grade: true, mode: true, note: true,
         teacherProfileId: true,
       },
     });
 
-    // 2) Slotlardan randevuları oluştur (PENDING)
-    const toCreate = slots.map((s) => {
-      const startsAt = new Date(s.start || s.startsAt);
-      const endsAt   = new Date(s.end   || s.endsAt);
-      if (isNaN(startsAt) || isNaN(endsAt)) {
-        throw new Error("Geçersiz slot tarih/saat formatı.");
-      }
-      return {
-        teacherProfileId: teacher.id,
-        studentUserId: userId,
-        startsAt,
-        endsAt,
-        mode: s.mode ? String(s.mode).toUpperCase() : modeNorm,
-        status: "PENDING",
-        notes: `requestId=${request.id}`,
-      };
-    });
-
-    // createMany ile randevuları ekle
-    if (toCreate.length > 0) {
-      await prisma.appointment.createMany({ data: toCreate });
+    // Seçili slotları randevu olarak PENDING oluştur
+    for (const s of slots) {
+      const startsAt = new Date(s.start);
+      const endsAt   = new Date(s.end);
+      if (!isFinite(+startsAt) || !isFinite(+endsAt) || startsAt >= endsAt) continue;
+      await prisma.appointment.create({
+        data: {
+          teacherProfileId: teacher.id,
+          studentUserId: userId,
+          startsAt, endsAt,
+          status: "PENDING",
+          mode: modeNorm,
+          notes: `requestId=${request.id}`,
+        },
+      });
     }
 
-    // 3) Öğretmene bilgilendirme maili
+    // Öğrenci bilgisi (mail içeriği için)
     const student = await prisma.user.findUnique({
       where: { id: userId },
       select: { name: true, email: true, phone: true },
     });
 
+    // 🔔 Öğretmene mail
     const teacherEmail = teacher.user?.email;
+    console.log("📧 Yeni talep -> öğretmen:", { teacherEmail, requestId: request.id });
     if (teacherEmail) {
-      const teacherName =
-        `${teacher.firstName || ""} ${teacher.lastName || ""}`.trim() || teacher.user?.name || "";
+      const teacherName = `${teacher.firstName || ""} ${teacher.lastName || ""}`.trim() || teacher.user?.name || "";
       const modeLabel = modeNorm === "FACE_TO_FACE" ? "Yüz yüze" : "Online";
-
       try {
         await sendNewRequestToTeacher(teacherEmail, {
           teacherName,
@@ -138,28 +113,26 @@ export const createStudentRequest = async (req, res) => {
           subject: request.subject,
           grade: request.grade,
           modeLabel,
-          packageTitle: packageTitle,
-          lessonsCount: packageSlug === "paket-6" ? 6 : packageSlug === "paket-3" ? 3 : 1,
+          packageTitle: packageTitle || undefined,
+          lessonsCount: Array.isArray(slots) ? slots.length : undefined,
           note: request.note || "",
           requestId: request.id,
           createdAt: request.createdAt,
         });
+        console.log("✅ Öğretmen maili gönderildi:", teacherEmail);
       } catch (err) {
-        console.error("Yeni talep maili gönderilemedi:", err?.message || err);
+        console.error("❌ Öğretmen maili hata:", err?.message || err);
       }
+    } else {
+      console.warn("⚠️ Öğretmen e-postası boş, mail gönderilemedi.");
     }
 
-    // 4) cevap
     return res.status(201).json({ success: true, id: request.id, request });
   } catch (e) {
     console.error("createStudentRequest error:", e);
-    return res.status(500).json({
-      message: "Talep oluşturulamadı.",
-      error: e?.message || String(e),
-    });
+    return res.status(500).json({ message: "Talep oluşturulamadı.", error: e?.message || String(e) });
   }
 };
-
 
 
 

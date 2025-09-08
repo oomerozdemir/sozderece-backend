@@ -1,13 +1,21 @@
 import nodemailer from "nodemailer";
 
+const PORT = parseInt(process.env.SMTP_PORT || "587", 10);
 const transporter = nodemailer.createTransport({
   host: process.env.SMTP_HOST,
-  port: parseInt(process.env.SMTP_PORT || "587"),
-  secure: false,
+  port: PORT,
+  secure: PORT === 465, // 465 -> TLS
   auth: {
     user: process.env.EMAIL_USER,
     pass: process.env.EMAIL_PASS,
   },
+});
+
+// Opsiyonel: sunucu boot'ta doğrulama logu
+transporter.verify().then(() => {
+  console.log("✅ SMTP transporter ready");
+}).catch(err => {
+  console.error("❌ SMTP verify failed:", err?.message || err);
 });
 
 /**
