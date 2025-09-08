@@ -6,8 +6,8 @@ import { getStudentProfile, completeAppointmentByStudent, getMyPastAppointmentsS
 const router = express.Router();
 
 router.get("/me", authenticateToken, getStudentProfile);
-router.patch("/v1/ogrenci/appointments/:id/complete", authenticateToken, completeAppointmentByStudent);
-router.get("/v1/ogrenci/me/appointments/past", authenticateToken, getMyPastAppointmentsStudent);
+router.patch("/student/v1/ogrenci/appointments/:id/complete", authenticateToken, completeAppointmentByStudent);
+router.get("/student/v1/ogrenci/me/appointments/past", authenticateToken, getMyPastAppointmentsStudent);
 
 
 export default router;
