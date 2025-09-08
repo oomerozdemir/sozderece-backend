@@ -11,6 +11,7 @@ import {
   getMyAvailability,getMySlots,upsertMyAvailability,listMyAppointments,listMyTimeOff,
   createMyTimeOff,createMyAppointment,deleteMyTimeOff,updateMyAppointment,changeMyPassword,listMyLessons,
   createMyLesson, updateMyLesson, deleteMyLesson,updateAppointmentStatus, getMyIncomingRequests, getMyConfirmedAppointments,
+  completeAppointmentByTeacher, getMyPastAppointmentsTeacher,
 } from "../../controllers/teacher.controller.js";
 import upload from "../../middleware/upload.js";
 
@@ -68,5 +69,12 @@ router.get(
   authenticateToken,
   getMyConfirmedAppointments
 );
+
+
+
+// dersin bittigini onayla ve gecmis dersleri getir
+r.patch("/appointments/:id/complete", authenticateToken, completeAppointmentByTeacher);
+r.get("/appointments/past", authenticateToken, getMyPastAppointmentsTeacher);
+
 
 export default router;

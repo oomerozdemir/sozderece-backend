@@ -1585,3 +1585,88 @@ export const getMyConfirmedAppointments = async (req, res) => {
     return res.status(500).json({ message: "Onaylı randevular getirilemedi." });
   }
 };
+
+
+
+/** Öğretmenin işaretlediği geçmiş dersler */
+export const getMyPastAppointmentsTeacher = async (req, res) => {
+  try {
+    const userId = Number(req.user?.id);
+    if (!userId) return res.status(401).json({ message: "Yetkisiz" });
+
+    const tp = await prisma.teacherProfile.findUnique({
+      where: { userId },
+      select: { id: true },
+    });
+    if (!tp) return res.status(403).json({ message: "Öğretmen profili bulunamadı." });
+
+    const items = await prisma.appointment.findMany({
+      where: {
+        teacherProfileId: tp.id,
+        // Öğretmenin tamamladığı dersler
+        notes: { contains: "doneTeacherAt=" },
+      },
+      orderBy: { startsAt: "desc" },
+      select: {
+        id: true,
+        startsAt: true,
+        endsAt: true,
+        mode: true,
+        notes: true,
+        studentUserId: true,
+        student: { select: { id: true, name: true, email: true, phone: true } },
+      },
+    });
+
+    res.json({ success: true, items });
+  } catch (e) {
+    console.error("getMyPastAppointmentsTeacher error:", e);
+    res.status(500).json({ message: "Geçmiş dersler getirilemedi." });
+  }
+};
+
+/** Öğretmen: Ders tamamlandı işareti */
+export const completeAppointmentByTeacher = async (req, res) => {
+  try {
+    const userId = Number(req.user?.id);
+    if (!userId) return res.status(401).json({ message: "Yetkisiz" });
+
+    const { id } = req.params; // appointment id
+
+    const tp = await prisma.teacherProfile.findUnique({
+      where: { userId },
+      select: { id: true },
+    });
+    if (!tp) return res.status(403).json({ message: "Öğretmen profili bulunamadı." });
+
+    const appt = await prisma.appointment.findUnique({
+      where: { id },
+      select: { id: true, teacherProfileId: true, endsAt: true, notes: true },
+    });
+    if (!appt || appt.teacherProfileId !== tp.id) {
+      return res.status(404).json({ message: "Randevu bulunamadı." });
+    }
+
+    // Sadece ders saati geçtikten sonra izin ver
+    if (new Date(appt.endsAt) > new Date()) {
+      return res.status(400).json({ message: "Ders saati bitmeden tamamlanamaz." });
+    }
+
+    const notes = String(appt.notes || "");
+    if (notes.includes("doneTeacherAt=")) {
+      return res.json({ success: true, already: true });
+    }
+
+    const stamp = `doneTeacherAt=${new Date().toISOString()}`;
+    const updated = await prisma.appointment.update({
+      where: { id },
+      data: { notes: notes ? `${notes};${stamp}` : stamp },
+      select: { id: true, notes: true },
+    });
+
+    res.json({ success: true, appointment: updated });
+  } catch (e) {
+    console.error("completeAppointmentByTeacher error:", e);
+    res.status(500).json({ message: "Tamamlandı işareti verilemedi." });
+  }
+};
