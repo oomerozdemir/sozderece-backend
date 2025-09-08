@@ -5,6 +5,7 @@ import {
   getStudentProfile,
   completeAppointmentByStudent,
   getMyPastAppointmentsStudent,
+  createAppointmentReviewByStudent,
 } from "../../controllers/studentController.js";
 
 const router = express.Router();
@@ -23,5 +24,14 @@ router.get(
   authenticateToken,
   getMyPastAppointmentsStudent
 );
+
+
+// Değerlendirme: Öğrenci -> Randevuya yorum/puan
+router.post(
+  "/v1/ogrenci/appointments/:id/review",
+  authenticateToken,
+  createAppointmentReviewByStudent
+);
+
 
 export default router;

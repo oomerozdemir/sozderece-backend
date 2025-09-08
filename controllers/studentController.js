@@ -114,3 +114,60 @@ export const completeAppointmentByStudent = async (req, res) => {
     res.status(500).json({ message: "Tamamlandı işareti verilemedi." });
   }
 };
+
+
+export const createAppointmentReviewByStudent = async (req, res) => {
+  try {
+    const userId = Number(req.user?.id);
+    if (!userId) return res.status(401).json({ message: "Yetkisiz" });
+
+    const { id } = req.params; // appointmentId
+    const { rating, comment } = req.body || {};
+    const rInt = Math.max(1, Math.min(5, Number(rating) || 0));
+
+    const appt = await prisma.appointment.findUnique({
+      where: { id },
+      select: { id: true, studentUserId: true, teacherProfileId: true, endsAt: true },
+    });
+    if (!appt || appt.studentUserId !== userId)
+      return res.status(404).json({ message: "Randevu bulunamadı." });
+
+    if (new Date(appt.endsAt) > new Date())
+      return res.status(400).json({ message: "Ders bitmeden değerlendirme yapılamaz." });
+
+    // zaten var mı?
+    const existing = await prisma.teacherReview.findUnique({ where: { appointmentId: id } }).catch(()=>null);
+    if (existing) return res.json({ success: true, review: existing });
+
+    const review = await prisma.teacherReview.create({
+      data: {
+        appointmentId: id,
+        teacherProfileId: appt.teacherProfileId,
+        studentId: userId,
+        rating: rInt,
+        comment: (comment || "").slice(0, 1000),
+      },
+    });
+
+    // aggregate
+    const agg = await prisma.teacherReview.aggregate({
+      _avg: { rating: true },
+      _count: { rating: true },
+      where: { teacherProfileId: appt.teacherProfileId },
+    });
+
+    await prisma.teacherProfile.update({
+      where: { id: appt.teacherProfileId },
+      data: {
+        ratingAverage: Math.round((agg._avg.rating || 0) * 10) / 10,
+        ratingCount: agg._count.rating || 0,
+      },
+    });
+
+    return res.status(201).json({ success: true, review });
+  } catch (e) {
+    console.error("createAppointmentReviewByStudent error:", e);
+    return res.status(500).json({ message: "Değerlendirme kaydedilemedi." });
+  }
+};
+

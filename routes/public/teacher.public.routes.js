@@ -12,19 +12,15 @@ const router = express.Router();
 
 // Liste
 router.get("/", searchTeachers);
-
-// NEW: view sayacı (dinamik slug'dan ÖNCE gelmeli!)
 router.post("/:slug/view", trackTeacherView);
-
-// NEW: değerlendirmeler
 router.get("/:slug/reviews", listTeacherReviews);
 router.post("/:slug/reviews", authenticateToken, addTeacherReview);
 
-// Profil — DİNAMİK en sonda
-router.get("/:slug", getTeacherBySlug);
-
-
+// ÖNCE /:slug/slots
 router.get("/:slug/slots", getTeacherSlotsPublic);
+
+// EN SONA profil
+router.get("/:slug", getTeacherBySlug);
 
 
 
