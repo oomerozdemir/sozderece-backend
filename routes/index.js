@@ -29,7 +29,7 @@ router.use("/", orderRoutes);
 router.use("/users", userRoutes);
 router.use("/packages", packageRoutes);
 router.use("/", protectedRoutes); 
-router.use("/student", studentRoutes);
+router.use("/v1/ogrenci", studentRoutes);
 router.use("/coach", coachRoutes);
 router.use("/coaches", coachRoutes);
 router.use("/coupon", couponRoutes);

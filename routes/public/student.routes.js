@@ -14,13 +14,13 @@ const router = express.Router();
 router.get("/me", authenticateToken, getStudentProfile);
 
 router.patch(
-  "/v1/ogrenci/appointments/:id/complete",
+  "/appointments/:id/complete",
   authenticateToken,
   completeAppointmentByStudent
 );
 
 router.get(
-  "/v1/ogrenci/me/appointments/past",
+  "/me/appointments/past",
   authenticateToken,
   getMyPastAppointmentsStudent
 );
@@ -28,7 +28,7 @@ router.get(
 
 // Değerlendirme: Öğrenci -> Randevuya yorum/puan
 router.post(
-  "/v1/ogrenci/appointments/:id/review",
+  "/appointments/:id/review",
   authenticateToken,
   createAppointmentReviewByStudent
 );
