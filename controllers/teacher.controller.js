@@ -554,59 +554,57 @@ export const trackTeacherView = async (req, res) => {
   try {
     const { slug } = req.params;
     const item = await prisma.teacherProfile.findUnique({ where: { slug } });
-    if (!item || !item.isPublic || !item.isApproved) {
+
+    if (
+      !item ||
+      !item.isPublic ||
+      (item.publishStatus && item.publishStatus !== "APPROVED")
+    ) {
       return res.status(404).json({ success: false, message: "Öğretmen bulunamadı." });
     }
+
     await prisma.teacherProfile.update({
       where: { id: item.id },
-      data: { viewCount: { increment: 1 } }
+      data: { viewCount: { increment: 1 } },
     });
+
     res.json({ success: true });
-  } catch (e) {
-    res.status(500).json({ success: false, message: "View sayacı hatası." });
+  } catch (err) {
+    console.error("trackTeacherView error:", err);
+    res.status(500).json({ success: false, message: "Sunucu hatası." });
   }
 };
+
 
 export const addTeacherReview = async (req, res) => {
   try {
     const { slug } = req.params;
-    const { rating, comment } = req.body;
-    if (!(Number(rating) >= 1 && Number(rating) <= 5)) {
-      return res.status(400).json({ success: false, message: "Rating 1..5 olmalı." });
-    }
 
     const item = await prisma.teacherProfile.findUnique({ where: { slug } });
-    if (!item || !item.isPublic || !item.isApproved) {
+    if (
+      !item ||
+      !item.isPublic ||
+      (item.publishStatus && item.publishStatus !== "APPROVED")
+    ) {
       return res.status(404).json({ success: false, message: "Öğretmen bulunamadı." });
     }
 
-    const userId = req.user?.id; // authenticateToken varsa
+    const userId = req.user?.id || null;
+    const { rating, comment } = req.body;
+
     await prisma.teacherReview.create({
       data: {
         teacherProfileId: item.id,
-        userId: userId ?? null,
-        rating: Number(rating),
-        comment: comment ?? null
-      }
+        userId,
+        rating: Number(rating) || 0,
+        comment: comment || null,
+      },
     });
 
-    // denormalize
-    const agg = await prisma.teacherReview.aggregate({
-      where: { teacherProfileId: item.id },
-      _avg: { rating: true },
-      _count: { rating: true }
-    });
-    await prisma.teacherProfile.update({
-      where: { id: item.id },
-      data: {
-        ratingAverage: agg._avg.rating ?? 0,
-        ratingCount: agg._count.rating ?? 0
-      }
-    });
-
-    res.status(201).json({ success: true });
-  } catch (e) {
-    res.status(500).json({ success: false, message: "Değerlendirme eklenemedi." });
+    res.json({ success: true });
+  } catch (err) {
+    console.error("addTeacherReview error:", err);
+    res.status(500).json({ success: false, message: "Yorum eklenemedi." });
   }
 };
 
@@ -1255,7 +1253,11 @@ export const getTeacherSlotsPublic = async (req, res) => {
       },
     });
 
-    if (!teacher || !teacher.isPublic || !teacher.isApproved) {
+    if (
+      !teacher ||
+      !teacher.isPublic ||
+      (teacher.publishStatus && teacher.publishStatus !== "APPROVED")
+    ) {
       return res.status(404).json({ message: "Öğretmen bulunamadı." });
     }
 
