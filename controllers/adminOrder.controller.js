@@ -1,8 +1,9 @@
-import { PrismaClient } from "@prisma/client";
+import prisma from "../utils/prisma.js";
+
 import crypto from "crypto";
 import axios from "axios";
 import qs from "querystring";
-const prisma = new PrismaClient();
+
 
 // Admin tüm siparişleri görür
 export const getAllOrdersForAdmin = async (req, res) => {

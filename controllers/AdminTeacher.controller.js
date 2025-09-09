@@ -1,5 +1,5 @@
-import { PrismaClient } from "@prisma/client";
-const prisma = new PrismaClient();
+import prisma from "../utils/prisma.js";
+
 
 export const listTeacherPublishRequests = async (req, res) => {
   const items = await prisma.teacherProfile.findMany({
@@ -22,6 +22,7 @@ export const approveTeacherPublish = async (req, res) => {
     data: {
       publishStatus: "APPROVED",
       isPublic: true,
+      isApproved: true,
       reviewedAt: new Date(),
       reviewerId: adminId,
       reviewNote: req.body?.note || null,

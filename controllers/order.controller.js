@@ -1,4 +1,5 @@
-import { PrismaClient } from "@prisma/client";
+import prisma from "../utils/prisma.js";
+
 import axios from "axios";
 import crypto from "crypto";
 import qs from "qs"; 
@@ -8,8 +9,6 @@ import { cleanMerchantOid, cleanPrice, requireFields } from "../utils/helpers.js
 
 
 
-
-const prisma = new PrismaClient();
 // Siparişleri getir
 export const getMyOrders = async (req, res) => {
   try {

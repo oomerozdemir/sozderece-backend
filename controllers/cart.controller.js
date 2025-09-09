@@ -1,5 +1,5 @@
-import { PrismaClient } from '@prisma/client';
-const prisma = new PrismaClient();
+import prisma from "../utils/prisma.js";
+
 
 /** ✅ 1) Sepete ürün ekleme / güncelleme */
 export const addToCart = async (req, res) => {

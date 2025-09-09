@@ -1,4 +1,5 @@
-import { PrismaClient } from "@prisma/client";
+import prisma from "../utils/prisma.js";
+
 import bcrypt from "bcrypt";
 import crypto from "crypto";
 import { createVerificationCode, verifyCode } from "../services/verificationService.js";
@@ -6,7 +7,6 @@ import { generateToken } from "../middleware/authMiddleware.js"; // access token
 import { REMEMBER_COOKIE_NAME, rememberCookieOptions } from "../cron/cookies.js";
 import { sendEmail } from "../utils/sendEmail.js";
 
-const prisma = new PrismaClient();
 
 /* ---------------- Helpers ---------------- */
 

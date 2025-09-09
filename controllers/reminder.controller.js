@@ -1,7 +1,7 @@
-import { PrismaClient } from "@prisma/client";
+import prisma from "../utils/prisma.js";
+
 import { sendOrderExpiryReminder } from "../utils/sendEmail.js";
 
-const prisma = new PrismaClient();
 
 export const sendExpiringOrderReminders = async (req, res) => {
   const today = new Date();

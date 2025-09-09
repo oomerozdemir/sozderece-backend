@@ -1,10 +1,11 @@
-import { PrismaClient } from "@prisma/client";
+import prisma from "../utils/prisma.js";
+
 import bcrypt from 'bcrypt';
 import { sendCoachAssignmentToStudent, sendStudentAssignmentToCoach } from "../utils/sendEmail.js";
 import { uploadBufferToCloudinary } from "../helpers/cloudinaryUpload.js";
 
 
-const prisma = new PrismaClient();
+
 
 
 // Tüm koçları listele

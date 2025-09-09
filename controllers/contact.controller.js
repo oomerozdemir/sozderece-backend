@@ -1,5 +1,5 @@
-import { PrismaClient } from "@prisma/client";
-const prisma = new PrismaClient();
+import prisma from "../utils/prisma.js";
+
 import nodemailer from "nodemailer";
 import dotenv from "dotenv";
 dotenv.config();

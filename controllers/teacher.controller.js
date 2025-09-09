@@ -1,4 +1,5 @@
-import { PrismaClient } from "@prisma/client";
+import prisma from "../utils/prisma.js";
+
 import bcrypt from "bcrypt";
 import slugify from "slugify";
 import { generateToken } from "../middleware/authMiddleware.js";
@@ -8,7 +9,6 @@ import { sendAppointmentConfirmedToStudent } from "../utils/sendEmail.js";
 import { DateTime } from "luxon";
 import { isBefore } from "date-fns";
 
-const prisma = new PrismaClient();
 
 // Tek bir overlap helper yeterli
 const overlaps = (aStart, aEnd, bStart, bEnd) => aStart < bEnd && bStart < aEnd;

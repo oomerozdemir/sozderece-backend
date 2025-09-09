@@ -1,5 +1,5 @@
-import { PrismaClient } from "@prisma/client";
-const prisma = new PrismaClient();
+import prisma from "../utils/prisma.js";
+
 
 // Tüm paketleri getir
 export const getAllPackages = async (req, res) => {
