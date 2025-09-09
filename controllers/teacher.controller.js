@@ -330,21 +330,22 @@ export const searchTeachers = async (req, res) => {
 
     // ---- temel filtreler (fiyat filtrelemesini türetilmiş değerle JS tarafında yapacağız) ----
     const where = {
-      isPublic: true,
-      isApproved: true,
-      ...(city ? { city } : {}),
-      ...(district ? { district } : {}),
-      ...(mode ? { mode } : {}),
-      ...(subject ? { subjects: { has: subject } } : {}),
-      ...(grade   ? { grades:   { has: grade   } } : {}),
-      ...(q ? {
-        OR: [
-          { firstName: { contains: q, mode: "insensitive" } },
-          { lastName:  { contains: q, mode: "insensitive" } },
-          { bio:       { contains: q, mode: "insensitive" } },
-        ],
-      } : {}),
-    };
+  isPublic: true,
+  publishStatus: "APPROVED",   
+  ...(city ? { city } : {}),
+  ...(district ? { district } : {}),
+  ...(mode ? { mode } : {}),
+  ...(subject ? { subjects: { has: subject } } : {}),
+  ...(grade ? { grades: { has: grade } } : {}),
+  ...(q ? {
+    OR: [
+      { firstName: { contains: q, mode: "insensitive" } },
+      { lastName:  { contains: q, mode: "insensitive" } },
+      { bio:       { contains: q, mode: "insensitive" } },
+    ],
+  } : {}),
+  ...(minPrice || maxPrice ? priceFilter : {}),
+};
 
     // ---- veriyi çek (derslerle birlikte) ----
     const rows = await prisma.teacherProfile.findMany({

@@ -22,7 +22,6 @@ export const approveTeacherPublish = async (req, res) => {
     data: {
       publishStatus: "APPROVED",
       isPublic: true,
-      isApproved: true,
       reviewedAt: new Date(),
       reviewerId: adminId,
       reviewNote: req.body?.note || null,
