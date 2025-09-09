@@ -502,18 +502,52 @@ export const searchTeachers = async (req, res) => {
 export const getTeacherBySlug = async (req, res) => {
   try {
     const { slug } = req.params;
+
     const item = await prisma.teacherProfile.findUnique({
       where: { slug },
-      include: { user: { select: { id: true, name: true, emailVerified: true } } }
+      select: {
+        id: true,
+        firstName: true,
+        lastName: true,
+        slug: true,
+        isPublic: true,
+        publishStatus: true,          // moderasyon varsa
+        mode: true,
+        city: true,
+        district: true,
+        subjects: true,
+        grades: true,
+        bio: true,
+        photoUrl: true,
+        priceOnline: true,
+        priceF2F: true,
+        ratingAverage: true,
+        ratingCount: true,
+        viewCount: true,
+        lessons: {
+          where: { isActive: true },  // isActive alanınız yoksa bu satırı kaldırın
+          select: { subject: true, priceOnline: true, priceF2F: true },
+        },
+        user: { select: { id: true, name: true, emailVerified: true } },
+      },
     });
-    if (!item || !item.isPublic) {
+
+    // Yayın kontrolü: isPublic şart, publishStatus varsa APPROVED olmalı
+    if (
+      !item ||
+      !item.isPublic ||
+      (item.publishStatus && item.publishStatus !== "APPROVED")
+    ) {
       return res.status(404).json({ success: false, message: "Öğretmen bulunamadı." });
     }
+
     return res.json({ success: true, teacher: item });
   } catch (err) {
+    console.error("getTeacherBySlug error:", err);
     return res.status(500).json({ success: false, message: "Sunucu hatası." });
   }
 };
+
 
 
 export const trackTeacherView = async (req, res) => {
