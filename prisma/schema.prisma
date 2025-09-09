@@ -50,8 +50,10 @@ model User {
   carts               Cart[]
   rememberTokens      RememberToken[]
 
-  teacherProfile   TeacherProfile?   @relation("TeacherProfileUser")
+  teacherProfile      TeacherProfile?      @relation("TeacherProfileUser")
   teacherReviews      TeacherReview[]      @relation("UserTeacherReviews")
+
+  reviewedProfiles    TeacherProfile[]     @relation("TeacherProfileReviewer")
 
   studentAppointments Appointment[] @relation("StudentAppointments")
   lessonRequests      StudentLessonRequest[]
@@ -234,7 +236,13 @@ enum LessonMode {
   BOTH
 }
 
-// Ek alanlar
+enum PublishStatus {
+  DRAFT      // henüz talep yok
+  PENDING    // admin onayında
+  APPROVED   // onaylandı (yayında)
+  REJECTED   // reddedildi
+}
+
 model TeacherProfile {
   id            String          @id @default(cuid())
   userId        Int             @unique
@@ -250,13 +258,20 @@ model TeacherProfile {
   priceOnline   Int?
   priceF2F      Int?
   bio           String?
-  whyMe           String?
+  whyMe         String?
   photoUrl      String?
   slug          String          @unique
-  isPublic      Boolean         @default(true)
 
-  // NEW
-  isApproved    Boolean         @default(true)   // ileride admin onayı
+  // Yayın kontrolü
+  isPublic      Boolean         @default(false)            // sadece APPROVED olduğunda true yapılır
+  publishStatus PublishStatus   @default(DRAFT)
+  submittedAt   DateTime?
+  reviewedAt    DateTime?
+  reviewerId    Int?
+  reviewNote    String?
+  reviewer      User?         @relation("TeacherProfileReviewer", fields: [reviewerId], references: [id])
+
+  // Metrikler
   viewCount     Int             @default(0)
   ratingAverage Float           @default(0)
   ratingCount   Int             @default(0)
@@ -265,17 +280,14 @@ model TeacherProfile {
   createdAt     DateTime        @default(now())
   updatedAt     DateTime        @updatedAt
 
-  timeZone      String?        @default("Europe/Istanbul") // takvim hesaplaması için
+  timeZone      String?         @default("Europe/Istanbul")
 
-  // appointments ilişkiler
+  // İlişkiler
   availabilities  TeacherAvailability[]
   timeOffs        TeacherTimeOff[]
   appointments    Appointment[]
-
-  lessons       TeacherLesson[]
-
-  lessonRequests StudentLessonRequest[]
-
+  lessons         TeacherLesson[]
+  lessonRequests  StudentLessonRequest[]
 
   @@index([city])
   @@index([district])
@@ -283,6 +295,7 @@ model TeacherProfile {
   @@index([viewCount])
   @@index([ratingAverage])
   @@index([ratingCount])
+  @@index([publishStatus])
 }
 
 model TeacherReview {

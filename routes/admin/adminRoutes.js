@@ -7,6 +7,8 @@ import { PrismaClient } from "@prisma/client";
 import upload from "../../middleware/upload.js";
 import { sendExpiringOrderReminders } from "../../controllers/reminder.controller.js";
 import { createCoachWithUser, getAllCoaches, updateCoach, deleteCoach, assignCoachToUser } from "../../controllers/adminCoach.controller.js";
+import { listTeacherPublishRequests, approveTeacherPublish, rejectTeacherPublish } from "../../controllers/AdminTeacher.controller.js";
+
 const prisma = new PrismaClient();
 
 const router = express.Router();
@@ -50,6 +52,24 @@ router.post("/assign-coach", authenticateToken, authorizeRoles("admin"), assignC
 
 // Süresi yaklaşan siparişler için e-posta hatırlatması gönder
 router.post("/orders/send-expiry-reminders", authenticateToken, authorizeRoles("admin"), sendExpiringOrderReminders);
+
+
+//teacher publish requests
+router.get(
+  "/teacher-publish-requests",
+  authenticateToken, authorizeRoles("admin"),
+  listTeacherPublishRequests
+);
+router.put(
+  "/teacher-publish-requests/:profileId/approve",
+  authenticateToken, authorizeRoles("admin"),
+  approveTeacherPublish
+);
+router.put(
+  "/teacher-publish-requests/:profileId/reject",
+  authenticateToken, authorizeRoles("admin"),
+  rejectTeacherPublish
+);
 
 
 

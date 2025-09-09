@@ -1676,3 +1676,34 @@ export const completeAppointmentByTeacher = async (req, res) => {
     res.status(500).json({ message: "Tamamlandı işareti verilemedi." });
   }
 };
+
+
+
+// Öğretmen: profilini yayına almak için talep yollar
+export const requestPublish = async (req, res) => {
+  try {
+    const userId = req.user?.id;
+    const profile = await prisma.teacherProfile.findFirst({ where: { userId } });
+    if (!profile) return res.status(404).json({ message: "Profil bulunamadı." });
+
+    if (profile.publishStatus === "PENDING") {
+      return res.status(400).json({ message: "Zaten onay bekliyor." });
+    }
+
+    const updated = await prisma.teacherProfile.update({
+      where: { id: profile.id },
+      data: {
+        publishStatus: "PENDING",
+        isPublic: false,
+        submittedAt: new Date(),
+        reviewNote: null,
+      },
+    });
+
+    return res.json({ message: "Yayın talebiniz admin onayına gönderildi.", profile: updated });
+  } catch (e) {
+    console.error("requestPublish error:", e);
+    return res.status(500).json({ message: "Talep gönderilemedi." });
+  }
+};
+

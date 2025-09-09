@@ -15,7 +15,7 @@ import {
   changeMyPassword,
   listMyLessons, createMyLesson, updateMyLesson, deleteMyLesson,
   updateAppointmentStatus, getMyIncomingRequests, getMyConfirmedAppointments,
-  completeAppointmentByTeacher, getMyPastAppointmentsTeacher,
+  completeAppointmentByTeacher, getMyPastAppointmentsTeacher,requestPublish,
 } from "../../controllers/teacher.controller.js";
 import upload from "../../middleware/upload.js";
 
@@ -72,5 +72,8 @@ router.get("/me/appointments/confirmed", authenticateToken, authorizeRoles("teac
 /* Dersin bittiğini işaretle & geçmiş dersler */
 router.patch("/appointments/:id/complete", authenticateToken, authorizeRoles("teacher"), completeAppointmentByTeacher);
 router.get("/me/appointments/past", authenticateToken, authorizeRoles("teacher"), getMyPastAppointmentsTeacher);
+
+// publish request
+router.post("/me/publish-request", authenticateToken, requestPublish);
 
 export default router;
