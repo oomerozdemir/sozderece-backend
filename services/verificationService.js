@@ -1,6 +1,7 @@
-import { PrismaClient } from "@prisma/client";
+import prisma from "../utils/prisma.js";
+
 import { sendVerificationEmail } from "../utils/sendEmail.js"; 
-const prisma = new PrismaClient();
+
 
 export const createVerificationCode = async ({ userId, type, target }) => {
   const code = Math.floor(100000 + Math.random() * 900000).toString();
