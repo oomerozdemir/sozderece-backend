@@ -35,6 +35,7 @@ export const registerTeacher = async (req, res) => {
       district,
       mode,
       bio,
+      whyMe,
       photoUrl
     } = req.body || {};
 
@@ -82,6 +83,7 @@ export const registerTeacher = async (req, res) => {
     })();
 
     bio = typeof bio === "string" ? bio.trim() : null;
+    whyMe = typeof whyMe === "string" ? whyMe.trim() : null;
     photoUrl = typeof photoUrl === "string" ? photoUrl.trim() : null;
 
     // --- Kullanıcı oluştur ---
@@ -114,6 +116,7 @@ export const registerTeacher = async (req, res) => {
         district,
         mode: normMode,
         bio,
+        whyMe,
         photoUrl,
         slug,
         isPublic: true
@@ -214,6 +217,7 @@ export const updateMyTeacherProfile = async (req, res) => {
       mode,        // "ONLINE" | "FACE_TO_FACE" | "BOTH"
       bio,
       photoUrl,
+      whyMe,
       isPublic
     } = req.body || {};
 
@@ -222,6 +226,7 @@ export const updateMyTeacherProfile = async (req, res) => {
     // İsimler
     if (typeof firstName === "string") firstName = firstName.trim();
     if (typeof lastName === "string")  lastName  = lastName.trim();
+    if (typeof whyMe === "string") whyMe = whyMe.trim();
 
     // Dizi alanlar
     const normArray = (arr) =>
@@ -275,6 +280,7 @@ export const updateMyTeacherProfile = async (req, res) => {
       ...(district      !== undefined && { district }),
       ...(mode          !== undefined && { mode }),
       ...(bio           !== undefined && { bio }),
+      ...(whyMe    !== undefined && { whyMe }),
       ...(photoUrl      !== undefined && { photoUrl }),
       ...(isPublic      !== undefined && { isPublic }),
     };

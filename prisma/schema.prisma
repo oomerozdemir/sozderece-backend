@@ -250,6 +250,7 @@ model TeacherProfile {
   priceOnline   Int?
   priceF2F      Int?
   bio           String?
+  whyMe           String?
   photoUrl      String?
   slug          String          @unique
   isPublic      Boolean         @default(true)
