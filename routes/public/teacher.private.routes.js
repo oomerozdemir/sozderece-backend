@@ -15,7 +15,7 @@ import {
   changeMyPassword,
   listMyLessons, createMyLesson, updateMyLesson, deleteMyLesson,
   updateAppointmentStatus, getMyIncomingRequests, getMyConfirmedAppointments,
-  completeAppointmentByTeacher, getMyPastAppointmentsTeacher,requestPublish,
+  completeAppointmentByTeacher, getMyPastAppointmentsTeacher,requestPublish,unpublishMyProfile,
 } from "../../controllers/teacher.controller.js";
 import upload from "../../middleware/upload.js";
 
@@ -75,5 +75,7 @@ router.get("/me/appointments/past", authenticateToken, authorizeRoles("teacher")
 
 // publish request
 router.post("/me/publish-request", authenticateToken, requestPublish);
+// PROFİLİ YAYINDAN KALDIR
+router.post("/me/unpublish", authenticateToken, unpublishMyProfile);
 
 export default router;

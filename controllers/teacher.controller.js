@@ -1764,3 +1764,48 @@ export const requestPublish = async (req, res) => {
   }
 };
 
+
+// --- PROFİLİ YAYINDAN KALDIR ---
+export const unpublishMyProfile = async (req, res) => {
+  try {
+    const userId = Number(req.user?.id);
+    if (!userId) return res.status(401).json({ message: "Yetkisiz" });
+
+    const tp = await prisma.teacherProfile.findUnique({
+      where: { userId },
+      select: { id: true },
+    });
+    if (!tp) return res.status(404).json({ message: "Öğretmen profili bulunamadı." });
+
+    const profile = await prisma.teacherProfile.update({
+      where: { id: tp.id },
+      data: {
+        isPublic: false,
+        publishStatus: "DRAFT",
+        reviewedAt: null,
+        reviewerId: null,
+        reviewNote: null,
+      },
+      select: {
+        id: true,
+        isPublic: true,
+        publishStatus: true,
+        reviewedAt: true,
+        reviewNote: true,
+        slug: true,
+        firstName: true,
+        lastName: true,
+        photoUrl: true,
+      },
+    });
+
+    return res.json({
+      success: true,
+      message: "Profil yayından kaldırıldı.",
+      profile,
+    });
+  } catch (e) {
+    console.error("unpublishMyProfile error:", e);
+    return res.status(500).json({ message: "Profil yayından kaldırılamadı." });
+  }
+};
