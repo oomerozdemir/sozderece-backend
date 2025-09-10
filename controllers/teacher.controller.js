@@ -553,27 +553,34 @@ export const getTeacherBySlug = async (req, res) => {
 export const trackTeacherView = async (req, res) => {
   try {
     const { slug } = req.params;
-    const item = await prisma.teacherProfile.findUnique({ where: { slug } });
 
-    if (
-      !item ||
-      !item.isPublic ||
-      (item.publishStatus && item.publishStatus !== "APPROVED")
-    ) {
+    const teacher = await prisma.teacherProfile.findUnique({
+      where: { slug },
+      select: { id: true, isPublic: true, isApproved: true, viewCount: true, userId: true },
+    });
+
+    if (!teacher || !teacher.isPublic || !teacher.isApproved) {
       return res.status(404).json({ success: false, message: "Öğretmen bulunamadı." });
     }
 
-    await prisma.teacherProfile.update({
-      where: { id: item.id },
+    // (Opsiyonel) kendi profiline bakıyorsa artırma
+    if (req.user && Number(req.user.id) === teacher.userId) {
+      return res.json({ success: true, viewCount: teacher.viewCount });
+    }
+
+    const updated = await prisma.teacherProfile.update({
+      where: { id: teacher.id },
       data: { viewCount: { increment: 1 } },
+      select: { viewCount: true },
     });
 
-    res.json({ success: true });
+    return res.json({ success: true, viewCount: updated.viewCount });
   } catch (err) {
     console.error("trackTeacherView error:", err);
-    res.status(500).json({ success: false, message: "Sunucu hatası." });
+    return res.status(500).json({ success: false, message: "Görüntüleme sayısı güncellenemedi." });
   }
 };
+
 
 
 export const addTeacherReview = async (req, res) => {

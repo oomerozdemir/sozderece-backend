@@ -12,7 +12,7 @@ const router = express.Router();
 
 // Liste
 router.get("/", searchTeachers);
-router.post("/:slug/view", trackTeacherView);
+router.post("/:slug/track-view", trackTeacherView);
 router.get("/:slug/reviews", listTeacherReviews);
 router.post("/:slug/reviews", authenticateToken, addTeacherReview);
 
