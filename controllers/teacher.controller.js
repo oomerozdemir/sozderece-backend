@@ -556,14 +556,25 @@ export const trackTeacherView = async (req, res) => {
 
     const teacher = await prisma.teacherProfile.findUnique({
       where: { slug },
-      select: { id: true, isPublic: true, isApproved: true, viewCount: true, userId: true },
+      select: {
+        id: true,
+        isPublic: true,
+        publishStatus: true,   // ✅ moderasyon durumu
+        viewCount: true,
+        userId: true,
+      },
     });
 
-    if (!teacher || !teacher.isPublic || !teacher.isApproved) {
+    // Yayın kontrolü: isPublic + (varsa) publishStatus=APPROVED
+    if (
+      !teacher ||
+      !teacher.isPublic ||
+      (teacher.publishStatus && teacher.publishStatus !== "APPROVED")
+    ) {
       return res.status(404).json({ success: false, message: "Öğretmen bulunamadı." });
     }
 
-    // (Opsiyonel) kendi profiline bakıyorsa artırma
+    // (Opsiyonel) kendi profiline bakıyorsa sayaç artırma
     if (req.user && Number(req.user.id) === teacher.userId) {
       return res.json({ success: true, viewCount: teacher.viewCount });
     }
@@ -577,7 +588,9 @@ export const trackTeacherView = async (req, res) => {
     return res.json({ success: true, viewCount: updated.viewCount });
   } catch (err) {
     console.error("trackTeacherView error:", err);
-    return res.status(500).json({ success: false, message: "Görüntüleme sayısı güncellenemedi." });
+    return res
+      .status(500)
+      .json({ success: false, message: "Görüntüleme sayısı güncellenemedi." });
   }
 };
 
