@@ -28,7 +28,7 @@ export const getMyOrders = async (req, res) => {
 
     res.status(200).json({ orders });
   } catch (error) {
-    console.error("Siparişler alınamadı:");
+    console.error("Siparişler alınamadı:", error?.message);
     res.status(500).json({ message: "Siparişler alınamadı." });
   }
 };
@@ -36,16 +36,8 @@ export const getMyOrders = async (req, res) => {
 
 export const prepareOrder = async (req, res) => {
   try {
-    let {
-      cart,
-      billingInfo,
-      packageName,
-      totalPrice,
-      discountRate,
-      couponCode,
-      useServerCart, // serverdaki sepeti kullan
-    } = req.body;
-
+    // 🔴 FE bu endpoint'e requestId (StudentLessonRequest.id) göndermeli
+    let { cart, billingInfo, packageName, totalPrice, discountRate, couponCode, useServerCart, requestId } = req.body;
     const userId = req.user?.id;
 
     // Temel doğrulama
@@ -114,7 +106,7 @@ export const prepareOrder = async (req, res) => {
       return res.status(500).json({ error: "Ödeme token alınamadı" });
     }
 
-    // 4) paymentMeta kaydı
+    // 4) paymentMeta kaydı (requestId dahil)
     await prisma.paymentMeta.create({
       data: {
         merchantOid,
@@ -125,20 +117,20 @@ export const prepareOrder = async (req, res) => {
         discountRate,
         couponCode,
         totalPrice,
+        requestId: requestId || null,
       },
     });
 
-    // 5) (ÖNERİLEN) Siparişi hemen 'pending' oluştur ki OrdersPage'de görünsün
-    // Callback geldiğinde sadece status 'paid' yapılacak.
-    await prisma.order.upsert({
-      where: { merchantOid }, // merchantOid unique olmalı
+    // 5) Siparişi 'pending' oluştur/garanti et (merchantOid unique)
+    const order = await prisma.order.upsert({
+      where: { merchantOid },
       update: {},             // mevcutsa dokunma; status callback'te güncellenecek
       create: {
         merchantOid,
         status: "pending",
-        totalPrice: Number(cleanPrice(totalPrice)), // sayıya çevir
+        totalPrice: Number(cleanPrice(totalPrice)),
         package: packageName,
-        endDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000), // örnek: 30 gün sonraya erişim
+        endDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000), // 30 gün
         ...(userId ? { user: { connect: { id: userId } } } : {}),
         billingInfo: { create: billingInfo },
         orderItems: {
@@ -149,9 +141,26 @@ export const prepareOrder = async (req, res) => {
           })),
         },
       },
+      include: { /* ileride gerekirse alanlar eklenebilir */ }
     });
 
-    // 6) Token'ı döndür (FE iframe'e yönlendirecek)
+    // 6) 🔗 Request ↔ Order bağla ve "sepette" (PACKAGE_SELECTED) yap
+    // Not: Eğer request daha önce PAID yapıldıysa dokunmamak isterseniz conditional yazabilirsiniz.
+    if (requestId) {
+      try {
+        await prisma.studentLessonRequest.update({
+          where: { id: String(requestId) },
+          data: {
+            orderId: order.id,
+            status: "PACKAGE_SELECTED",
+          },
+        });
+      } catch (e) {
+        console.warn("StudentLessonRequest ilişkilendirme atlandı:", e?.message);
+      }
+    }
+
+    // 7) Token'ı döndür (FE iframe'e yönlendirecek)
     return res.json({ token, merchantOid });
   } catch (err) {
     console.error("❌ prepareOrder hatası:", err);
@@ -210,7 +219,7 @@ export const handlePaytrCallback = async (req, res) => {
         },
       });
 
-      console.log("🆕 Order oluşturuldu:");
+      console.log("🆕 Order oluşturuldu:", order.id);
     }
 
     if (order.status === "paid") {
@@ -219,10 +228,33 @@ export const handlePaytrCallback = async (req, res) => {
 
     if (status === "success") {
       // 1) Siparişi PAID yap
-      await prisma.order.update({
+      order = await prisma.order.update({
         where: { id: order.id },
         data: { status: "paid" },
       });
+
+      // 1.a) ✅ İlişkili StudentLessonRequest varsa PAID yap (orderId üzerinden)
+      try {
+        await prisma.studentLessonRequest.updateMany({
+          where: { orderId: order.id, status: { not: "PAID" } },
+          data: { status: "PAID" },
+        });
+      } catch (e) {
+        console.warn("Request PAID (orderId) güncellemesi atlandı:", e?.message);
+      }
+
+      // 1.b) ✅ Yedek: PaymentMeta.requestId üzerinden de dene
+      try {
+        const pm = await prisma.paymentMeta.findUnique({ where: { merchantOid: merchant_oid } });
+        if (pm?.requestId) {
+          await prisma.studentLessonRequest.updateMany({
+            where: { id: String(pm.requestId), status: { not: "PAID" } },
+            data: { status: "PAID" },
+          });
+        }
+      } catch (e) {
+        console.warn("Request PAID (paymentMeta.requestId) güncellemesi atlandı:", e?.message);
+      }
 
       // 2) user/email'i tek seferde al
       const [user, billingInfo] = await Promise.all([
