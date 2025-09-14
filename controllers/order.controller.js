@@ -2,14 +2,14 @@ import prisma from "../utils/prisma.js";
 
 import axios from "axios";
 import crypto from "crypto";
-import qs from "qs"; 
-import { sendPaymentSuccessEmail } from "../utils/sendEmail.js"
+import qs from "qs";
+import { sendPaymentSuccessEmail } from "../utils/sendEmail.js";
 import { v4 as uuidv4 } from "uuid";
 import { cleanMerchantOid, cleanPrice, requireFields } from "../utils/helpers.js";
 
-
-
-// Siparişleri getir
+/* =========================
+   Siparişleri getir (My Orders)
+========================= */
 export const getMyOrders = async (req, res) => {
   try {
     const userId = req.user.id;
@@ -23,6 +23,7 @@ export const getMyOrders = async (req, res) => {
       include: {
         billingInfo: true,
         orderItems: true,
+        // FE'de talep-sipariş eşlemesi için:
         studentRequest: { select: { id: true } },
       },
     });
@@ -34,11 +35,23 @@ export const getMyOrders = async (req, res) => {
   }
 };
 
-
+/* =========================
+   Sipariş Hazırla (PayTR token al)
+========================= */
 export const prepareOrder = async (req, res) => {
   try {
     // 🔴 FE bu endpoint'e requestId (StudentLessonRequest.id) göndermeli
-    let { cart, billingInfo, packageName, totalPrice, discountRate, couponCode, useServerCart, requestId } = req.body;
+    let {
+      cart,
+      billingInfo,
+      packageName,
+      totalPrice,
+      discountRate,
+      couponCode,
+      useServerCart,
+      requestId,
+    } = req.body;
+
     const userId = req.user?.id;
 
     // Temel doğrulama
@@ -118,66 +131,66 @@ export const prepareOrder = async (req, res) => {
         discountRate,
         couponCode,
         totalPrice,
-        requestId: requestId || null,
+        requestId: requestId || null, // <-- şemanızda PaymentMeta.requestId String? olmalı
       },
     });
 
     // 5) Siparişi 'pending' oluştur/garanti et (merchantOid unique)
-  const order = await prisma.order.upsert({
-  where: { merchantOid },
-  update: {}, // varsa aynen bırak; status callback'te güncellenecek
-  create: {
-    merchantOid,
-    status: "pending",
-    totalPrice: Number(cleanPrice(totalPrice)),
-    package: packageName,
-    endDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000), // 30 gün
-    ...(userId ? { user: { connect: { id: userId } } } : {}),
-    billingInfo: { create: billingInfo },
-    orderItems: {
-      create: cleanedCart.map((it) => ({
-        name: it.name,
-        price: Number(cleanPrice(it.price)),
-        quantity: it.quantity,
-      })),
-    },
-  },
-});
-
-// 6) 🔗 Request ↔ Order bağla ve "Sepette" yap (yalnızca gerektiğinde)
-if (requestId) {
-  try {
-    // Talebin mevcut durumunu al
-    const req = await prisma.studentLessonRequest.findUnique({
-      where: { id: String(requestId) }, // StudentLessonRequest.id cuid/String
-      select: { id: true, status: true, orderId: true },
+    const order = await prisma.order.upsert({
+      where: { merchantOid },
+      update: {}, // varsa aynen bırak; status callback'te güncellenecek
+      create: {
+        merchantOid,
+        status: "pending",
+        totalPrice: Number(cleanPrice(totalPrice)),
+        package: packageName,
+        endDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000), // 30 gün
+        ...(userId ? { user: { connect: { id: userId } } } : {}),
+        billingInfo: { create: billingInfo },
+        orderItems: {
+          create: cleanedCart.map((it) => ({
+            name: it.name,
+            price: Number(cleanPrice(it.price)),
+            quantity: it.quantity,
+          })),
+        },
+      },
     });
 
-    if (req) {
-      const updates = {};
-
-      // 6.a) Order bağlantısı yoksa veya farklısa, bu siparişe bağla
-      if (!req.orderId || req.orderId !== order.id) {
-        updates.order = { connect: { id: order.id } }; // StudentLessonRequest.orderId = order.id
-      }
-
-      // 6.b) Statü PAID/CANCELLED değilse "PACKAGE_SELECTED" yap
-      const s = String(req.status || "").toUpperCase();
-      if (s !== "PAID" && s !== "CANCELLED") {
-        updates.status = "PACKAGE_SELECTED";
-      }
-
-      if (Object.keys(updates).length > 0) {
-        await prisma.studentLessonRequest.update({
-          where: { id: req.id },
-          data: updates,
+    // 6) 🔗 Request ↔ Order bağla ve "Sepette" yap (yalnızca gerektiğinde)
+    if (requestId) {
+      try {
+        // Talebin mevcut durumunu al
+        const reqRow = await prisma.studentLessonRequest.findUnique({
+          where: { id: String(requestId) }, // StudentLessonRequest.id cuid/String
+          select: { id: true, status: true, orderId: true },
         });
+
+        if (reqRow) {
+          const updates = {};
+
+          // 6.a) Order bağlantısı yoksa veya farklısa, bu siparişe bağla
+          if (!reqRow.orderId || reqRow.orderId !== order.id) {
+            updates.order = { connect: { id: order.id } }; // StudentLessonRequest.orderId = order.id
+          }
+
+          // 6.b) Statü PAID/CANCELLED değilse "PACKAGE_SELECTED" yap
+          const s = String(reqRow.status || "").toUpperCase();
+          if (s !== "PAID" && s !== "CANCELLED") {
+            updates.status = "PACKAGE_SELECTED";
+          }
+
+          if (Object.keys(updates).length > 0) {
+            await prisma.studentLessonRequest.update({
+              where: { id: reqRow.id },
+              data: updates,
+            });
+          }
+        }
+      } catch (e) {
+        console.warn("StudentLessonRequest ilişkilendirme atlandı:", e?.message);
       }
     }
-  } catch (e) {
-    console.warn("StudentLessonRequest ilişkilendirme atlandı:", e?.message);
-  }
-}
 
     // 7) Token'ı döndür (FE iframe'e yönlendirecek)
     return res.json({ token, merchantOid });
@@ -187,10 +200,9 @@ if (requestId) {
   }
 };
 
-
-
-
-
+/* =========================
+   PayTR Callback
+========================= */
 export const handlePaytrCallback = async (req, res) => {
   try {
     const { merchant_oid, status, total_amount, hash } = req.body;
@@ -361,24 +373,15 @@ export const handlePaytrCallback = async (req, res) => {
   }
 };
 
-
-
-
+/* =========================
+   PayTR Token (sunucu tarafı)
+========================= */
 export const initiatePaytrPayment = async (req, res) => {
   try {
-    const {
-      cart,
-      totalPrice,
-      test_mode,
-      user_name,
-      user_address,
-      user_phone,
-    } = req.body;
+    const { cart, totalPrice, test_mode, user_name, user_address, user_phone } = req.body;
 
     const merchantOid = cleanMerchantOid(req.body.merchantOid);
     const user = req.user;
-
-   
 
     if (!user || !user.email) {
       return res.status(400).json({ error: "Kullanıcı verisi eksik veya geçersiz" });
@@ -452,38 +455,32 @@ export const initiatePaytrPayment = async (req, res) => {
       lang: "tr",
     };
 
-
     const response = await axios.post(
       "https://www.paytr.com/odeme/api/get-token",
       qs.stringify(paytrData),
       {
-        headers: {
-          "Content-Type": "application/x-www-form-urlencoded",
-        },
+        headers: { "Content-Type": "application/x-www-form-urlencoded" },
       }
     );
 
     if (!response.data?.token) {
       console.error("🚨 PayTR token alınamadı:");
-      return res.status(500).json({ error: "PayTR token alınamadı"});
+      return res.status(500).json({ error: "PayTR token alınamadı" });
     }
 
     return res.json({ token: response.data.token });
   } catch (error) {
-
-    return res.status(500).json({
-      error: "Ödeme başlatılamadı"
-    });
+    return res.status(500).json({ error: "Ödeme başlatılamadı" });
   }
 };
 
-
-
-// İade talebi oluştur
+/* =========================
+   İade talebi
+========================= */
 export const createRefundRequest = async (req, res) => {
   const userId = req.user.id;
   const orderId = parseInt(req.params.id);
-  const { reason, description  } = req.body;
+  const { reason, description } = req.body;
 
   if (!reason) {
     return res.status(400).json({ message: "İade nedeni gereklidir." });
@@ -491,11 +488,7 @@ export const createRefundRequest = async (req, res) => {
 
   try {
     const existingOrder = await prisma.order.findFirst({
-      where: {
-        id: orderId,
-        userId: userId,
-        status: "paid"
-      }
+      where: { id: orderId, userId: userId, status: "paid" },
     });
 
     if (!existingOrder) {
@@ -507,13 +500,13 @@ export const createRefundRequest = async (req, res) => {
       data: {
         status: "refund_requested",
         refundReason: reason,
-        refundMessage: description
-      }
+        refundMessage: description,
+      },
     });
 
     res.status(200).json({ message: "İade talebi oluşturuldu." });
   } catch (error) {
-    console.error("İade talebi hatası:");
+    console.error("İade talebi hatası:", error?.message);
     res.status(500).json({ message: "Sunucu hatası." });
   }
 };
