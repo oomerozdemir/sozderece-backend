@@ -1,8 +1,9 @@
 import prisma from "../utils/prisma.js";
-
-
 import { sendNewRequestToTeacher } from "../utils/sendEmail.js";
 
+/* =========================
+   Talep Oluştur
+========================= */
 export const createStudentRequest = async (req, res) => {
   try {
     const userId = Number(req.user?.id);
@@ -23,7 +24,7 @@ export const createStudentRequest = async (req, res) => {
       unitPrice = null,           // kuruş
     } = req.body || {};
 
-    // Öğretmeni çek (mail için user.email dahil)
+    // Öğretmen + mail bilgisi
     const teacher = await prisma.teacherProfile.findUnique({
       where: { slug: teacherSlug },
       select: {
@@ -100,7 +101,6 @@ export const createStudentRequest = async (req, res) => {
 
     // 🔔 Öğretmene mail
     const teacherEmail = teacher.user?.email;
-    console.log("📧 Yeni talep -> öğretmen:", { teacherEmail, requestId: request.id });
     if (teacherEmail) {
       const teacherName = `${teacher.firstName || ""} ${teacher.lastName || ""}`.trim() || teacher.user?.name || "";
       const modeLabel = modeNorm === "FACE_TO_FACE" ? "Yüz yüze" : "Online";
@@ -119,12 +119,9 @@ export const createStudentRequest = async (req, res) => {
           requestId: request.id,
           createdAt: request.createdAt,
         });
-        console.log("✅ Öğretmen maili gönderildi:", teacherEmail);
       } catch (err) {
         console.error("❌ Öğretmen maili hata:", err?.message || err);
       }
-    } else {
-      console.warn("⚠️ Öğretmen e-postası boş, mail gönderilemedi.");
     }
 
     return res.status(201).json({ success: true, id: request.id, request });
@@ -134,8 +131,9 @@ export const createStudentRequest = async (req, res) => {
   }
 };
 
-
-
+/* =========================
+   Tekil Talep (öğrencinin)
+========================= */
 export const getStudentRequest = async (req, res) => {
   try {
     const rawUserId = req.user?.id;
@@ -145,6 +143,9 @@ export const getStudentRequest = async (req, res) => {
     const { id } = req.params; // cuid (String)
     const rec = await prisma.studentLessonRequest.findUnique({
       where: { id },
+      include: {
+        order: { select: { id: true, status: true } }, // UI için
+      },
     });
     if (!rec || rec.studentId !== userId) {
       return res.status(404).json({ message: "Bulunamadı." });
@@ -156,6 +157,9 @@ export const getStudentRequest = async (req, res) => {
   }
 };
 
+/* =========================
+   Talebe Paket Ekle / Güncelle
+========================= */
 export const attachPackageToRequest = async (req, res) => {
   try {
     const rawUserId = req.user?.id;
@@ -170,14 +174,20 @@ export const attachPackageToRequest = async (req, res) => {
       return res.status(404).json({ message: "Bulunamadı." });
     }
 
+    // PAID/CANCELLED'e düşürme!
+    const next = {
+      packageSlug,
+      packageTitle,
+      packageUnitPrice: Number(unitPrice),
+    };
+    const cur = String(rec.status || "").toUpperCase();
+    if (cur !== "PAID" && cur !== "CANCELLED") {
+      next.status = "PACKAGE_SELECTED";
+    }
+
     const updated = await prisma.studentLessonRequest.update({
       where: { id },
-      data: {
-        packageSlug,
-        packageTitle,
-        packageUnitPrice: Number(unitPrice),
-        status: "PACKAGE_SELECTED",
-      },
+      data: next,
     });
 
     res.json({ success: true, request: updated });
@@ -187,6 +197,9 @@ export const attachPackageToRequest = async (req, res) => {
   }
 };
 
+/* =========================
+   (Opsiyonel) Talebi PAID işaretle
+========================= */
 export const markRequestPaid = async (req, res) => {
   try {
     const rawUserId = req.user?.id;
@@ -194,7 +207,7 @@ export const markRequestPaid = async (req, res) => {
     const userId = Number(rawUserId);
 
     const { id } = req.params;  // cuid
-    const { orderId } = req.body; // Int veya String? (schema'na göre)
+    const { orderId } = req.body; // Int
 
     const rec = await prisma.studentLessonRequest.findUnique({ where: { id } });
     if (!rec || rec.studentId !== userId) {
@@ -203,7 +216,7 @@ export const markRequestPaid = async (req, res) => {
 
     const updated = await prisma.studentLessonRequest.update({
       where: { id },
-      data: { status: "PAID", orderId },
+      data: { status: "PAID", orderId: orderId ?? rec.orderId ?? null },
     });
 
     res.json({ success: true, request: updated });
@@ -213,6 +226,9 @@ export const markRequestPaid = async (req, res) => {
   }
 };
 
+/* =========================
+   Talep için slot kaydet
+========================= */
 export const saveRequestSlots = async (req, res) => {
   try {
     const rawUserId = req.user?.id;
@@ -235,22 +251,23 @@ export const saveRequestSlots = async (req, res) => {
       return res.status(400).json({ message: `Lütfen ${lessonsCount} adet saat seçiniz.` });
     }
 
-    // ✅ BUGFIX: .slots yerine ...slots
+    // Tüm aralıklar için min-start / max-end
     const sMin = new Date(Math.min(...slots.map(s => +new Date(s.start))));
     const eMax = new Date(Math.max(...slots.map(s => +new Date(s.end))));
 
+    // 🔧 Çakışma kontrolü: (startsAt < eMax) AND (endsAt > sMin)
     const conflicts = await prisma.appointment.findMany({
       where: {
         teacherProfileId: reqRec.teacherProfileId,
         status: { in: ["PENDING", "CONFIRMED"] },
-        OR: [{ startsAt: { lt: eMax }, endsAt: { gt: sMin } }],
+        AND: [{ startsAt: { lt: eMax } }, { endsAt: { gt: sMin } }],
       },
       select: { startsAt: true, endsAt: true },
     });
 
-    const hasConflict = (s) =>
+    const overlaps = (s) =>
       conflicts.some(c => (new Date(s.start) < c.endsAt && new Date(s.end) > c.startsAt));
-    if (slots.some(hasConflict)) {
+    if (slots.some(overlaps)) {
       return res.status(409).json({ message: "Seçilen saatlerden bazıları dolu görünüyor. Lütfen güncelleyiniz." });
     }
 
@@ -281,8 +298,9 @@ export const saveRequestSlots = async (req, res) => {
   }
 };
 
-
-/** Öğrencinin kendi talepleri (paket ve randevu özetleriyle) */
+/* =========================
+   Öğrencinin Talepleri (özet)
+========================= */
 export const listMyRequests = async (req, res) => {
   try {
     const rawUserId = req.user?.id;
@@ -292,7 +310,7 @@ export const listMyRequests = async (req, res) => {
     // Son 90 gün randevu eşlemesi için
     const since = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000);
 
-    // Öğrencinin talepleri (öğretmen bilgisi dahil)
+    // Öğrencinin talepleri (+ order status)
     const requests = await prisma.studentLessonRequest.findMany({
       where: { studentId: userId },
       orderBy: { createdAt: "desc" },
@@ -307,6 +325,7 @@ export const listMyRequests = async (req, res) => {
         packageTitle: true,
         packageUnitPrice: true,
         teacherProfileId: true,
+        order: { select: { id: true, status: true } }, // <-- EKLENDİ
         teacherProfile: {
           select: {
             id: true,
@@ -318,7 +337,7 @@ export const listMyRequests = async (req, res) => {
       },
     });
 
-    // Randevular (öğrenciye ait) — PENDING ve CONFIRMED
+    // Öğrencinin PENDING/CONFIRMED randevuları (yakın tarih)
     const [pendingAppts, confirmedAppts] = await Promise.all([
       prisma.appointment.findMany({
         where: {
@@ -340,7 +359,7 @@ export const listMyRequests = async (req, res) => {
       }),
     ]);
 
-    // notes içinden requestId çekmek için yardımcı
+    // notes içinden requestId çek
     const getReqIdFromNotes = (notes) => {
       const m = /requestId=([a-z0-9]+)/i.exec(notes || "");
       return m?.[1] || null;
@@ -365,6 +384,9 @@ export const listMyRequests = async (req, res) => {
         packageUnitPrice: r.packageUnitPrice,
         lessonsCount,
         paidTL: typeof r.packageUnitPrice === "number" ? r.packageUnitPrice / 100 : null,
+        // 👇 UI'nın kolay okuması için order bilgisi:
+        order: r.order ? { id: r.order.id, status: r.order.status } : null,
+        orderStatus: r.order?.status || null, // convenience field
         teacher: r.teacherProfile ? {
           id: r.teacherProfile.id,
           name: `${r.teacherProfile.firstName || ""} ${r.teacherProfile.lastName || ""}`.trim(),
