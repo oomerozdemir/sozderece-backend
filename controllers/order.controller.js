@@ -24,7 +24,7 @@ export const getMyOrders = async (req, res) => {
         billingInfo: true,
         orderItems: true,
         // FE'de talep-sipariş eşlemesi için:
-        studentRequest: { select: { id: true } },
+        studentRequests: { select: { id: true } },
       },
     });
 
@@ -50,6 +50,7 @@ export const prepareOrder = async (req, res) => {
       couponCode,
       useServerCart,
       requestId,
+      requestIds, 
     } = req.body;
 
     const userId = req.user?.id;
@@ -157,38 +158,21 @@ export const prepareOrder = async (req, res) => {
       },
     });
 
-    // 6) 🔗 Request ↔ Order bağla ve "Sepette" yap (yalnızca gerektiğinde)
-    if (requestId) {
+     // 6) 🔗 Bir veya birden çok talebi Order'a bağla ve "Sepette" yap
+    const ids = []
+      .concat(requestIds || [])
+      .concat(requestId ? [requestId] : [])
+      .filter(Boolean)
+      .map(String);
+
+    if (ids.length > 0) {
       try {
-        // Talebin mevcut durumunu al
-        const reqRow = await prisma.studentLessonRequest.findUnique({
-          where: { id: String(requestId) }, // StudentLessonRequest.id cuid/String
-          select: { id: true, status: true, orderId: true },
+        await prisma.studentLessonRequest.updateMany({
+          where: { id: { in: ids }, status: { notIn: ["PAID", "CANCELLED"] } },
+          data: { orderId: order.id, status: "PACKAGE_SELECTED" },
         });
-
-        if (reqRow) {
-          const updates = {};
-
-          // 6.a) Order bağlantısı yoksa veya farklısa, bu siparişe bağla
-          if (!reqRow.orderId || reqRow.orderId !== order.id) {
-            updates.order = { connect: { id: order.id } }; // StudentLessonRequest.orderId = order.id
-          }
-
-          // 6.b) Statü PAID/CANCELLED değilse "PACKAGE_SELECTED" yap
-          const s = String(reqRow.status || "").toUpperCase();
-          if (s !== "PAID" && s !== "CANCELLED") {
-            updates.status = "PACKAGE_SELECTED";
-          }
-
-          if (Object.keys(updates).length > 0) {
-            await prisma.studentLessonRequest.update({
-              where: { id: reqRow.id },
-              data: updates,
-            });
-          }
-        }
       } catch (e) {
-        console.warn("StudentLessonRequest ilişkilendirme atlandı:", e?.message);
+        console.warn("StudentLessonRequest toplu ilişkilendirme atlandı:", e?.message);
       }
     }
 

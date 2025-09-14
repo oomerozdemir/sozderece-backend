@@ -82,13 +82,15 @@ model Order {
   status        String      @default("pending_payment")
   refundMessage String?
   refundReason  String?
-  merchantOid   String?     @unique // 🔥 Ödeme takip için
+  merchantOid   String?     @unique
   totalPrice    Float?
+
   billingInfo   BillingInfo @relation("BillingToOrder", fields: [billingInfoId], references: [id])
   user          User        @relation(fields: [userId], references: [id])
   orderItems    OrderItem[]
-  studentRequest StudentLessonRequest? @relation("OrderStudentRequest")
 
+  // 🔁 1→N: bir order birden çok talep
+  studentRequests StudentLessonRequest[] @relation("OrderStudentRequest")
 }
 
 model Package {
@@ -207,7 +209,10 @@ model PaymentMeta {
   totalPrice   Float
   createdAt    DateTime @default(now())
 
+  requestId    String?  @db.VarChar(191) // StudentLessonRequest.id (cuid) saklanacak
+  @@index([requestId])
   user User @relation(fields: [userId], references: [id])
+  
 }
 
 model RememberToken {
@@ -409,15 +414,11 @@ model TeacherLesson {
 
 model StudentLessonRequest {
   id               String   @id @default(cuid())
-
-  // 🔧 TIP DÜZELTME: String -> Int
   studentId        Int
   student          User     @relation(fields: [studentId], references: [id])
-
   teacherProfileId String
   teacherProfile   TeacherProfile @relation(fields: [teacherProfileId], references: [id])
 
-  // Öğrenci seçimleri:
   subject          String
   grade            String
   mode             RequestMode
@@ -426,24 +427,23 @@ model StudentLessonRequest {
   locationNote     String?
   note             String?
 
-  // Akış:
-  status           RequestStatus
+  status           RequestStatus @default(SUBMITTED)
+
   packageSlug      String?
   packageTitle     String?
   packageUnitPrice Int?
-  
-  orderId          Int?     @unique
+
+  orderId          Int?
   order            Order?   @relation("OrderStudentRequest", fields: [orderId], references: [id], onDelete: SetNull)
 
   createdAt        DateTime @default(now())
   updatedAt        DateTime @updatedAt
 
-  // 🆕 indeksler
   @@index([studentId])
   @@index([teacherProfileId])
   @@index([status, createdAt])
+  @@index([orderId]) // sorgu performansı için iyi olur
 }
-
 enum RequestMode {
   ONLINE
   FACE_TO_FACE
