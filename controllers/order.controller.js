@@ -23,6 +23,7 @@ export const getMyOrders = async (req, res) => {
       include: {
         billingInfo: true,
         orderItems: true,
+        studentRequest: { select: { id: true } },
       },
     });
 
@@ -122,43 +123,61 @@ export const prepareOrder = async (req, res) => {
     });
 
     // 5) Siparişi 'pending' oluştur/garanti et (merchantOid unique)
-    const order = await prisma.order.upsert({
-      where: { merchantOid },
-      update: {},             // mevcutsa dokunma; status callback'te güncellenecek
-      create: {
-        merchantOid,
-        status: "pending",
-        totalPrice: Number(cleanPrice(totalPrice)),
-        package: packageName,
-        endDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000), // 30 gün
-        ...(userId ? { user: { connect: { id: userId } } } : {}),
-        billingInfo: { create: billingInfo },
-        orderItems: {
-          create: cleanedCart.map((it) => ({
-            name: it.name,
-            price: Number(cleanPrice(it.price)),
-            quantity: it.quantity,
-          })),
-        },
-      },
-      include: { /* ileride gerekirse alanlar eklenebilir */ }
+  const order = await prisma.order.upsert({
+  where: { merchantOid },
+  update: {}, // varsa aynen bırak; status callback'te güncellenecek
+  create: {
+    merchantOid,
+    status: "pending",
+    totalPrice: Number(cleanPrice(totalPrice)),
+    package: packageName,
+    endDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000), // 30 gün
+    ...(userId ? { user: { connect: { id: userId } } } : {}),
+    billingInfo: { create: billingInfo },
+    orderItems: {
+      create: cleanedCart.map((it) => ({
+        name: it.name,
+        price: Number(cleanPrice(it.price)),
+        quantity: it.quantity,
+      })),
+    },
+  },
+});
+
+// 6) 🔗 Request ↔ Order bağla ve "Sepette" yap (yalnızca gerektiğinde)
+if (requestId) {
+  try {
+    // Talebin mevcut durumunu al
+    const req = await prisma.studentLessonRequest.findUnique({
+      where: { id: String(requestId) }, // StudentLessonRequest.id cuid/String
+      select: { id: true, status: true, orderId: true },
     });
 
-    // 6) 🔗 Request ↔ Order bağla ve "sepette" (PACKAGE_SELECTED) yap
-    // Not: Eğer request daha önce PAID yapıldıysa dokunmamak isterseniz conditional yazabilirsiniz.
-    if (requestId) {
-      try {
+    if (req) {
+      const updates = {};
+
+      // 6.a) Order bağlantısı yoksa veya farklısa, bu siparişe bağla
+      if (!req.orderId || req.orderId !== order.id) {
+        updates.order = { connect: { id: order.id } }; // StudentLessonRequest.orderId = order.id
+      }
+
+      // 6.b) Statü PAID/CANCELLED değilse "PACKAGE_SELECTED" yap
+      const s = String(req.status || "").toUpperCase();
+      if (s !== "PAID" && s !== "CANCELLED") {
+        updates.status = "PACKAGE_SELECTED";
+      }
+
+      if (Object.keys(updates).length > 0) {
         await prisma.studentLessonRequest.update({
-          where: { id: String(requestId) },
-          data: {
-            orderId: order.id,
-            status: "PACKAGE_SELECTED",
-          },
+          where: { id: req.id },
+          data: updates,
         });
-      } catch (e) {
-        console.warn("StudentLessonRequest ilişkilendirme atlandı:", e?.message);
       }
     }
+  } catch (e) {
+    console.warn("StudentLessonRequest ilişkilendirme atlandı:", e?.message);
+  }
+}
 
     // 7) Token'ı döndür (FE iframe'e yönlendirecek)
     return res.json({ token, merchantOid });
@@ -176,6 +195,7 @@ export const handlePaytrCallback = async (req, res) => {
   try {
     const { merchant_oid, status, total_amount, hash } = req.body;
 
+    // 0) Hash doğrulama
     const hashStr = `${merchant_oid}${process.env.PAYTR_MERCHANT_SALT}${status}${total_amount}`;
     const expectedHash = crypto
       .createHmac("sha256", process.env.PAYTR_MERCHANT_KEY)
@@ -187,30 +207,31 @@ export const handlePaytrCallback = async (req, res) => {
       return res.status(403).send("INVALID HASH");
     }
 
+    // 1) Order'ı bul / yoksa paymentMeta'dan oluştur
     let order = await prisma.order.findUnique({
       where: { merchantOid: merchant_oid },
     });
 
     if (!order) {
-      const paymentMeta = await prisma.paymentMeta.findUnique({
+      const pmForCreate = await prisma.paymentMeta.findUnique({
         where: { merchantOid: merchant_oid },
       });
-      if (!paymentMeta) {
-        console.error("❌ paymentMeta da bulunamadı:");
+      if (!pmForCreate) {
+        console.error("❌ paymentMeta da bulunamadı:", merchant_oid);
         return res.status(404).send("ORDER NOT FOUND");
       }
 
       order = await prisma.order.create({
         data: {
-          user: { connect: { id: paymentMeta.userId } },
+          user: { connect: { id: pmForCreate.userId } },
           merchantOid: merchant_oid,
-          totalPrice: paymentMeta.totalPrice,
+          totalPrice: pmForCreate.totalPrice,
           status: "pending",
-          package: paymentMeta.packageName,
+          package: pmForCreate.packageName,
           endDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
-          billingInfo: { create: paymentMeta.billingInfo },
+          billingInfo: { create: pmForCreate.billingInfo },
           orderItems: {
-            create: paymentMeta.cart.map((item) => ({
+            create: pmForCreate.cart.map((item) => ({
               name: item.name,
               price: item.price,
               quantity: item.quantity,
@@ -218,52 +239,64 @@ export const handlePaytrCallback = async (req, res) => {
           },
         },
       });
-
       console.log("🆕 Order oluşturuldu:", order.id);
     }
 
+    // 2) İdempotent çıkış
     if (order.status === "paid") {
       return res.send("OK");
     }
 
     if (status === "success") {
-      // 1) Siparişi PAID yap
+      // 3) Order'ı PAID yap
       order = await prisma.order.update({
         where: { id: order.id },
         data: { status: "paid" },
       });
 
-      // 1.a) ✅ İlişkili StudentLessonRequest varsa PAID yap (orderId üzerinden)
+      // 4) Talebi bağla ve PAID yap (öncelik: paymentMeta.requestId)
       try {
+        const pm = await prisma.paymentMeta.findUnique({
+          where: { merchantOid: merchant_oid },
+        });
+
+        if (pm?.requestId) {
+          // 4.a) Bu siparişe bağla + PAID
+          try {
+            await prisma.studentLessonRequest.update({
+              where: { id: String(pm.requestId) }, // StudentLessonRequest.id (cuid)
+              data: {
+                status: "PAID",
+                order: { connect: { id: order.id } }, // orderId bağla (garanti)
+              },
+            });
+          } catch (e) {
+            // Eğer unique constraint vs. nedeniyle bağlama başarısızsa, en azından statüyü garanti et
+            console.warn("Request bağlama sırasında uyarı:", e?.message);
+            await prisma.studentLessonRequest.updateMany({
+              where: { id: String(pm.requestId) },
+              data: { status: "PAID" },
+            });
+          }
+        }
+
+        // 4.b) Ek garanti: Bu orderId'ye zaten bağlı olan talep(ler) varsa, onları da PAID yap
         await prisma.studentLessonRequest.updateMany({
           where: { orderId: order.id, status: { not: "PAID" } },
           data: { status: "PAID" },
         });
       } catch (e) {
-        console.warn("Request PAID (orderId) güncellemesi atlandı:", e?.message);
+        console.warn("Talep PAID güncellemesi atlandı:", e?.message);
       }
 
-      // 1.b) ✅ Yedek: PaymentMeta.requestId üzerinden de dene
-      try {
-        const pm = await prisma.paymentMeta.findUnique({ where: { merchantOid: merchant_oid } });
-        if (pm?.requestId) {
-          await prisma.studentLessonRequest.updateMany({
-            where: { id: String(pm.requestId), status: { not: "PAID" } },
-            data: { status: "PAID" },
-          });
-        }
-      } catch (e) {
-        console.warn("Request PAID (paymentMeta.requestId) güncellemesi atlandı:", e?.message);
-      }
-
-      // 2) user/email'i tek seferde al
+      // 5) user/email'i tek seferde al
       const [user, billingInfo] = await Promise.all([
         order.userId ? prisma.user.findUnique({ where: { id: order.userId } }) : Promise.resolve(null),
         order.billingInfoId ? prisma.billingInfo.findUnique({ where: { id: order.billingInfoId } }) : Promise.resolve(null),
       ]);
       const targetEmail = user?.email || billingInfo?.email || null;
 
-      // 3) ✅ Açık sepet(ler)i completed:true yap (userId varsa ona göre, yoksa e-posta ile)
+      // 6) Açık sepet(ler)i completed:true yap (userId veya email'e göre)
       try {
         const whereOr = [];
         if (order.userId) whereOr.push({ userId: order.userId });
@@ -279,26 +312,27 @@ export const handlePaytrCallback = async (req, res) => {
         console.warn("Cart completion update skipped:", e?.message);
       }
 
-      // 4) Kupon kullanımı (varsa)
-      const paymentMeta = await prisma.paymentMeta.findUnique({
-        where: { merchantOid: merchant_oid },
-      });
-
-      if (paymentMeta?.couponCode) {
-        const alreadyUsed = await prisma.couponUsage.findFirst({
-          where: { userId: paymentMeta.userId, coupon: { code: paymentMeta.couponCode } },
-        });
-        if (!alreadyUsed) {
-          await prisma.couponUsage.create({
-            data: {
-              userId: paymentMeta.userId,
-              coupon: { connect: { code: paymentMeta.couponCode } },
-            },
+      // 7) Kupon kullanımını işle
+      try {
+        const pm = await prisma.paymentMeta.findUnique({ where: { merchantOid: merchant_oid } });
+        if (pm?.couponCode) {
+          const alreadyUsed = await prisma.couponUsage.findFirst({
+            where: { userId: pm.userId, coupon: { code: pm.couponCode } },
           });
+          if (!alreadyUsed) {
+            await prisma.couponUsage.create({
+              data: {
+                userId: pm.userId,
+                coupon: { connect: { code: pm.couponCode } },
+              },
+            });
+          }
         }
+      } catch (e) {
+        console.warn("Kupon kullanım kaydı atlandı:", e?.message);
       }
 
-      // 5) Ödeme başarılı maili
+      // 8) Ödeme başarılı maili
       if (targetEmail) {
         try {
           await sendPaymentSuccessEmail(targetEmail, order.id);
@@ -312,6 +346,7 @@ export const handlePaytrCallback = async (req, res) => {
 
       console.log("✅ Ödeme başarılı");
     } else {
+      // Ödeme başarısız
       await prisma.order.update({
         where: { id: order.id },
         data: { status: "failed" },
@@ -325,6 +360,7 @@ export const handlePaytrCallback = async (req, res) => {
     res.status(500).send("SERVER ERROR");
   }
 };
+
 
 
 
