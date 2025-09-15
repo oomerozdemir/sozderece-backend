@@ -88,7 +88,8 @@ export const createStudentRequest = async (req, res) => {
           startsAt, endsAt,
           status: "PENDING",
           mode: modeNorm,
-          notes: `requestId=${request.id}`,
+          notes: [note, `requestId=${request.id}`].filter(Boolean).join(" | "),
+           status: "PENDING",
         },
       });
     }
@@ -186,8 +187,8 @@ export const attachPackageToRequest = async (req, res) => {
     }
 
     const updated = await prisma.studentLessonRequest.update({
-      where: { id },
-      data: next,
+      where: { id: requestId },
+      data: { status: "PAID" }
     });
 
     res.json({ success: true, request: updated });
