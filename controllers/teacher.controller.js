@@ -1809,3 +1809,55 @@ export const unpublishMyProfile = async (req, res) => {
     return res.status(500).json({ message: "Profil yayından kaldırılamadı." });
   }
 };
+
+// --- TALEBI REDDET ---
+
+export const cancelRequest = async (req, res) => {
+  try {
+    const userId = Number(req.user?.id);
+    if (!userId) return res.status(401).json({ message: "Yetkisiz" });
+
+    const requestId = String(req.params.id || "");
+    if (!requestId) return res.status(400).json({ message: "requestId gerekli" });
+
+    // Bu öğretmenin profilini bul
+   const tp = await prisma.teacherProfile.findUnique({
+        where: { userId },
+      select: { id: true },
+    });
+    if (!tp) return res.status(403).json({ message: "Öğretmen profili bulunamadı." });
+
+    const teacherProfileId = tp.id;
+
+    // Tek transaction: randevuları iptal et + talep CANCELLED yaz
+    const result = await prisma.$transaction(async (tx) => {
+      // 1) Bu talebe ait randevular: appointment.notes içinde requestId sinyaliyle eşleştiriliyor
+      const apptRes = await tx.appointment.updateMany({
+        where: {
+          teacherProfileId,
+          status: { not: "CANCELLED" },
+          notes: { contains: `requestId=${requestId}` },
+        },
+       data: { status: "CANCELLED" },
+      });
+
+      // 2) Talep durumu CANCELLED
+      let reqRes = null;
+      try {
+       reqRes = await tx.studentLessonRequest.update({
+            where: { id: requestId },
+          data: { status: "CANCELLED" },
+        });
+      } catch (_) {
+        // talep bulunamazsa yolumuza devam (en azından randevular iptal)
+      }
+
+      return { apptCancelled: apptRes.count, request: reqRes };
+    });
+
+    return res.json({ success: true, ...result });
+  } catch (e) {
+    console.error("cancelRequest error:", e);
+    return res.status(500).json({ message: "Talep reddedilemedi." });
+  }
+};

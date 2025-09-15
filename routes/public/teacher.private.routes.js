@@ -15,7 +15,7 @@ import {
   changeMyPassword,
   listMyLessons, createMyLesson, updateMyLesson, deleteMyLesson,
   updateAppointmentStatus, getMyIncomingRequests, getMyConfirmedAppointments,
-  completeAppointmentByTeacher, getMyPastAppointmentsTeacher,requestPublish,unpublishMyProfile,
+  completeAppointmentByTeacher, getMyPastAppointmentsTeacher,requestPublish,unpublishMyProfile, cancelRequest,
 } from "../../controllers/teacher.controller.js";
 import upload from "../../middleware/upload.js";
 
@@ -65,6 +65,15 @@ router.delete("/me/lessons/:id", authenticateToken, authorizeRoles("teacher"), d
 /* Ders Talepleri */
 router.get("/me/requests", authenticateToken, authorizeRoles("teacher"), getMyIncomingRequests);
 router.patch("/appointments/:id/status", authenticateToken, authorizeRoles("teacher"), updateAppointmentStatus);
+
+/* Talebi reddet  */
+router.post(
+  "/requests/:id/cancel",
+  authenticateToken,
+  authorizeRoles("teacher"),
+  cancelRequest
+);
+
 
 /* Onaylanmış randevular (öğrenci bilgisi dahil) */
 router.get("/me/appointments/confirmed", authenticateToken, authorizeRoles("teacher"), getMyConfirmedAppointments);
