@@ -1507,12 +1507,13 @@ export const getMyIncomingRequests = async (req, res) => {
         r.packageSlug === "paket-3" ? 3 : 1;
 
       mapByReq.set(r.id, {
-        ...r,
-        lessonsCount,
-        paidTL: typeof r.packageUnitPrice === "number" ? r.packageUnitPrice / 100 : null,
-        appointments: [],
-        appointmentsConfirmed: [],
-      });
+  ...r,
+  lessonsCount,
+  paidTL: typeof r.packageUnitPrice === "number" ? r.packageUnitPrice / 100 : null,
+  appointments: [],
+  appointmentsConfirmed: [],
+  isPackage: Boolean(r.packageSlug) || lessonsCount > 1 || Number(r.packageUnitPrice) === 0,
+});
     }
 
     for (const a of pendingAppts) {
