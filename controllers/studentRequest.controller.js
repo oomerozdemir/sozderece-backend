@@ -116,7 +116,7 @@ export const createStudentRequest = async (req, res) => {
             startsAt, endsAt,
             status: "PENDING",
             mode: modeNorm,
-            notes: [note, `requestId=${request.id}`].filter(Boolean).join(" | "),
+            notes: [note, `requestId=${request.id}`, (useFreeRight ? "freeRight=1" : null)].filter(Boolean).join(" | "),
           },
         });
       }

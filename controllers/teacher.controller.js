@@ -1433,7 +1433,7 @@ export const getMyIncomingRequests = async (req, res) => {
     });
     if (!tp) return res.status(403).json({ message: "Öğretmen profili bulunamadı." });
 
-    // 🔑 CANCELLED artık dâhil
+    // 🔑 CANCELLED dahil
     const requests = await prisma.studentLessonRequest.findMany({
       where: {
         teacherProfileId: tp.id,
@@ -1450,6 +1450,7 @@ export const getMyIncomingRequests = async (req, res) => {
         packageSlug: true,
         packageTitle: true,
         packageUnitPrice: true,
+        orderId: true,            
         studentId: true,
         student: { select: { id: true, name: true, email: true, phone: true } },
       },
@@ -1494,9 +1495,9 @@ export const getMyIncomingRequests = async (req, res) => {
       orderBy: { startsAt: "asc" },
     });
 
-    // talepleri requestId=... (notes içinden) ile eşle
-    const getReqIdFromNotes = (notes) => {
-      const m = /requestId=([a-z0-9]+)/i.exec(notes || "");
+    // notes içinden requestId=... yakala
+    const getReqIdFromNotes = (notes = "") => {
+      const m = /requestId=([a-z0-9]+)/i.exec(String(notes) || "");
       return m?.[1] || null;
     };
 
@@ -1506,14 +1507,26 @@ export const getMyIncomingRequests = async (req, res) => {
         r.packageSlug === "paket-6" ? 6 :
         r.packageSlug === "paket-3" ? 3 : 1;
 
+      // ✅ Sadece ÜCRETSİZ HAK talepleri (free-right):
+      // paketli olmalı + birim fiyat 0 olmalı + herhangi bir orderId'ye BAĞLI OLMAMALI
+      const isFreeRight =
+        Boolean(r.packageSlug) &&
+        Number(r.packageUnitPrice) === 0 &&
+        !r.orderId;
+
+      // (genel bilgi için paket bayrağı)
+      const isPackage =
+        Boolean(r.packageSlug) || lessonsCount > 1 || Number(r.packageUnitPrice) === 0;
+
       mapByReq.set(r.id, {
-  ...r,
-  lessonsCount,
-  paidTL: typeof r.packageUnitPrice === "number" ? r.packageUnitPrice / 100 : null,
-  appointments: [],
-  appointmentsConfirmed: [],
-  isPackage: Boolean(r.packageSlug) || lessonsCount > 1 || Number(r.packageUnitPrice) === 0,
-});
+        ...r,
+        lessonsCount,
+        isFreeRight,                   // ✅ FE Paket Öğrencileri sekmesi sadece bunu kullanacak
+        isPackage,
+        paidTL: typeof r.packageUnitPrice === "number" ? r.packageUnitPrice / 100 : null,
+        appointments: [],
+        appointmentsConfirmed: [],
+      });
     }
 
     for (const a of pendingAppts) {
