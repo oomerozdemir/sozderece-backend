@@ -6,6 +6,7 @@ import qs from "qs";
 import { sendPaymentSuccessEmail } from "../utils/sendEmail.js";
 import { v4 as uuidv4 } from "uuid";
 import { cleanMerchantOid, cleanPrice, requireFields } from "../utils/helpers.js";
+import { getPackageConfig } from "../utils/packageCatalog.js";
 
 /* =========================
    Siparişleri getir (My Orders)
@@ -129,10 +130,11 @@ export const prepareOrder = async (req, res) => {
         cart: cleanedCart,
         billingInfo,
         packageName,
+        packageSlug: req.body.packageSlug || null,
         discountRate,
         couponCode,
         totalPrice,
-        requestId: requestId || null, // <-- şemanızda PaymentMeta.requestId String? olmalı
+        requestId: requestId || null,
       },
     });
 
@@ -223,7 +225,7 @@ export const handlePaytrCallback = async (req, res) => {
           merchantOid: merchant_oid,
           totalPrice: pmForCreate.totalPrice,
           status: "pending",
-          package: pmForCreate.packageName,
+          package: pmForCreate.packageName, // (opsiyonel) eski alan
           endDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
           billingInfo: { create: pmForCreate.billingInfo },
           orderItems: {
@@ -263,11 +265,10 @@ export const handlePaytrCallback = async (req, res) => {
               where: { id: String(pm.requestId) }, // StudentLessonRequest.id (cuid)
               data: {
                 status: "PAID",
-                order: { connect: { id: order.id } }, // orderId bağla (garanti)
+                order: { connect: { id: order.id } },
               },
             });
           } catch (e) {
-            // Eğer unique constraint vs. nedeniyle bağlama başarısızsa, en azından statüyü garanti et
             console.warn("Request bağlama sırasında uyarı:", e?.message);
             await prisma.studentLessonRequest.updateMany({
               where: { id: String(pm.requestId) },
@@ -285,14 +286,77 @@ export const handlePaytrCallback = async (req, res) => {
         console.warn("Talep PAID güncellemesi atlandı:", e?.message);
       }
 
-      // 5) user/email'i tek seferde al
+      // 5) (YENİ) Ücretsiz özel ders hakkı tanımla
+      // - Paket bilgisi paymentMeta.packageSlug varsa ondan, yoksa packageName/order.package'ten.
+      // - PACKAGES[pkgKey].freeLessons > 0 ise öğrencinin hakları artırılır.
+      try {
+  const pm = await prisma.paymentMeta.findUnique({
+    where: { merchantOid: merchant_oid },
+  });
+
+  // Sırayla dene: slug → paymentMeta.packageName → order.package
+  const keysToTry = [pm?.packageSlug, pm?.packageName, order?.package].filter(Boolean);
+
+  let pkgConf = null;
+  for (const k of keysToTry) {
+    pkgConf = getPackageConfig(k); // ✅ BE kataloğu
+    if (pkgConf) break;
+  }
+
+  if (pkgConf && Number(pkgConf.freeLessons) > 0) {
+    const freeLessons = Number(pkgConf.freeLessons);
+    const period = pkgConf.period || "once"; // ✅ backend kataloğu alanı
+    const targetUserId = order.userId || pm?.userId;
+
+    if (targetUserId) {
+      // Unique yoksa güvenli yaklaşım: findFirst + update/create
+      const existing = await prisma.studentPackageRight.findFirst({
+        where: {
+          studentId: targetUserId,
+          packageSlug: pkgConf.key, // ✅ kataloğun key'i
+          period,
+        },
+      });
+
+      if (existing) {
+        await prisma.studentPackageRight.update({
+          where: { id: existing.id },
+          data: {
+            isActive: true,
+            rightsTotal: { increment: freeLessons },
+          },
+        });
+      } else {
+        await prisma.studentPackageRight.create({
+          data: {
+            studentId: targetUserId,
+            packageSlug: pkgConf.key,
+            period,
+            rightsTotal: freeLessons,
+            rightsUsed: 0,
+            isActive: true,
+          },
+        });
+      }
+    }
+  } else {
+    console.log("ℹ️ Ücretsiz hak tanımı yok/0:", keysToTry[0]);
+  }
+} catch (e) {
+  console.warn("Ücretsiz ders hakkı tanımlanamadı:", e?.message);
+}
+      // 6) user/email'i tek seferde al
       const [user, billingInfo] = await Promise.all([
-        order.userId ? prisma.user.findUnique({ where: { id: order.userId } }) : Promise.resolve(null),
-        order.billingInfoId ? prisma.billingInfo.findUnique({ where: { id: order.billingInfoId } }) : Promise.resolve(null),
+        order.userId
+          ? prisma.user.findUnique({ where: { id: order.userId } })
+          : Promise.resolve(null),
+        order.billingInfoId
+          ? prisma.billingInfo.findUnique({ where: { id: order.billingInfoId } })
+          : Promise.resolve(null),
       ]);
       const targetEmail = user?.email || billingInfo?.email || null;
 
-      // 6) Açık sepet(ler)i completed:true yap (userId veya email'e göre)
+      // 7) Açık sepet(ler)i completed:true yap (userId veya email'e göre)
       try {
         const whereOr = [];
         if (order.userId) whereOr.push({ userId: order.userId });
@@ -308,9 +372,11 @@ export const handlePaytrCallback = async (req, res) => {
         console.warn("Cart completion update skipped:", e?.message);
       }
 
-      // 7) Kupon kullanımını işle
+      // 8) Kupon kullanımını işle
       try {
-        const pm = await prisma.paymentMeta.findUnique({ where: { merchantOid: merchant_oid } });
+        const pm = await prisma.paymentMeta.findUnique({
+          where: { merchantOid: merchant_oid },
+        });
         if (pm?.couponCode) {
           const alreadyUsed = await prisma.couponUsage.findFirst({
             where: { userId: pm.userId, coupon: { code: pm.couponCode } },
@@ -328,7 +394,7 @@ export const handlePaytrCallback = async (req, res) => {
         console.warn("Kupon kullanım kaydı atlandı:", e?.message);
       }
 
-      // 8) Ödeme başarılı maili
+      // 9) Ödeme başarılı maili
       if (targetEmail) {
         try {
           await sendPaymentSuccessEmail(targetEmail, order.id);

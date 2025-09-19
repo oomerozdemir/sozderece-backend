@@ -22,6 +22,7 @@ export const createStudentRequest = async (req, res) => {
       packageSlug = null,
       packageTitle = null,
       unitPrice = null,           // kuruş
+      useFreeRight = false,       //ücretsiz hak bayrağı
     } = req.body || {};
 
     // Öğretmen + mail bilgisi
@@ -53,54 +54,91 @@ export const createStudentRequest = async (req, res) => {
       return res.status(400).json({ message: "Lütfen en az bir saat seçiniz." });
     }
 
-    // Talep
-    const request = await prisma.studentLessonRequest.create({
-      data: {
-        studentId: userId,
-        teacherProfileId: teacher.id,
-        subject,
-        grade,
-        mode: modeNorm,
-        city: city || null,
-        district: district || null,
-        locationNote: locationNote || null,
-        note: note || null,
-        status: "SUBMITTED",
-        packageSlug: packageSlug || null,
-        packageTitle: packageTitle || null,
-        packageUnitPrice: typeof unitPrice === "number" ? unitPrice : null,
-      },
-      select: {
-        id: true, createdAt: true, subject: true, grade: true, mode: true, note: true,
-        teacherProfileId: true,
-      },
-    });
+    // ==============================
+    // 0) ÜCRETSİZ HAK ÖN KONTROLÜ
+    // ==============================
+    const need = slots.length;
+    let rightRow = null;
 
-    // Seçili slotları randevu olarak PENDING oluştur
-    for (const s of slots) {
-      const startsAt = new Date(s.start);
-      const endsAt   = new Date(s.end);
-      if (!isFinite(+startsAt) || !isFinite(+endsAt) || startsAt >= endsAt) continue;
-      await prisma.appointment.create({
-        data: {
-          teacherProfileId: teacher.id,
-          studentUserId: userId,
-          startsAt, endsAt,
-          status: "PENDING",
-          mode: modeNorm,
-          notes: [note, `requestId=${request.id}`].filter(Boolean).join(" | "),
-           status: "PENDING",
+    if (useFreeRight) {
+      rightRow = await prisma.studentPackageRight.findFirst({
+        where: {
+          studentId: userId,
+          isActive: true,
+          ...(packageSlug ? { packageSlug } : {}),
         },
+        orderBy: { updatedAt: "desc" },
       });
+
+      const remaining = rightRow ? (rightRow.rightsTotal - rightRow.rightsUsed) : 0;
+      if (!rightRow || remaining < need) {
+        return res.status(400).json({ message: "Yeterli ücretsiz ders hakkınız yok." });
+      }
     }
 
-    // Öğrenci bilgisi (mail içeriği için)
+    // ======================================
+    // 1) TALEP + RANDEVULAR — tek transaction
+    // ======================================
+    const result = await prisma.$transaction(async (tx) => {
+      // 1.a Talep oluştur
+      const request = await tx.studentLessonRequest.create({
+        data: {
+          studentId: userId,
+          teacherProfileId: teacher.id,
+          subject,
+          grade,
+          mode: modeNorm,
+          city: city || null,
+          district: district || null,
+          locationNote: locationNote || null,
+          note: note || null,
+          status: useFreeRight ? "PAID" : "SUBMITTED", // ✅ ücretsiz hakta direkt "PAID"
+          packageSlug: packageSlug || null,
+          packageTitle: packageTitle || null,
+          packageUnitPrice: typeof unitPrice === "number" ? unitPrice : (useFreeRight ? 0 : null),
+        },
+        select: {
+          id: true, createdAt: true, subject: true, grade: true, mode: true, note: true,
+          teacherProfileId: true,
+        },
+      });
+
+      // 1.b Seçili slotları randevu olarak PENDING oluştur
+      for (const s of slots) {
+        const startsAt = new Date(s.start);
+        const endsAt   = new Date(s.end);
+        if (!isFinite(+startsAt) || !isFinite(+endsAt) || startsAt >= endsAt) continue;
+
+        await tx.appointment.create({
+          data: {
+            teacherProfileId: teacher.id,
+            studentUserId: userId,
+            startsAt, endsAt,
+            status: "PENDING",
+            mode: modeNorm,
+            notes: [note, `requestId=${request.id}`].filter(Boolean).join(" | "),
+          },
+        });
+      }
+
+      // 1.c Ücretsiz hak kullanıldıysa hak düş
+      if (useFreeRight && rightRow) {
+        await tx.studentPackageRight.update({
+          where: { id: rightRow.id },
+          data: { rightsUsed: { increment: need } },
+        });
+      }
+
+      return request;
+    });
+
+    // 2) Öğrenci bilgisi (mail içeriği için)
     const student = await prisma.user.findUnique({
       where: { id: userId },
       select: { name: true, email: true, phone: true },
     });
 
-    // 🔔 Öğretmene mail
+    // 3) 🔔 Öğretmene mail
     const teacherEmail = teacher.user?.email;
     if (teacherEmail) {
       const teacherName = `${teacher.firstName || ""} ${teacher.lastName || ""}`.trim() || teacher.user?.name || "";
@@ -111,21 +149,21 @@ export const createStudentRequest = async (req, res) => {
           studentName: student?.name || "",
           studentEmail: student?.email || "",
           studentPhone: student?.phone || "",
-          subject: request.subject,
-          grade: request.grade,
+          subject: result.subject,
+          grade: result.grade,
           modeLabel,
           packageTitle: packageTitle || undefined,
           lessonsCount: Array.isArray(slots) ? slots.length : undefined,
-          note: request.note || "",
-          requestId: request.id,
-          createdAt: request.createdAt,
+          note: result.note || "",
+          requestId: result.id,
+          createdAt: result.createdAt,
         });
       } catch (err) {
         console.error("❌ Öğretmen maili hata:", err?.message || err);
       }
     }
 
-    return res.status(201).json({ success: true, id: request.id, request });
+    return res.status(201).json({ success: true, id: result.id, request: result });
   } catch (e) {
     console.error("createStudentRequest error:", e);
     return res.status(500).json({ message: "Talep oluşturulamadı.", error: e?.message || String(e) });

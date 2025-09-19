@@ -6,6 +6,7 @@ import {
   completeAppointmentByStudent,
   getMyPastAppointmentsStudent,
   createAppointmentReviewByStudent,
+  getFreeRights,
 } from "../../controllers/studentController.js";
 
 const router = express.Router();
@@ -32,6 +33,10 @@ router.post(
   authenticateToken,
   createAppointmentReviewByStudent
 );
+
+// Ücretsiz ders hakları
+router.get("/free-rights", authenticateToken, getFreeRights);
+
 
 
 export default router;

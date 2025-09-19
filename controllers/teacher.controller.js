@@ -9,6 +9,44 @@ import { sendAppointmentConfirmedToStudent } from "../utils/sendEmail.js";
 import { DateTime } from "luxon";
 import { isBefore } from "date-fns";
 
+const parseRequestId = (notes = "") => {
+  const m = /requestId=([a-z0-9]+)/i.exec(String(notes) || "");
+  return m?.[1] || null;
+};
+
+// İptal/iade: Ücretsiz hak iadesi (count kadar)
+async function refundFreeRightByRequestId(tx, requestId, count = 1) {
+  if (!requestId || count <= 0) return false;
+
+  const reqRow = await tx.studentLessonRequest.findUnique({
+    where: { id: String(requestId) },
+    select: { id: true, studentId: true, packageSlug: true, packageUnitPrice: true },
+  });
+  if (!reqRow) return false;
+
+  // Paket/ücretsiz talep mi?
+  const isFree = !!reqRow.packageSlug || Number(reqRow.packageUnitPrice) === 0;
+  if (!isFree) return false;
+
+  // Öğrencinin ilgili (veya en güncel) aktif hakkını bul
+  const right = await tx.studentPackageRight.findFirst({
+    where: {
+      studentId: reqRow.studentId,
+      isActive: true,
+      ...(reqRow.packageSlug ? { packageSlug: reqRow.packageSlug } : {}),
+    },
+    orderBy: { updatedAt: "desc" },
+  });
+  if (!right) return false;
+
+  // Negatife düşmeyi engellemek istersen Math.min kullanabilirsin
+  await tx.studentPackageRight.update({
+    where: { id: right.id },
+    data: { rightsUsed: { decrement: count } },
+  });
+  return true;
+}
+
 
 // Tek bir overlap helper yeterli
 const overlaps = (aStart, aEnd, bStart, bEnd) => aStart < bEnd && bStart < aEnd;
@@ -1521,7 +1559,7 @@ export const updateAppointmentStatus = async (req, res) => {
     const appt = await prisma.appointment.findUnique({
       where: { id },
       // ⬇️ öğrenci ve mod bilgisi mail için gerekiyor
-      select: { id: true, teacherProfileId: true, startsAt: true, endsAt: true, studentUserId: true, mode: true },
+      select: { id: true, teacherProfileId: true, startsAt: true, endsAt: true, studentUserId: true, mode: true, notes: true },
     });
     if (!appt || appt.teacherProfileId !== tp.id) {
       return res.status(404).json({ message: "Randevu bulunamadı." });
@@ -1593,6 +1631,16 @@ export const updateAppointmentStatus = async (req, res) => {
       await prisma.teacherTimeOff.deleteMany({
         where: { teacherProfileId: tp.id, reason: reasonTag },
       });
+       const reqId = parseRequestId(appt.notes);
+ try {
+   await prisma.$transaction(async (tx) => {
+     await refundFreeRightByRequestId(tx, reqId, 1);
+   });
+ } catch (e) {
+   console.warn("Free-right refund skipped:", e?.message || e);
+ }
+
+
     }
 
     return res.json({ success: true, appointment: updated });
@@ -1820,39 +1868,79 @@ export const cancelRequest = async (req, res) => {
     const requestId = String(req.params.id || "");
     if (!requestId) return res.status(400).json({ message: "requestId gerekli" });
 
-    // Bu öğretmenin profilini bul
-   const tp = await prisma.teacherProfile.findUnique({
-        where: { userId },
+    // 1) Öğretmen profilini bul
+    const tp = await prisma.teacherProfile.findUnique({
+      where: { userId },
       select: { id: true },
     });
     if (!tp) return res.status(403).json({ message: "Öğretmen profili bulunamadı." });
 
-    const teacherProfileId = tp.id;
+    // 2) Talebi doğrula (gerçekten bu öğretmene mi ait?) + paket/ücretsiz mi?
+    const request = await prisma.studentLessonRequest.findUnique({
+      where: { id: requestId },
+      select: {
+        id: true,
+        teacherProfileId: true,
+        studentId: true,
+        status: true,
+        packageSlug: true,
+        packageUnitPrice: true,
+      },
+    });
+    if (!request || request.teacherProfileId !== tp.id) {
+      return res.status(404).json({ message: "Talep bulunamadı." });
+    }
 
-    // Tek transaction: randevuları iptal et + talep CANCELLED yaz
+    const isFree = !!request.packageSlug || Number(request.packageUnitPrice) === 0;
+
+    // 3) Tek transaction: randevuları iptal et + talebi CANCELLED yaz + (gerekirse) hak iadesi
     const result = await prisma.$transaction(async (tx) => {
-      // 1) Bu talebe ait randevular: appointment.notes içinde requestId sinyaliyle eşleştiriliyor
+      // 3.a) Bu talebe ait randevuları (notlarda requestId ile) CANCELLED yap
       const apptRes = await tx.appointment.updateMany({
         where: {
-          teacherProfileId,
+          teacherProfileId: tp.id,
           status: { not: "CANCELLED" },
           notes: { contains: `requestId=${requestId}` },
         },
-       data: { status: "CANCELLED" },
+        data: { status: "CANCELLED" },
       });
+      const cancelledCount = apptRes.count || 0;
 
-      // 2) Talep durumu CANCELLED
+      // 3.b) Talep durumunu CANCELLED yap
       let reqRes = null;
       try {
-       reqRes = await tx.studentLessonRequest.update({
-            where: { id: requestId },
+        reqRes = await tx.studentLessonRequest.update({
+          where: { id: requestId },
           data: { status: "CANCELLED" },
         });
-      } catch (_) {
-        // talep bulunamazsa yolumuza devam (en azından randevular iptal)
+      } catch {
+        // talep bulunamazsa veya zaten CANCELLED ise sessiz geç
       }
 
-      return { apptCancelled: apptRes.count, request: reqRes };
+      // 3.c) Ücretsiz hak iadesi (paket/ücretsiz talep ise)
+      if (isFree && cancelledCount > 0) {
+        // İlgili (veya en güncel) aktif hak kaydını bul
+        const right = await tx.studentPackageRight.findFirst({
+          where: {
+            studentId: request.studentId,
+            isActive: true,
+            ...(request.packageSlug ? { packageSlug: request.packageSlug } : {}),
+          },
+          orderBy: { updatedAt: "desc" },
+        });
+
+        if (right) {
+          const refundCount = Math.min(cancelledCount, Math.max(0, right.rightsUsed)); // negatifi engelle
+          if (refundCount > 0) {
+            await tx.studentPackageRight.update({
+              where: { id: right.id },
+              data: { rightsUsed: { decrement: refundCount } },
+            });
+          }
+        }
+      }
+
+      return { apptCancelled: cancelledCount, request: reqRes };
     });
 
     return res.json({ success: true, ...result });

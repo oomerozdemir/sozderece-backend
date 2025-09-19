@@ -196,3 +196,19 @@ export const createAppointmentReviewByStudent = async (req, res) => {
   }
 };
 
+export const getFreeRights = async (req, res) => {
+  const userId = req.user.id;
+  const rights = await prisma.studentPackageRight.findMany({
+    where: { studentId: userId, isActive: true },
+    orderBy: { updatedAt: 'desc' },
+  });
+  const mapped = rights.map(r => ({
+    packageSlug: r.packageSlug,
+    period: r.period,
+    total: r.rightsTotal,
+    used: r.rightsUsed,
+    remaining: r.rightsTotal - r.rightsUsed,
+  }));
+  const remaining = mapped.reduce((acc, x) => acc + Math.max(0, x.remaining), 0);
+  res.json({ items: mapped, remaining });
+};

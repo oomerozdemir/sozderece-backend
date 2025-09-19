@@ -457,3 +457,16 @@ enum RequestStatus {
   CANCELLED
 }
 
+model StudentPackageRight {
+  id           String   @id @default(cuid())
+  studentId    Int
+  packageSlug  String
+  period       String   // "once" | "monthly"
+  rightsTotal  Int
+  rightsUsed   Int      @default(0)
+  isActive     Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@unique([studentId, packageSlug, period], name: "studentId_packageSlug_period")
+}
