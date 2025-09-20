@@ -120,23 +120,15 @@ export const createAppointmentReviewByStudent = async (req, res) => {
 
     const { id } = req.params; // appointment id
     const { rating, comment } = req.body || {};
-
     const r = Number(rating);
     if (!Number.isFinite(r) || r < 1 || r > 5) {
       return res.status(400).json({ message: "Puan 1 ile 5 arasında olmalı." });
     }
 
-    // Randevu doğrula: bu öğrenciye ait mi ve geçmiş mi?
+    // Randevu doğrula
     const appt = await prisma.appointment.findUnique({
       where: { id },
-      select: {
-        id: true,
-        teacherProfileId: true,
-        studentUserId: true,
-        startsAt: true,
-        endsAt: true,
-        notes: true,
-      },
+      select: { id: true, teacherProfileId: true, studentUserId: true, endsAt: true },
     });
     if (!appt) return res.status(404).json({ message: "Randevu bulunamadı." });
     if (appt.studentUserId !== userId) {
@@ -146,41 +138,31 @@ export const createAppointmentReviewByStudent = async (req, res) => {
       return res.status(400).json({ message: "Ders bitmeden değerlendirme yapılamaz." });
     }
 
-    // Aynı öğrenci, aynı öğretmen için aynı derse ikinci değerlendirmeyi önlemek:
-    // appointmentId alanı şemada yoksa, en azından aynı gün/saat için tekrarını engelleyelim.
+    // ✅ Aynı randevu için daha önce yorum yapılmış mı?
     const existing = await prisma.teacherReview.findFirst({
-      where: {
-        userId,                         // <-- DİKKAT: studentId değil userId
-        teacherProfileId: appt.teacherProfileId,
-        // Eğer tek randevu başına tek yorum istiyorsanız, şemaya appointmentId eklenmelidir.
-        // Şimdilik "yakın zamanda" aynı öğretmen için bir daha yorum yapılmasını engellemiyoruz.
-      },
-      orderBy: { createdAt: "desc" },
+      where: { userId, appointmentId: appt.id },
     });
-    // İsterseniz burada createdAt >= appt.startsAt kontrolü ekleyebilirsiniz.
-
-    if (existing && existing.createdAt >= appt.startsAt) {
-      return res.status(409).json({ message: "Bu ders için daha önce değerlendirme yapıldı." });
+    if (existing) {
+      return res.status(409).json({ message: "Bu ders saati için daha önce değerlendirme yapıldı." });
     }
 
-    // Yorum oluştur
+    // Yorum oluştur (randevuya bağla)
     const review = await prisma.teacherReview.create({
       data: {
-        userId,                           // <-- şemanızda öğrenci için kullanılan alan bu
+        userId,
         teacherProfileId: appt.teacherProfileId,
+        appointmentId: appt.id,     // ✅ kritik
         rating: r,
         comment: (comment || "").trim() || null,
-        // appointmentId: id, // ŞEMADA YOK, O YÜZDEN GÖNDERME!
       },
     });
 
-    // Öğretmen profil puanlarını güncelle
+    // Öğretmen profil istatistiği
     const agg = await prisma.teacherReview.aggregate({
       _avg: { rating: true },
       _count: true,
       where: { teacherProfileId: appt.teacherProfileId },
     });
-
     await prisma.teacherProfile.update({
       where: { id: appt.teacherProfileId },
       data: {

@@ -308,16 +308,23 @@ model TeacherReview {
   teacherProfileId String
   teacher          TeacherProfile @relation(fields: [teacherProfileId], references: [id], onDelete: Cascade)
 
-  userId           Int?           
+  userId           Int?
   user             User?          @relation("UserTeacherReviews", fields: [userId], references: [id], onDelete: SetNull)
 
   rating           Int            // 1..5
   comment          String?
   createdAt        DateTime       @default(now())
 
+  appointmentId    String?
+
+  appointment      Appointment?   @relation("AppointmentReviews", fields: [appointmentId], references: [id], onDelete: SetNull)
+
   @@index([teacherProfileId])
   @@index([rating])
+  @@index([appointmentId])
+  @@unique([appointmentId]) // ✅ Her randevuya en fazla 1 yorum
 }
+
 
 // Appointment Schema
 
@@ -383,6 +390,8 @@ model Appointment {
 
   createdAt        DateTime        @default(now())
   updatedAt        DateTime        @updatedAt
+
+  reviews          TeacherReview[] @relation("AppointmentReviews")
 
   @@index([teacherProfileId, startsAt])
 }
