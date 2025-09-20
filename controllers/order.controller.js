@@ -95,7 +95,7 @@ export const prepareOrder = async (req, res) => {
       quantity: item.quantity || 1,
     }));
 
-    const test_mode = process.env.PAYTR_TEST_MODE || "0";
+    const test_mode = process.env.PAYTR_TEST_MODE || "1";
     const merchantOid = cleanMerchantOid(uuidv4()); // özel karakter temizliği
 
     // 3) PayTR token al
