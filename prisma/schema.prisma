@@ -208,6 +208,7 @@ model PaymentMeta {
   couponCode   String?
   totalPrice   Float
   createdAt    DateTime @default(now())
+  packageSlug  String?
 
   requestId    String?  @db.VarChar(191) // StudentLessonRequest.id (cuid) saklanacak
   @@index([requestId])
