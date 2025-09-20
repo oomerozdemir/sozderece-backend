@@ -130,7 +130,7 @@ export const prepareOrder = async (req, res) => {
         cart: cleanedCart,
         billingInfo,
         packageName,
-        packageSlug: req.body.packageSlug || null,
+        packageSlug: req.body.packageSlug || cleanedCart?.[0]?.slug || null,
         discountRate,
         couponCode,
         totalPrice,
@@ -225,14 +225,15 @@ export const handlePaytrCallback = async (req, res) => {
           merchantOid: merchant_oid,
           totalPrice: pmForCreate.totalPrice,
           status: "pending",
-          package: pmForCreate.packageName, // (opsiyonel) eski alan
+          package: pmForCreate.packageName,
           endDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
           billingInfo: { create: pmForCreate.billingInfo },
           orderItems: {
-            create: pmForCreate.cart.map((item) => ({
-              name: item.name,
-              price: item.price,
-              quantity: item.quantity,
+            create: (Array.isArray(pmForCreate.cart) ? pmForCreate.cart : []).map((item) => ({
+              name: item.name ?? item.title ?? "Ürün",
+              price: Number(item.price) || 0,
+              quantity: Number(item.quantity) || 1,
+              description: item.description || null,
             })),
           },
         },
@@ -259,10 +260,10 @@ export const handlePaytrCallback = async (req, res) => {
         });
 
         if (pm?.requestId) {
-          // 4.a) Bu siparişe bağla + PAID
+          // Bu siparişe bağla + PAID
           try {
             await prisma.studentLessonRequest.update({
-              where: { id: String(pm.requestId) }, // StudentLessonRequest.id (cuid)
+              where: { id: String(pm.requestId) },
               data: {
                 status: "PAID",
                 order: { connect: { id: order.id } },
@@ -277,7 +278,7 @@ export const handlePaytrCallback = async (req, res) => {
           }
         }
 
-        // 4.b) Ek garanti: Bu orderId'ye zaten bağlı olan talep(ler) varsa, onları da PAID yap
+        // Ek garanti: Bu orderId'ye zaten bağlı olan talep(ler) varsa, onları da PAID yap
         await prisma.studentLessonRequest.updateMany({
           where: { orderId: order.id, status: { not: "PAID" } },
           data: { status: "PAID" },
@@ -286,73 +287,75 @@ export const handlePaytrCallback = async (req, res) => {
         console.warn("Talep PAID güncellemesi atlandı:", e?.message);
       }
 
-      // 5) (YENİ) Ücretsiz özel ders hakkı tanımla
-      // - Paket bilgisi paymentMeta.packageSlug varsa ondan, yoksa packageName/order.package'ten.
-      // - PACKAGES[pkgKey].freeLessons > 0 ise öğrencinin hakları artırılır.
+      // 5) (YENİ) Ücretsiz özel ders hakkı tanımla — BE kataloğu kullanılıyor
       try {
-  const pm = await prisma.paymentMeta.findUnique({
-    where: { merchantOid: merchant_oid },
-  });
-
-  // Sırayla dene: slug → paymentMeta.packageName → order.package
-  const keysToTry = [pm?.packageSlug, pm?.packageName, order?.package].filter(Boolean);
-
-  let pkgConf = null;
-  for (const k of keysToTry) {
-    pkgConf = getPackageConfig(k); // ✅ BE kataloğu
-    if (pkgConf) break;
-  }
-
-  if (pkgConf && Number(pkgConf.freeLessons) > 0) {
-    const freeLessons = Number(pkgConf.freeLessons);
-    const period = pkgConf.period || "once"; // ✅ backend kataloğu alanı
-    const targetUserId = order.userId || pm?.userId;
-
-    if (targetUserId) {
-      // Unique yoksa güvenli yaklaşım: findFirst + update/create
-      const existing = await prisma.studentPackageRight.findFirst({
-        where: {
-          studentId: targetUserId,
-          packageSlug: pkgConf.key, // ✅ kataloğun key'i
-          period,
-        },
-      });
-
-      if (existing) {
-        await prisma.studentPackageRight.update({
-          where: { id: existing.id },
-          data: {
-            isActive: true,
-            rightsTotal: { increment: freeLessons },
-          },
+        const pm = await prisma.paymentMeta.findUnique({
+          where: { merchantOid: merchant_oid },
         });
-      } else {
-        await prisma.studentPackageRight.create({
-          data: {
-            studentId: targetUserId,
-            packageSlug: pkgConf.key,
-            period,
-            rightsTotal: freeLessons,
-            rightsUsed: 0,
-            isActive: true,
-          },
-        });
+
+        // Sırayla dene: slug → paymentMeta.packageName → order.package → cart[0].slug → cart[0].name
+        const firstItem = Array.isArray(pm?.cart) ? pm.cart[0] : null;
+        const keysToTry = [
+          pm?.packageSlug,          // şemanda yoksa undefined olur; sorun değil
+          pm?.packageName,
+          order?.package,
+          firstItem?.slug,
+          firstItem?.name,
+        ].filter(Boolean);
+
+        let pkgConf = null;
+        for (const k of keysToTry) {
+          const found = getPackageConfig(k);
+          if (found) { pkgConf = found; break; }
+        }
+
+        if (pkgConf && Number(pkgConf.freeLessons) > 0) {
+          const freeLessons = Number(pkgConf.freeLessons);
+          const period = pkgConf.period || "once";
+          const targetUserId = order.userId || pm?.userId;
+
+          if (targetUserId) {
+            // Aynı paket/period için var mı? Varsa artır, yoksa oluştur
+            const existing = await prisma.studentPackageRight.findFirst({
+              where: {
+                studentId: targetUserId,
+                packageSlug: pkgConf.key,
+                period,
+              },
+            });
+
+            if (existing) {
+              await prisma.studentPackageRight.update({
+                where: { id: existing.id },
+                data: {
+                  isActive: true,
+                  rightsTotal: { increment: freeLessons },
+                },
+              });
+            } else {
+              await prisma.studentPackageRight.create({
+                data: {
+                  studentId: targetUserId,
+                  packageSlug: pkgConf.key,
+                  period,
+                  rightsTotal: freeLessons,
+                  rightsUsed: 0,
+                  isActive: true,
+                },
+              });
+            }
+          }
+        } else {
+          console.log("ℹ️ Ücretsiz hak tanımı yok/0:", keysToTry[0]);
+        }
+      } catch (e) {
+        console.warn("Ücretsiz ders hakkı tanımlanamadı:", e?.message);
       }
-    }
-  } else {
-    console.log("ℹ️ Ücretsiz hak tanımı yok/0:", keysToTry[0]);
-  }
-} catch (e) {
-  console.warn("Ücretsiz ders hakkı tanımlanamadı:", e?.message);
-}
+
       // 6) user/email'i tek seferde al
       const [user, billingInfo] = await Promise.all([
-        order.userId
-          ? prisma.user.findUnique({ where: { id: order.userId } })
-          : Promise.resolve(null),
-        order.billingInfoId
-          ? prisma.billingInfo.findUnique({ where: { id: order.billingInfoId } })
-          : Promise.resolve(null),
+        order.userId ? prisma.user.findUnique({ where: { id: order.userId } }) : Promise.resolve(null),
+        order.billingInfoId ? prisma.billingInfo.findUnique({ where: { id: order.billingInfoId } }) : Promise.resolve(null),
       ]);
       const targetEmail = user?.email || billingInfo?.email || null;
 
@@ -374,9 +377,7 @@ export const handlePaytrCallback = async (req, res) => {
 
       // 8) Kupon kullanımını işle
       try {
-        const pm = await prisma.paymentMeta.findUnique({
-          where: { merchantOid: merchant_oid },
-        });
+        const pm = await prisma.paymentMeta.findUnique({ where: { merchantOid: merchant_oid } });
         if (pm?.couponCode) {
           const alreadyUsed = await prisma.couponUsage.findFirst({
             where: { userId: pm.userId, coupon: { code: pm.couponCode } },
@@ -394,10 +395,34 @@ export const handlePaytrCallback = async (req, res) => {
         console.warn("Kupon kullanım kaydı atlandı:", e?.message);
       }
 
-      // 9) Ödeme başarılı maili
+      // 9) Ödeme başarılı maili (order objesiyle, eksik alanları PM'den tamamla)
       if (targetEmail) {
         try {
-          await sendPaymentSuccessEmail(targetEmail, order.id);
+          const [fullOrder, pmForEmail] = await Promise.all([
+            prisma.order.findUnique({
+              where: { id: order.id },
+              include: { billingInfo: true },
+            }),
+            prisma.paymentMeta.findUnique({ where: { merchantOid: merchant_oid } }),
+          ]);
+
+          const discountRate = Number(pmForEmail?.discountRate || 0);
+          const couponCode = pmForEmail?.couponCode || null;
+          const totalPriceNum = Number(fullOrder?.totalPrice || 0);
+          const originalPrice =
+            discountRate > 0 ? totalPriceNum / (1 - discountRate / 100) : totalPriceNum;
+
+          await sendPaymentSuccessEmail(targetEmail, {
+            id: fullOrder.id,
+            package: fullOrder.package,
+            startDate: fullOrder.startDate,
+            endDate: fullOrder.endDate,
+            totalPrice: totalPriceNum,
+            discountRate,
+            couponCode,
+            originalPrice,
+            billingInfo: fullOrder.billingInfo,
+          });
           console.log("✅ Mail başarıyla gönderildi");
         } catch (err) {
           console.error("❌ Mail gönderilemedi:", err);
