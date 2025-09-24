@@ -8,6 +8,7 @@ import upload from "../../middleware/upload.js";
 import { sendExpiringOrderReminders } from "../../controllers/reminder.controller.js";
 import { createCoachWithUser, getAllCoaches, updateCoach, deleteCoach, assignCoachToUser } from "../../controllers/adminCoach.controller.js";
 import { listTeacherPublishRequests, approveTeacherPublish, rejectTeacherPublish } from "../../controllers/AdminTeacher.controller.js";
+import { getLessonRequestHealth } from "../../controllers/adminLessonsController.js";
 
 const prisma = new PrismaClient();
 
@@ -71,6 +72,12 @@ router.put(
   rejectTeacherPublish
 );
 
+router.get(
+  "/lesson-requests/health",
+  authenticateToken,
+  authorizeRoles("admin"),
+  getLessonRequestHealth
+);
 
 
 // CSV olusturma 
