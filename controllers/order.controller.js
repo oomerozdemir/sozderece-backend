@@ -19,12 +19,15 @@ export const getMyOrders = async (req, res) => {
     }
 
     const orders = await prisma.order.findMany({
-      where: { userId },
+      where: {
+        userId,
+        // "ödeme tamamlanmamış" siparişleri liste DIŞI bırak
+        status: { notIn: ["pending", "pending_payment"] },
+      },
       orderBy: { createdAt: "desc" },
       include: {
         billingInfo: true,
         orderItems: true,
-        // FE'de talep-sipariş eşlemesi için:
         studentRequests: { select: { id: true } },
       },
     });
@@ -36,12 +39,12 @@ export const getMyOrders = async (req, res) => {
   }
 };
 
+
 /* =========================
    Sipariş Hazırla (PayTR token al)
 ========================= */
 export const prepareOrder = async (req, res) => {
   try {
-    // 🔴 FE bu endpoint'e requestId (StudentLessonRequest.id) göndermeli
     let {
       cart,
       billingInfo,
@@ -51,7 +54,7 @@ export const prepareOrder = async (req, res) => {
       couponCode,
       useServerCart,
       requestId,
-      requestIds, 
+      requestIds,
     } = req.body;
 
     const userId = req.user?.id;
@@ -61,34 +64,30 @@ export const prepareOrder = async (req, res) => {
       return res.status(400).json({ error: "Eksik sipariş verisi" });
     }
 
-    // 1) Server sepeti kullanılacaksa: aktif sepeti oku ve PayTR formatına çevir
+    // 1) Server sepeti kullanılacaksa: aktif sepeti oku ve normalize et
     if (useServerCart) {
       const openCart = await prisma.cart.findFirst({
         where: { completed: false, userId },
         include: { items: true },
       });
-
       if (!openCart || openCart.items.length === 0) {
         return res.status(400).json({ error: "Sepet boş." });
       }
-
       cart = openCart.items.map((i) => ({
         name: i.title,
-        price: (i.unitPrice / 100).toFixed(2), // kuruş → "TL.xx"
+        price: (i.unitPrice / 100).toFixed(2),
         quantity: i.quantity || 1,
       }));
-
       totalPrice = (
         openCart.items.reduce((s, i) => s + i.unitPrice * (i.quantity || 1), 0) / 100
       ).toFixed(2);
     } else {
-      // FE'den gelen cart ile ilerleniyorsa totalPrice sayıya çevrilebilir olmalı
       if (isNaN(parseFloat(totalPrice))) {
         return res.status(400).json({ error: "Geçersiz fiyat verisi" });
       }
     }
 
-    // 2) Cart temizliği (fiyat ve miktar normalize)
+    // 2) Cart temizliği
     const cleanedCart = (cart || []).map((item) => ({
       ...item,
       price: cleanPrice(item.price),
@@ -96,7 +95,7 @@ export const prepareOrder = async (req, res) => {
     }));
 
     const test_mode = process.env.PAYTR_TEST_MODE || "1";
-    const merchantOid = cleanMerchantOid(uuidv4()); // özel karakter temizliği
+    const merchantOid = cleanMerchantOid(uuidv4());
 
     // 3) PayTR token al
     const paytrPayload = {
@@ -122,7 +121,7 @@ export const prepareOrder = async (req, res) => {
       return res.status(500).json({ error: "Ödeme token alınamadı" });
     }
 
-    // 4) paymentMeta kaydı (requestId dahil)
+    // 4) Sadece PaymentMeta oluştur (order YOK)
     await prisma.paymentMeta.create({
       data: {
         merchantOid,
@@ -138,29 +137,7 @@ export const prepareOrder = async (req, res) => {
       },
     });
 
-    // 5) Siparişi 'pending' oluştur/garanti et (merchantOid unique)
-    const order = await prisma.order.upsert({
-      where: { merchantOid },
-      update: {}, // varsa aynen bırak; status callback'te güncellenecek
-      create: {
-        merchantOid,
-        status: "pending",
-        totalPrice: Number(cleanPrice(totalPrice)),
-        package: packageName,
-        endDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000), // 30 gün
-        ...(userId ? { user: { connect: { id: userId } } } : {}),
-        billingInfo: { create: billingInfo },
-        orderItems: {
-          create: cleanedCart.map((it) => ({
-            name: it.name,
-            price: Number(cleanPrice(it.price)),
-            quantity: it.quantity,
-          })),
-        },
-      },
-    });
-
-     // 6) 🔗 Bir veya birden çok talebi Order'a bağla ve "Sepette" yap
+    // 5) Talep(ler)i sepette işaretle (orderId vermeden)
     const ids = []
       .concat(requestIds || [])
       .concat(requestId ? [requestId] : [])
@@ -171,20 +148,21 @@ export const prepareOrder = async (req, res) => {
       try {
         await prisma.studentLessonRequest.updateMany({
           where: { id: { in: ids }, status: { notIn: ["PAID", "CANCELLED"] } },
-          data: { orderId: order.id, status: "PACKAGE_SELECTED" },
+          data: { status: "PACKAGE_SELECTED" }, // orderId bağlamıyoruz
         });
       } catch (e) {
-        console.warn("StudentLessonRequest toplu ilişkilendirme atlandı:", e?.message);
+        console.warn("StudentLessonRequest ilişkilendirme uyarısı:", e?.message);
       }
     }
 
-    // 7) Token'ı döndür (FE iframe'e yönlendirecek)
+    // 6) FE'ye token ve merchantOid dön
     return res.json({ token, merchantOid });
   } catch (err) {
     console.error("❌ prepareOrder hatası:", err);
     return res.status(500).json({ error: "Sipariş hazırlanırken hata oluştu" });
   }
 };
+
 
 /* =========================
    PayTR Callback
