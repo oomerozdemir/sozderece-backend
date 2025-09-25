@@ -7,7 +7,7 @@ import { PrismaClient } from "@prisma/client";
 import upload from "../../middleware/upload.js";
 import { sendExpiringOrderReminders } from "../../controllers/reminder.controller.js";
 import { createCoachWithUser, getAllCoaches, updateCoach, deleteCoach, assignCoachToUser } from "../../controllers/adminCoach.controller.js";
-import { listTeacherPublishRequests, approveTeacherPublish, rejectTeacherPublish } from "../../controllers/AdminTeacher.controller.js";
+import { listTeacherPublishRequests, approveTeacherPublish, rejectTeacherPublish, getTeacherRequestSummary } from "../../controllers/AdminTeacher.controller.js";
 import { getLessonRequestHealth } from "../../controllers/adminLessonsController.js";
 
 const prisma = new PrismaClient();
@@ -77,6 +77,13 @@ router.get(
   authenticateToken,
   authorizeRoles("admin"),
   getLessonRequestHealth
+);
+
+router.get(
+  "/lesson-requests/teacher-summary",
+  authenticateToken,
+  authorizeRoles("admin"),
+  getTeacherRequestSummary
 );
 
 
