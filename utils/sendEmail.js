@@ -1,67 +1,37 @@
-import nodemailer from "nodemailer";
+// sendEmail.js — Resend entegrasyonu (SMTP yerine HTTPS API)
+import { Resend } from "resend";
 
-const BASE_HOST = process.env.SMTP_HOST || "smtp.gmail.com";
-const BASE_PORT = parseInt(process.env.SMTP_PORT || "587", 10);
+const resend = new Resend(process.env.RESEND_API_KEY);
+// Gönderen adresinizi Resend panelinde doğruladığınız bir adres yapın
+const FROM =
+  process.env.EMAIL_FROM ||
+  process.env.EMAIL_USER || // geriye dönük uyumluluk
+  "noreply@sozderecekocluk.com";
 
-function makeTransport({ host = BASE_HOST, port = BASE_PORT } = {}) {
-  return nodemailer.createTransport({
-    host,
-    port,
-    secure: port === 465,            // 465: implicit TLS
-    auth: {
-      user: process.env.EMAIL_USER,
-      pass: process.env.EMAIL_PASS,
-    },
-    family: 4,                       // IPv4’e zorla (IPv6 time-out’larını önler)
-    connectionTimeout: 10000,        // 10s TCP timeout
-    greetingTimeout: 8000,           // 8s SMTP greeting
-    socketTimeout: 15000,            // 15s genel
-    tls: {
-      servername: host,
-      minVersion: "TLSv1.2",
-      rejectUnauthorized: true,
-    },
-    // İsteğe bağlı (stabilite için)
-    pool: true,
-    maxConnections: 1,
-    maxMessages: 50,
-  });
-}
-
-let transporter = makeTransport();
-
-// Boot'ta verify; başarısızsa 465'e otomatik fallback dene
-(async () => {
-  try {
-    await transporter.verify();
-    console.log("✅ SMTP transporter ready");
-  } catch (err) {
-    console.error("❌ SMTP verify failed:", err?.message || err);
-    if (BASE_PORT !== 465) {
-      console.log("↪️  Falling back to port 465 (implicit TLS)...");
-      transporter = makeTransport({ port: 465 });
-      try {
-        await transporter.verify();
-        console.log("✅ SMTP transporter ready on 465");
-      } catch (err2) {
-        console.error("❌ Fallback verify failed:", err2?.message || err2);
-      }
-    }
-  }
-})();
 /**
  * Genel e-posta gönderici
+ * @param {{to: string|string[], subject: string, html: string}} param0
  */
 export const sendEmail = async ({ to, subject, html }) => {
   try {
-    await transporter.sendMail({
-      from: `"Sözderece" <${process.env.EMAIL_USER}>`,
+    const { data, error } = await resend.emails.send({
+      from: FROM,
       to,
       subject,
       html,
     });
-  } catch (error) {
-    console.error("❌ E-posta gönderilemedi:", error.message);
+    if (error) {
+      const msg =
+        error?.message ||
+        (Array.isArray(error) ? error.map(e => e.message).join("; ") : "Bilinmeyen hata");
+      console.error("❌ E-posta gönderilemedi:", msg);
+      throw new Error(msg);
+    }
+    // console.log("✅ Mail sent:", data?.id);
+    return data;
+  } catch (err) {
+    console.error("❌ E-posta gönderilemedi:", err?.message || err);
+    throw err;
   }
 };
 
@@ -86,13 +56,17 @@ export const sendPaymentSuccessEmail = async (to, order) => {
             <p><strong> Sipariş No:</strong> #${order.id}</p>
             <p><strong> Paket İsmi:</strong> ${order.package}</p>
             <p><strong>  Geçerlilik Tarihi:</strong> ${new Date(order.startDate).toLocaleDateString()} - ${new Date(order.endDate).toLocaleDateString()}</p>
-            ${discounted ? `
+            ${
+              discounted
+                ? `
               <p><strong> Kupon:</strong> ${order.couponCode} (%${order.discountRate})</p>
               <p><strong> İndirimsiz Tutar:</strong> <del>${order.originalPrice.toFixed(2)} TL</del></p>
               <p><strong> İndirimli Tutar:</strong> ${order.totalPrice.toFixed(2)} TL</p>
-            ` : `
+            `
+                : `
               <p><strong>💰 Ödenen Tutar:</strong> ${order.totalPrice.toFixed(2)} TL</p>
-            `}
+            `
+            }
           </div>
 
           <div style="margin-top: 20px;">
@@ -122,8 +96,6 @@ export const sendPaymentSuccessEmail = async (to, order) => {
   });
 };
 
-
-
 /**
  * Doğrulama kodu gönderimi
  */
@@ -140,7 +112,6 @@ export const sendVerificationEmail = async (to, code) => {
     html,
   });
 };
-
 
 export const sendPasswordResetEmail = async (to, resetUrl) => {
   const html = `
@@ -176,8 +147,8 @@ export const sendCoachAssignmentToStudent = async (to, coach) => {
           <div style="margin-top: 20px; color: #555; font-size: 14px;">
             <p>Artık çalışmalarınızı destekleyecek bir koçunuz var.</p>
             <p><strong>Koçunuzla ilgili tüm bilgilere öğrenci panelinden ulaşabilirsiniz.</strong></p>
-          <p><strong>Sözderece Koçluk'u tercih ettiğiniz için teşekkür ederiz.</strong></p>
-            </div>
+            <p><strong>Sözderece Koçluk'u tercih ettiğiniz için teşekkür ederiz.</strong></p>
+          </div>
         </td>
       </tr>
       <tr>
@@ -196,7 +167,6 @@ export const sendCoachAssignmentToStudent = async (to, coach) => {
   });
 };
 
-
 export const sendStudentAssignmentToCoach = async (to, student) => {
   const html = `
   <div style="font-family: Arial, sans-serif; background-color: #f9f9f9; padding: 20px;">
@@ -212,7 +182,6 @@ export const sendStudentAssignmentToCoach = async (to, student) => {
           <div style="background: #ecfdf5; border: 1px solid #d1fae5; padding: 16px; border-radius: 8px;">
             <p><strong>👤 Öğrenci Adı:</strong> ${student.name}</p>
             <p><strong>📧 E-Posta:</strong> ${student.email}</p>
-
           </div>
           <div style="margin-top: 20px; color: #555; font-size: 14px;">
             <p>Koç panelinden öğrenciyle alakalı bilgileri görüntüleyip iletişim kurarabilir, ilk görüşmenizi oluşturabilirsiniz. İyi çalışmalar dileriz!</p>
@@ -234,7 +203,6 @@ export const sendStudentAssignmentToCoach = async (to, student) => {
     html,
   });
 };
-
 
 export const sendOrderExpiryReminder = async (to, order) => {
   const html = `
@@ -267,8 +235,6 @@ export const sendOrderExpiryReminder = async (to, order) => {
     html,
   });
 };
-
-
 
 /** 🆕 Öğretmene “yeni talep” bildirimi */
 export async function sendNewRequestToTeacher(to, payload = {}) {
@@ -338,8 +304,6 @@ export async function sendNewRequestToTeacher(to, payload = {}) {
 
   await sendEmail({ to, subject: "🆕 Yeni Ders Talebi Var", html });
 }
-
-
 
 export async function sendAppointmentConfirmedToStudent(to, payload = {}) {
   const {

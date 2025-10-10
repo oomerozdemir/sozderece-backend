@@ -3,6 +3,10 @@ import prisma from "../utils/prisma.js";
 
 
 export const createVerificationCode = async ({ userId, type, target }) => {
+
+  await prisma.verificationCode.deleteMany({
+    where: { expiresAt: { lt: new Date(Date.now() - 24 * 60 * 60 * 1000) } },
+  });
   const code = Math.floor(100000 + Math.random() * 900000).toString();
   const normalizedTarget = target.trim().toLowerCase();
 
@@ -49,11 +53,12 @@ export const createVerificationCode = async ({ userId, type, target }) => {
 
 
 export const verifyCode = async ({ userId, type, target, code }) => {
+  const normalizedTarget = target.trim().toLowerCase();
   const record = await prisma.verificationCode.findFirst({
     where: {
       userId,
       type,
-      target,
+      target: normalizedTarget,
       code,
       expiresAt: { gt: new Date() },
     },
