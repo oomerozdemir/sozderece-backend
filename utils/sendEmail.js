@@ -1,23 +1,54 @@
 import nodemailer from "nodemailer";
 
-const PORT = parseInt(process.env.SMTP_PORT || "587", 10);
-const transporter = nodemailer.createTransport({
-  host: process.env.SMTP_HOST,
-  port: PORT,
-  secure: true,
-  auth: {
-    user: process.env.EMAIL_USER,
-    pass: process.env.EMAIL_PASS,
-  },
-});
+const BASE_HOST = process.env.SMTP_HOST || "smtp.gmail.com";
+const BASE_PORT = parseInt(process.env.SMTP_PORT || "587", 10);
 
-// Opsiyonel: sunucu boot'ta doğrulama logu
-transporter.verify().then(() => {
-  console.log("✅ SMTP transporter ready");
-}).catch(err => {
-  console.error("❌ SMTP verify failed:", err?.message || err);
-});
+function makeTransport({ host = BASE_HOST, port = BASE_PORT } = {}) {
+  return nodemailer.createTransport({
+    host,
+    port,
+    secure: port === 465,            // 465: implicit TLS
+    auth: {
+      user: process.env.EMAIL_USER,
+      pass: process.env.EMAIL_PASS,
+    },
+    family: 4,                       // IPv4’e zorla (IPv6 time-out’larını önler)
+    connectionTimeout: 10000,        // 10s TCP timeout
+    greetingTimeout: 8000,           // 8s SMTP greeting
+    socketTimeout: 15000,            // 15s genel
+    tls: {
+      servername: host,
+      minVersion: "TLSv1.2",
+      rejectUnauthorized: true,
+    },
+    // İsteğe bağlı (stabilite için)
+    pool: true,
+    maxConnections: 1,
+    maxMessages: 50,
+  });
+}
 
+let transporter = makeTransport();
+
+// Boot'ta verify; başarısızsa 465'e otomatik fallback dene
+(async () => {
+  try {
+    await transporter.verify();
+    console.log("✅ SMTP transporter ready");
+  } catch (err) {
+    console.error("❌ SMTP verify failed:", err?.message || err);
+    if (BASE_PORT !== 465) {
+      console.log("↪️  Falling back to port 465 (implicit TLS)...");
+      transporter = makeTransport({ port: 465 });
+      try {
+        await transporter.verify();
+        console.log("✅ SMTP transporter ready on 465");
+      } catch (err2) {
+        console.error("❌ Fallback verify failed:", err2?.message || err2);
+      }
+    }
+  }
+})();
 /**
  * Genel e-posta gönderici
  */
