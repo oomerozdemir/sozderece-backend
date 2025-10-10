@@ -1,6 +1,5 @@
 import prisma from "../utils/prisma.js";
 
-import { sendVerificationEmail } from "../utils/sendEmail.js"; 
 
 
 export const createVerificationCode = async ({ userId, type, target }) => {
@@ -21,7 +20,12 @@ export const createVerificationCode = async ({ userId, type, target }) => {
   });
 
   if (existing) {
-    throw new Error("Lütfen yeni bir kod istemeden önce biraz bekleyin.");
+        const ms = Date.now() - existing.createdAt.getTime();
+    const retryAfter = Math.max(1, 60 - Math.floor(ms / 1000));
+    const err = new Error("Lütfen yeni bir kod istemeden önce biraz bekleyin.");
+    err.code = "RATE_LIMIT";
+    err.retryAfter = retryAfter;
+    throw err;
   }
 
   // ✅ Kod Kaydet
@@ -35,12 +39,8 @@ export const createVerificationCode = async ({ userId, type, target }) => {
         expiresAt: new Date(Date.now() + 5 * 60 * 1000),
       },
     });
-
-    if (type === "email") {
-      await sendVerificationEmail(normalizedTarget, code);
-    }
-
-    return code;
+    
+  return { id: record.id, code, target: normalizedTarget, type };
   } catch (err) {
     console.error("❌ Kod DB'ye kaydedilemedi:", err);
     throw new Error("Kod oluşturulamadı");

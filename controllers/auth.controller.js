@@ -6,6 +6,7 @@ import { createVerificationCode, verifyCode } from "../services/verificationServ
 import { generateToken } from "../middleware/authMiddleware.js"; // access token (kısa)
 import { REMEMBER_COOKIE_NAME, rememberCookieOptions } from "../cron/cookies.js";
 import { sendEmail } from "../utils/sendEmail.js";
+import { sendVerificationEmail } from "../utils/sendEmail.js";
 
 
 /* ---------------- Helpers ---------------- */
@@ -283,11 +284,23 @@ export const sendOtp = async (req, res) => {
       select: { id: true, email: true },
     });
 
-    await createVerificationCode({ userId: user.id, type: "email", target: email });
-
-    return res.status(200).json({ success: true, message: "Doğrulama kodu gönderildi." });
+ const rec = await createVerificationCode({ userId: user.id, type: "email", target: email });
+    // e-postayı arkada gönder (yanıtı bekletme)
+    sendVerificationEmail(rec.target, rec.code).catch((e) => {
+      console.error("sendVerificationEmail failed:", e);
+    });
+    // hızlı yanıt
+    return res.status(200).json({ success: true, message: "Doğrulama kodu gönderiliyor." });
   } catch (err) {
     console.error("sendOtp error:", err);
+     if (err?.code === "RATE_LIMIT") {
+      // FE butonunu countdown’la kilitleyebilmeniz için kalan saniyeyi döndürüyoruz
+      return res.status(429).json({
+        success: false,
+        message: err.message,
+        retryAfter: err.retryAfter ?? 60
+      });
+    }
     return res.status(500).json({ success: false, message: "Kod gönderilemedi." });
   }
 };
