@@ -134,8 +134,8 @@ export const registerTeacher = async (req, res) => {
         password: hashed,
         role: "teacher",
         phone: phone || null,
-        emailVerified: false,
-        isVerified: false
+        emailVerified: true,
+        isVerified: true
       },
       select: { id: true, email: true, role: true, name: true }
     });
@@ -161,32 +161,16 @@ export const registerTeacher = async (req, res) => {
       }
     });
 
-    // --- E-posta doğrulama kodu gönder ---
-    let emailSent = false;
-    try {
-      await createVerificationCode({
-        userId: user.id,
-        type: "email",
-        target: user.email
-      });
-      emailSent = true;
-    } catch (e) {
-      // doğrulama kodu gönderilemese de kayıt tamamdır; logla ve devam et
-      console.error("send verification code error:", e);
-    }
-
+   
     // --- JWT ---
     const token = generateToken({ id: user.id, email: user.email, role: user.role });
 
     return res.status(201).json({
       success: true,
-      message: emailSent
-        ? "Öğretmen kaydı tamamlandı. E-posta doğrulama kodu gönderildi."
-        : "Öğretmen kaydı tamamlandı. (Uyarı: Doğrulama e-postası gönderilemedi)",
+      message: "Öğretmen kaydı tamamlandı.",
       token,
       user,
-      profile,
-      verification: { emailSent }
+      profile
     });
   } catch (err) {
     console.error("registerTeacher error:", err);
