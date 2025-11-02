@@ -540,6 +540,7 @@ export const getTeacherBySlug = async (req, res) => {
         subjects: true,
         grades: true,
         bio: true,
+        whyMe: true,
         photoUrl: true,
         priceOnline: true,
         priceF2F: true,
