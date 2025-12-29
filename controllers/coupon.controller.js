@@ -38,7 +38,7 @@ export const validateCoupon = async (req, res) => {
     }
 
     // ✅ 4. "İlk Sipariş" Kontrolü (DÜZELTİLEN KISIM)
-    const isFirstOrderCoupon = code === "Sozderece200" || coupon.isFirstOrder === true;
+    const isFirstOrderCoupon = code === "SOZDERECE200" || coupon.isFirstOrder === true;
 
     if (isFirstOrderCoupon) {
       // Kullanıcının daha önce ödenmiş (paid) veya iade süreci başlamış siparişi var mı?
@@ -100,24 +100,40 @@ export const markCouponUsed = async (req, res) => {
 // ✅ Admin tarafından kupon oluşturma
 export const createCoupon = async (req, res) => {
   try {
-    // Frontend'den gelen yeni alanları alıyoruz
-    const { code, discountRate, maxUsage, type, isFirstOrder, discountAmount } = req.body;
+    // Frontend'den gelen veriler (validPackages dizisi dahil)
+    const { code, discountRate, maxUsage, type, isFirstOrder, discountAmount, validPackages } = req.body;
+
+    // --- DÜZELTME BURADA ---
+    // Eğer Sabit Tutar (FIXED) seçildiyse, gelen TL tutarını Kuruşa çevir (x100)
+    let finalDiscountAmount = null;
+    if (type === "FIXED" && discountAmount) {
+        // Kullanıcı 200 girerse -> 200 * 100 = 20000 (200 TL) olarak kaydedilir.
+        finalDiscountAmount = parseFloat(discountAmount) * 100;
+    }
 
     const newCoupon = await prisma.coupon.create({
       data: {
-        code,
+        code: code.toUpperCase(), // Kodları her zaman büyük harf yap
         usageLimit: parseInt(maxUsage),
-        // Tipine göre verileri işle
-        type: type || "RATE", 
+        type: type || "RATE",
         isFirstOrder: isFirstOrder || false,
         discountRate: discountRate ? parseInt(discountRate) : null,
-        discountAmount: discountAmount ? parseInt(discountAmount) : null, 
+        
+        // Hesaplanan kuruş değerini kaydediyoruz
+        discountAmount: finalDiscountAmount, 
+        
+        // Paket kısıtlaması
+        validPackages: validPackages || [] 
       },
     });
 
-    res.status(201).json({ message: "Kupon oluşturuldu.", coupon: newCoupon });
+    res.status(201).json({ message: "Kupon başarıyla oluşturuldu.", coupon: newCoupon });
   } catch (error) {
-    console.error(error);
+    // Unique constraint hatası (Aynı koddan varsa)
+    if (error.code === 'P2002') {
+        return res.status(400).json({ error: "Bu kupon kodu zaten kullanımda." });
+    }
+    console.error("Kupon oluşturulamadı:", error);
     res.status(500).json({ error: "Kupon oluşturulamadı." });
   }
 };
