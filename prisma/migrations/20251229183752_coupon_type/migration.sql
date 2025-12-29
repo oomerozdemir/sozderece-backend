@@ -1,0 +1,6 @@
+-- AlterTable
+ALTER TABLE "Coupon" ADD COLUMN     "discountAmount" INTEGER DEFAULT 0,
+ADD COLUMN     "isFirstOrder" BOOLEAN NOT NULL DEFAULT false,
+ADD COLUMN     "type" TEXT NOT NULL DEFAULT 'RATE',
+ALTER COLUMN "discountRate" DROP NOT NULL,
+ALTER COLUMN "discountRate" SET DEFAULT 0;

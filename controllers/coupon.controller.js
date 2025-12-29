@@ -7,7 +7,7 @@ export const validateCoupon = async (req, res) => {
     const userId = req.user?.id;
 
     if (!userId) {
-      return res.status(401).json({ error: "Kullanıcı doğrulanamadı veya rol bilgisi eksik." });
+      return res.status(401).json({ error: "Kullanıcı doğrulanamadı." });
     }
 
     const { code } = req.body;
@@ -16,6 +16,7 @@ export const validateCoupon = async (req, res) => {
       return res.status(400).json({ error: "Kupon kodu gereklidir." });
     }
 
+    // 1. Kuponu bul
     const coupon = await prisma.coupon.findUnique({
       where: { code },
       include: { usedBy: true },
@@ -25,23 +26,55 @@ export const validateCoupon = async (req, res) => {
       return res.status(404).json({ error: "Kupon bulunamadı." });
     }
 
+    // 2. Kullanıcı daha önce kullandı mı?
     const userUsed = coupon.usedBy.some((usage) => usage.userId === userId);
-
     if (userUsed) {
       return res.status(400).json({ error: "Bu kuponu zaten kullandınız." });
     }
 
+    // 3. Genel kullanım limiti doldu mu?
     if (coupon.usedBy.length >= coupon.usageLimit) {
       return res.status(400).json({ error: "Kupon kullanım hakkı dolmuş." });
     }
 
-    return res.json({ success: true, discountRate: coupon.discountRate });
+    // ✅ 4. YENİ: "İlk Sipariş" Kontrolü
+    // Eğer kupon kodu 'Sozderece200' ise veya veritabanında 'isFirstOrder' true ise:
+    const isFirstOrderCoupon = code === "Sozderece200" || coupon.isFirstOrder === true;
+
+    if (isFirstOrderCoupon) {
+      // Kullanıcının daha önce başarılı (tamamlanmış) siparişi var mı?
+      const previousOrders = await prisma.order.count({
+        where: {
+          userId: userId,
+          // DİKKAT: Sadece başarılı/ödenmiş siparişleri saymalısınız.
+          // Order modelinizdeki statü alanına göre burayı düzenleyin:
+          // Örn: status: 'SUCCESS' veya paymentStatus: 'PAID'
+          status: 'success' 
+        }
+      });
+
+      if (previousOrders > 0) {
+        return res.status(400).json({ 
+          error: "Bu fırsat sadece ilk siparişinize özeldir. Daha önce siparişiniz bulunmaktadır." 
+        });
+      }
+    }
+
+    // 5. Başarılı yanıt
+    // Frontend'in indirimi doğru hesaplaması için tipi de dönüyoruz
+    return res.json({ 
+      success: true, 
+      code: coupon.code,
+      discountRate: coupon.discountRate, // Veritabanınızda varsa discountAmount'u da dönün
+      type: coupon.code === "Sozderece200" ? "FIXED" : "RATE", // Şimdilik manuel, DB'ye eklerseniz oradan çekin
+      amount: coupon.code === "Sozderece200" ? 20000 : 0 // 200 TL (Kuruş cinsinden ise 20000)
+    });
+
   } catch (error) {
     console.error("❌ Kupon doğrulama hatası:", error);
     return res.status(500).json({ error: "Sunucu hatası." });
   }
 };
-
 
 // ✅ Kuponu kullanıcı adına işaretleme (kullanıldı)
 export const markCouponUsed = async (req, res) => {
@@ -68,19 +101,24 @@ export const markCouponUsed = async (req, res) => {
 // ✅ Admin tarafından kupon oluşturma
 export const createCoupon = async (req, res) => {
   try {
-    const { code, discountRate, maxUsage } = req.body;
+    // Frontend'den gelen yeni alanları alıyoruz
+    const { code, discountRate, maxUsage, type, isFirstOrder, discountAmount } = req.body;
 
     const newCoupon = await prisma.coupon.create({
       data: {
         code,
-        discountRate: parseInt(discountRate),
-        usageLimit: parseInt(maxUsage), // ✅ burada usageLimit'e eşleştiriyoruz
+        usageLimit: parseInt(maxUsage),
+        // Tipine göre verileri işle
+        type: type || "RATE", 
+        isFirstOrder: isFirstOrder || false,
+        discountRate: discountRate ? parseInt(discountRate) : null,
+        discountAmount: discountAmount ? parseInt(discountAmount) : null, 
       },
     });
 
-    res.status(201).json({ message: "Kupon başarıyla oluşturuldu.", coupon: newCoupon });
+    res.status(201).json({ message: "Kupon oluşturuldu.", coupon: newCoupon });
   } catch (error) {
-    console.error("Kupon oluşturulamadı:");
+    console.error(error);
     res.status(500).json({ error: "Kupon oluşturulamadı." });
   }
 };

@@ -158,11 +158,14 @@ model OrderItem {
 }
 
 model Coupon {
-  id           Int           @id @default(autoincrement())
-  code         String        @unique
-  discountRate Int
+  id           Int         @id @default(autoincrement())
+  code         String      @unique
+  discountAmount Int?      @default(0)   // Sabit indirim tutarı (Örn: 200 TL için 20000 kuruş)
+  discountRate   Int?      @default(0)   // Yüzdelik indirim (Örn: %10)
+  type           String    @default("RATE") // "RATE" veya "FIXED"
+  isFirstOrder   Boolean   @default(false)
   usageLimit   Int
-  createdAt    DateTime      @default(now())
+  createdAt    DateTime    @default(now())
   usedBy       CouponUsage[]
 }
 
