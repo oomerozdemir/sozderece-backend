@@ -26,7 +26,7 @@ export const validateCoupon = async (req, res) => {
       return res.status(404).json({ error: "Kupon bulunamadı." });
     }
 
-    // 2. Kullanıcı daha önce kullandı mı?
+    // 2. Kullanıcı daha önce kullandı mı? (Kupon bazlı kontrol)
     const userUsed = coupon.usedBy.some((usage) => usage.userId === userId);
     if (userUsed) {
       return res.status(400).json({ error: "Bu kuponu zaten kullandınız." });
@@ -37,17 +37,18 @@ export const validateCoupon = async (req, res) => {
       return res.status(400).json({ error: "Kupon kullanım hakkı dolmuş." });
     }
 
-    // ✅ 4. "İlk Sipariş" Kontrolü
-    // Hem veritabanındaki ayara hem de özel koda bakar
+    // ✅ 4. "İlk Sipariş" Kontrolü (DÜZELTİLEN KISIM)
     const isFirstOrderCoupon = code === "Sozderece200" || coupon.isFirstOrder === true;
 
     if (isFirstOrderCoupon) {
-      // Kullanıcının daha önce başarılı (tamamlanmış) siparişi var mı?
+      // Kullanıcının daha önce ödenmiş (paid) veya iade süreci başlamış siparişi var mı?
+      // NOT: 'failed', 'pending' veya 'pending_payment' olanlar sayılmaz.
       const previousOrders = await prisma.order.count({
         where: {
           userId: userId,
-          // Sadece başarılı/ödenmiş siparişleri sayıyoruz (sisteminize göre güncelleyin)
-          status: 'success' 
+          status: {
+            in: ["paid", "refund_requested", "refunded"] // ✅ 'success' yerine sisteminizdeki gerçek durumları yazdık.
+          }
         }
       });
 
@@ -62,13 +63,9 @@ export const validateCoupon = async (req, res) => {
     return res.json({ 
       success: true, 
       code: coupon.code,
-      
-      // İndirim Değerleri (DB'den veya özel koddan)
       discountRate: coupon.discountRate, 
       discountAmount: coupon.discountAmount || (coupon.code === "Sozderece200" ? 20000 : 0),
       type: coupon.type || (coupon.code === "Sozderece200" ? "FIXED" : "RATE"),
-      
-      // ✅ ÖNEMLİ: Frontend kontrolü için geçerli paket listesini dönüyoruz
       validPackages: coupon.validPackages || [] 
     });
 
