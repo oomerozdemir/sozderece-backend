@@ -121,7 +121,7 @@ export const prepareOrder = async (req, res) => {
       return res.status(500).json({ error: "Ödeme token alınamadı" });
     }
 
-    // 4) Sadece PaymentMeta oluştur (order YOK)
+    // 4) PaymentMeta oluştur
     await prisma.paymentMeta.create({
       data: {
         merchantOid,
@@ -130,7 +130,7 @@ export const prepareOrder = async (req, res) => {
         billingInfo,
         packageName,
         packageSlug: req.body.packageSlug || cleanedCart?.[0]?.slug || null,
-        discountRate,
+        discountRate: discountRate ? parseInt(discountRate) : 0, 
         couponCode,
         totalPrice,
         requestId: requestId || null,

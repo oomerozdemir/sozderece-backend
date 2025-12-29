@@ -37,8 +37,8 @@ export const validateCoupon = async (req, res) => {
       return res.status(400).json({ error: "Kupon kullanım hakkı dolmuş." });
     }
 
-    // ✅ 4. YENİ: "İlk Sipariş" Kontrolü
-    // Eğer kupon kodu 'Sozderece200' ise veya veritabanında 'isFirstOrder' true ise:
+    // ✅ 4. "İlk Sipariş" Kontrolü
+    // Hem veritabanındaki ayara hem de özel koda bakar
     const isFirstOrderCoupon = code === "Sozderece200" || coupon.isFirstOrder === true;
 
     if (isFirstOrderCoupon) {
@@ -46,9 +46,7 @@ export const validateCoupon = async (req, res) => {
       const previousOrders = await prisma.order.count({
         where: {
           userId: userId,
-          // DİKKAT: Sadece başarılı/ödenmiş siparişleri saymalısınız.
-          // Order modelinizdeki statü alanına göre burayı düzenleyin:
-          // Örn: status: 'SUCCESS' veya paymentStatus: 'PAID'
+          // Sadece başarılı/ödenmiş siparişleri sayıyoruz (sisteminize göre güncelleyin)
           status: 'success' 
         }
       });
@@ -61,13 +59,17 @@ export const validateCoupon = async (req, res) => {
     }
 
     // 5. Başarılı yanıt
-    // Frontend'in indirimi doğru hesaplaması için tipi de dönüyoruz
     return res.json({ 
       success: true, 
       code: coupon.code,
-      discountRate: coupon.discountRate, // Veritabanınızda varsa discountAmount'u da dönün
-      type: coupon.code === "Sozderece200" ? "FIXED" : "RATE", // Şimdilik manuel, DB'ye eklerseniz oradan çekin
-      amount: coupon.code === "Sozderece200" ? 20000 : 0 // 200 TL (Kuruş cinsinden ise 20000)
+      
+      // İndirim Değerleri (DB'den veya özel koddan)
+      discountRate: coupon.discountRate, 
+      discountAmount: coupon.discountAmount || (coupon.code === "Sozderece200" ? 20000 : 0),
+      type: coupon.type || (coupon.code === "Sozderece200" ? "FIXED" : "RATE"),
+      
+      // ✅ ÖNEMLİ: Frontend kontrolü için geçerli paket listesini dönüyoruz
+      validPackages: coupon.validPackages || [] 
     });
 
   } catch (error) {

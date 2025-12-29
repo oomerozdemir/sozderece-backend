@@ -166,6 +166,8 @@ model Coupon {
   isFirstOrder   Boolean   @default(false)
   usageLimit   Int
   createdAt    DateTime    @default(now())
+
+  validPackages  String[]      @default([])
   usedBy       CouponUsage[]
 }
 
