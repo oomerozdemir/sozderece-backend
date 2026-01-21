@@ -8,12 +8,15 @@ datasource db {
 }
 
 model Contact {
-  id        Int      @id @default(autoincrement())
-  name      String
-  phone     String
-  email     String
-  message   String
-  createdAt DateTime @default(now())
+  id          Int      @id @default(autoincrement())
+  name        String
+  phone       String
+  email       String
+  userType    String?  // Yeni eklendi
+  meetingDate String?  // Yeni eklendi
+  meetingTime String?  // Yeni eklendi
+  message     String?
+  createdAt   DateTime @default(now())
 }
 
 model TrialMeeting {

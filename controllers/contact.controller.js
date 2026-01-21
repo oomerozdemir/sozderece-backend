@@ -1,12 +1,20 @@
 import prisma from "../utils/prisma.js";
 import nodemailer from "nodemailer";
 import dotenv from "dotenv";
-import axios from "axios"; // Facebook isteği için gerekli
-import crypto from "crypto"; // Şifreleme için gerekli
+import axios from "axios";
+import crypto from "crypto";
 
 dotenv.config();
 
-// Facebook için veriyi şifreleme (Hashing) fonksiyonu
+// Mail Gönderme Ayarları (Gmail)
+const transporter = nodemailer.createTransport({
+  service: "gmail",
+  auth: {
+    user: process.env.EMAIL_USER, // .env dosyanızdaki mail
+    pass: process.env.EMAIL_PASS, // .env dosyanızdaki "Uygulama Şifresi"
+  },
+});
+
 const hashData = (data) => {
   if (!data) return null;
   return crypto.createHash("sha256").update(data).digest("hex");
@@ -14,64 +22,52 @@ const hashData = (data) => {
 
 export const createContact = async (req, res) => {
   try {
-    const { name, phone, email, message } = req.body;
+    // 1. Frontend'den gelen verileri al
+    const { name, phone, email, userType, meetingDate, meetingTime, message } = req.body;
 
+    // 2. Veritabanına Kaydet
     const newContact = await prisma.contact.create({
-      data: { name, phone, email, message }
+      data: {
+        name,
+        phone,
+        email,
+        userType: userType || "Belirtilmemiş",
+        meetingDate: meetingDate || null,
+        meetingTime: meetingTime || null,
+        message: message || ""
+      }
     });
 
-    res.status(201).json({ success: true, data: newContact });
-  } catch (error) {
-    console.error("Hata:", error);
-    res.status(500).json({ success: false, message: "Bir hata oluştu." });
-  }
-};
-
-const transporter = nodemailer.createTransport({
-  service: "gmail",
-  auth: {
-    user: process.env.EMAIL_USER,
-    pass: process.env.EMAIL_PASS,
-  },
-});
-
-export const createTrialMeeting = async (req, res) => {
-  try {
-    const { name, email, phone, userType, message } = req.body;
-
-    // 1. Kullanıcının IP ve Tarayıcı bilgisini al (Facebook eşleşmesi için kritik)
-    const clientIp = req.headers['x-forwarded-for'] || req.socket.remoteAddress;
-    const userAgent = req.headers['user-agent'];
-
-    if (!name || !email || !phone || !userType || !message) {
-      return res.status(400).json({
-        success: false,
-        message: "Tüm alanlar zorunludur.",
-      });
-    }
-
-    // 2. Veritabanına Kayıt
-    await prisma.trialMeeting.create({
-      data: { name, email, phone, userType, message }
-    });
-
-    // 3. Mail Gönderimi
-    transporter.sendMail({
-      from: '"Sözderece Koçluk" <iletisim@sozderecekocluk.com>',
-      to: "iletisim@sozderecekocluk.com", 
-      subject: "Yeni Ücretsiz Ön Görüşme Talebi (Web)",
+    // 3. Yöneticiye (Sana) Mail Gönder
+    const mailOptions = {
+      from: `"Sözderece Web" <${process.env.EMAIL_USER}>`,
+      to: process.env.EMAIL_USER, // Mail sana gelecek
+      subject: `📅 Yeni Randevu Talebi: ${name}`,
       html: `
-        <h3>Yeni Başvuru Geldi! 🚀</h3>
-        <p><strong>Ad:</strong> ${name}</p>
-        <p><strong>Telefon:</strong> ${phone}</p>
-        <p><strong>Kullanıcı Tipi:</strong> ${userType}</p>
-        <p><strong>Mesaj:</strong> ${message}</p>
-        <hr>
-        <p><small>Email (Sistem): ${email}</small></p>
+        <div style="font-family: Arial, sans-serif; padding: 20px; border: 1px solid #eee;">
+          <h2 style="color: #100481;">Yeni Bir Görüşme Talebiniz Var!</h2>
+          <p>Web sitesi üzerinden yeni bir form dolduruldu.</p>
+          
+          <table style="width: 100%; border-collapse: collapse;">
+            <tr><td style="padding: 8px; border-bottom: 1px solid #ddd;"><strong>Ad Soyad:</strong></td><td style="padding: 8px; border-bottom: 1px solid #ddd;">${name}</td></tr>
+            <tr><td style="padding: 8px; border-bottom: 1px solid #ddd;"><strong>Durumu:</strong></td><td style="padding: 8px; border-bottom: 1px solid #ddd;">${userType}</td></tr>
+            <tr><td style="padding: 8px; border-bottom: 1px solid #ddd;"><strong>Telefon:</strong></td><td style="padding: 8px; border-bottom: 1px solid #ddd;"><a href="tel:${phone}">${phone}</a></td></tr>
+            <tr><td style="padding: 8px; border-bottom: 1px solid #ddd;"><strong>E-posta:</strong></td><td style="padding: 8px; border-bottom: 1px solid #ddd;">${email}</td></tr>
+            <tr><td style="padding: 8px; border-bottom: 1px solid #ddd;"><strong>Randevu Tarihi:</strong></td><td style="padding: 8px; border-bottom: 1px solid #ddd; background-color: #fff3cd;"><strong>${meetingDate || "Seçilmedi"}</strong></td></tr>
+            <tr><td style="padding: 8px; border-bottom: 1px solid #ddd;"><strong>Randevu Saati:</strong></td><td style="padding: 8px; border-bottom: 1px solid #ddd; background-color: #fff3cd;"><strong>${meetingTime || "Seçilmedi"}</strong></td></tr>
+            <tr><td style="padding: 8px; border-bottom: 1px solid #ddd;"><strong>Mesaj:</strong></td><td style="padding: 8px; border-bottom: 1px solid #ddd;">${message}</td></tr>
+          </table>
+          
+          <p style="margin-top: 20px; font-size: 12px; color: #888;">Bu mail otomatik olarak gönderilmiştir.</p>
+        </div>
       `,
-    }).catch(err => console.error("Mail gönderilemedi:", err));
+    };
 
-    // 4. FACEBOOK CONVERSION API (Server-Side Tracking) - BU KISIM EKSİKTİ
+    // Maili asenkron gönder (Hata olursa kullanıcıya yansıtma, logla)
+    transporter.sendMail(mailOptions).catch(err => console.error("Mail gönderme hatası:", err));
+
+
+     // 4. FACEBOOK CONVERSION API (Server-Side Tracking) - BU KISIM EKSİKTİ
     if (process.env.FACEBOOK_ACCESS_TOKEN && process.env.FACEBOOK_PIXEL_ID) {
         
         // Telefon numarasını temizle (sadece rakam kalsın) ve şifrele
@@ -110,10 +106,12 @@ export const createTrialMeeting = async (req, res) => {
         });
     }
 
-    res.status(201).json({ success: true, message: "Talep alındı" });
 
-  } catch (err) {
-    console.error("CreateTrialMeeting Hatası:", err);
-    res.status(500).json({ success: false, message: "Sunucu hatası" });
+    res.status(201).json({ success: true, message: "Başvuru alındı" });
+
+  } catch (error) {
+    console.error("Hata:", error);
+    res.status(500).json({ success: false, message: "Bir hata oluştu." });
   }
 };
+
