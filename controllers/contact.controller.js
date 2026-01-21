@@ -83,8 +83,14 @@ export const createContact = async (req, res) => {
                     user_data: {
                         ph: [hashData(cleanPhone)], // Şifrelenmiş telefon
                         client_ip_address: clientIp,
-                        client_user_agent: userAgent
-                        // E-postayı bilerek göndermiyoruz çünkü dummy email kullanıyoruz.
+                        client_user_agent: userAgent,
+                        em: [hashData(email)], 
+                        
+                        // Telefon (Hashed)
+                        ph: [hashData(cleanPhone)],
+                        
+                        // İsim (Hashed - Opsiyonel ama kaliteyi artırır)
+                        fn: [hashData(name ? name.split(" ")[0] : "")],
                     },
                     custom_data: {
                         currency: "TRY",
