@@ -39,7 +39,7 @@ router.use("/", cartRoutes);
 router.use("/v1/ogretmen", ogretmenPrivateRoutes);
 router.use("/v1/ogretmenler", ogretmenlerPublicRoutes);
 router.use("/v1/student-requests", studentRequestRouter);
-router.use("/applications", applicationRoutes);
+router.use("/v1/applications", applicationRoutes);
 
 
 
