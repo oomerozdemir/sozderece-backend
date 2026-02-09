@@ -15,6 +15,7 @@ import cartRoutes from "./public/cart.routes.js";
 import ogretmenPrivateRoutes from "./public/teacher.private.routes.js";
 import ogretmenlerPublicRoutes from "./public/teacher.public.routes.js";
 import studentRequestRouter from "./public/studentRequest.routes.js";
+import applicationRoutes from "./public/application.routes.js";
 
 
 // 🔐 Admin routes
@@ -38,6 +39,8 @@ router.use("/", cartRoutes);
 router.use("/v1/ogretmen", ogretmenPrivateRoutes);
 router.use("/v1/ogretmenler", ogretmenlerPublicRoutes);
 router.use("/v1/student-requests", studentRequestRouter);
+router.use("/v1/applications", applicationRoutes);
+
 
 
 

@@ -12,11 +12,11 @@ model Contact {
   name        String
   phone       String
   email       String
-  userType    String?  // Yeni eklendi
-  meetingDate String?  // Yeni eklendi
-  meetingTime String?  // Yeni eklendi
   message     String?
   createdAt   DateTime @default(now())
+  meetingDate String?
+  meetingTime String?
+  userType    String?
 }
 
 model TrialMeeting {
@@ -24,42 +24,39 @@ model TrialMeeting {
   name      String
   email     String
   phone     String
-  userType  String // Öğrenci veya Veli
+  userType  String
   message   String
   createdAt DateTime @default(now())
 }
 
 model User {
-  id                  Int                  @id @default(autoincrement())
+  id                  Int                    @id @default(autoincrement())
   name                String?
-  email               String               @unique
+  email               String                 @unique
   password            String?
   role                String
   phone               String?
-  isVerified          Boolean              @default(false)
-  createdAt           DateTime             @default(now())
-  emailVerified       Boolean              @default(false)
-  phoneVerified       Boolean              @default(false)
+  isVerified          Boolean                @default(false)
+  createdAt           DateTime               @default(now())
+  emailVerified       Boolean                @default(false)
+  phoneVerified       Boolean                @default(false)
   assignedCoachId     Int?
   grade               String?
   track               String?
-  coachProfile        Coach?               @relation("CoachProfile")
+  studentAppointments Appointment[]          @relation("StudentAppointments")
+  carts               Cart[]
+  coachProfile        Coach?                 @relation("CoachProfile")
   couponUsages        CouponUsage[]
   orders              Order[]
-  assignedCoach       Coach?               @relation("AssignedCoach", fields: [assignedCoachId], references: [id])
-  verificationCodes   VerificationCode[]
   passwordResetTokens PasswordResetToken[]
   paymentMetas        PaymentMeta[]
-  carts               Cart[]
   rememberTokens      RememberToken[]
-
-  teacherProfile      TeacherProfile?      @relation("TeacherProfileUser")
-  teacherReviews      TeacherReview[]      @relation("UserTeacherReviews")
-
-  reviewedProfiles    TeacherProfile[]     @relation("TeacherProfileReviewer")
-
-  studentAppointments Appointment[] @relation("StudentAppointments")
   lessonRequests      StudentLessonRequest[]
+  reviewedProfiles    TeacherProfile[]       @relation("TeacherProfileReviewer")
+  teacherProfile      TeacherProfile?        @relation("TeacherProfileUser")
+  teacherReviews      TeacherReview[]        @relation("UserTeacherReviews")
+  assignedCoach       Coach?                 @relation("AssignedCoach", fields: [assignedCoachId], references: [id])
+  verificationCodes   VerificationCode[]
 }
 
 model Coach {
@@ -74,25 +71,22 @@ model Coach {
 }
 
 model Order {
-  id            Int         @id @default(autoincrement())
-  package       String
-  createdAt     DateTime    @default(now())
-  userId        Int
-  billingInfoId Int
-  endDate       DateTime
-  startDate     DateTime    @default(now())
-  updatedAt     DateTime    @updatedAt
-  status        String      @default("pending_payment")
-  refundMessage String?
-  refundReason  String?
-  merchantOid   String?     @unique
-  totalPrice    Float?
-
-  billingInfo   BillingInfo @relation("BillingToOrder", fields: [billingInfoId], references: [id])
-  user          User        @relation(fields: [userId], references: [id])
-  orderItems    OrderItem[]
-
-  // 🔁 1→N: bir order birden çok talep
+  id              Int                    @id @default(autoincrement())
+  package         String
+  createdAt       DateTime               @default(now())
+  userId          Int
+  billingInfoId   Int
+  endDate         DateTime
+  startDate       DateTime               @default(now())
+  updatedAt       DateTime               @updatedAt
+  status          String                 @default("pending_payment")
+  refundMessage   String?
+  refundReason    String?
+  merchantOid     String?                @unique
+  totalPrice      Float?
+  billingInfo     BillingInfo            @relation("BillingToOrder", fields: [billingInfoId], references: [id])
+  user            User                   @relation(fields: [userId], references: [id])
+  orderItems      OrderItem[]
   studentRequests StudentLessonRequest[] @relation("OrderStudentRequest")
 }
 
@@ -104,35 +98,28 @@ model Package {
 }
 
 model Cart {
-  id        String     @id @default(cuid())
-  userId    Int? // Int? çünkü User.id Int
-  user      User?      @relation(fields: [userId], references: [id])
-  email     String?
-  status    CartStatus @default(OPEN)
-  createdAt DateTime   @default(now())
-  updatedAt DateTime   @updatedAt
-  items     CartItem[]
-  completed Boolean     @default(false) // ödeme tamamlandı mı?
-  reminderStep   Int         @default(0) // 0 = hiç mail atılmadı, 1 = ilk mail, 2 = ikinci mail...
-
+  id           String     @id @default(cuid())
+  userId       Int?
+  email        String?
+  status       CartStatus @default(OPEN)
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
+  completed    Boolean    @default(false)
+  reminderStep Int        @default(0)
+  user         User?      @relation(fields: [userId], references: [id])
+  items        CartItem[]
 }
 
 model CartItem {
   id        String @id @default(cuid())
   cartId    String
-  cart      Cart   @relation(fields: [cartId], references: [id])
   slug      String
   title     String
   unitPrice Int
   quantity  Int    @default(1)
+  cart      Cart   @relation(fields: [cartId], references: [id])
 
   @@unique([cartId, slug])
-}
-
-enum CartStatus {
-  OPEN
-  ORDERED
-  ABANDONED
 }
 
 model BillingInfo {
@@ -153,25 +140,24 @@ model BillingInfo {
 model OrderItem {
   id          Int     @id @default(autoincrement())
   name        String
-  price       Float
   quantity    Int
   description String?
   orderId     Int
+  price       Float
   order       Order   @relation(fields: [orderId], references: [id])
 }
 
 model Coupon {
-  id           Int         @id @default(autoincrement())
-  code         String      @unique
-  discountAmount Int?      @default(0)   // Sabit indirim tutarı (Örn: 200 TL için 20000 kuruş)
-  discountRate   Int?      @default(0)   // Yüzdelik indirim (Örn: %10)
-  type           String    @default("RATE") // "RATE" veya "FIXED"
-  isFirstOrder   Boolean   @default(false)
-  usageLimit   Int
-  createdAt    DateTime    @default(now())
-
+  id             Int           @id @default(autoincrement())
+  code           String        @unique
+  discountRate   Int?          @default(0)
+  usageLimit     Int
+  createdAt      DateTime      @default(now())
+  discountAmount Int?          @default(0)
+  isFirstOrder   Boolean       @default(false)
+  type           String        @default("RATE")
   validPackages  String[]      @default([])
-  usedBy       CouponUsage[]
+  usedBy         CouponUsage[]
 }
 
 model CouponUsage {
@@ -187,22 +173,22 @@ model CouponUsage {
 
 model VerificationCode {
   id        Int      @id @default(autoincrement())
-  user      User     @relation(fields: [userId], references: [id])
   userId    Int
-  type      String // "email" veya "phone"
-  target    String // gönderilecek adres/numara
+  type      String
+  target    String
   code      String
   createdAt DateTime @default(now())
   expiresAt DateTime
+  user      User     @relation(fields: [userId], references: [id])
 }
 
 model PasswordResetToken {
   id        Int      @id @default(autoincrement())
   token     String   @unique
-  user      User     @relation(fields: [userId], references: [id])
   userId    Int
   createdAt DateTime @default(now())
   expiresAt DateTime
+  user      User     @relation(fields: [userId], references: [id])
 }
 
 model PaymentMeta {
@@ -216,92 +202,65 @@ model PaymentMeta {
   couponCode   String?
   totalPrice   Float
   createdAt    DateTime @default(now())
+  requestId    String?  @db.VarChar(191)
   packageSlug  String?
+  user         User     @relation(fields: [userId], references: [id])
 
-  requestId    String?  @db.VarChar(191) // StudentLessonRequest.id (cuid) saklanacak
   @@index([requestId])
-  user User @relation(fields: [userId], references: [id])
-  
 }
 
 model RememberToken {
-  // Cookie formatı: "<id>.<secret>"
-  // id -> bu modelin id'si (cuid), secret -> bcrypt hash'lenip DB'de secretHash olarak saklanır
   id         String   @id @default(cuid())
   userId     Int
-  user       User     @relation(fields: [userId], references: [id])
-
-  secretHash String   // raw secret'in bcrypt hash'i
+  secretHash String
   userAgent  String?
   ip         String?
-
   createdAt  DateTime @default(now())
   expiresAt  DateTime
   revoked    Boolean  @default(false)
+  user       User     @relation(fields: [userId], references: [id])
 
   @@index([userId])
   @@index([expiresAt])
   @@index([revoked])
 }
 
-enum LessonMode {
-  ONLINE
-  FACE_TO_FACE
-  BOTH
-}
-
-enum PublishStatus {
-  DRAFT      // henüz talep yok
-  PENDING    // admin onayında
-  APPROVED   // onaylandı (yayında)
-  REJECTED   // reddedildi
-}
-
 model TeacherProfile {
-  id            String          @id @default(cuid())
-  userId        Int             @unique
-  user          User            @relation("TeacherProfileUser", fields: [userId], references: [id], onDelete: Cascade)
-
-  firstName     String
-  lastName      String
-  subjects      String[]
-  grades        String[]
-  city          String
-  district      String
-  mode          LessonMode      @default(BOTH)
-  priceOnline   Int?
-  priceF2F      Int?
-  bio           String?
-  whyMe         String?
-  photoUrl      String?
-  slug          String          @unique
-
-  // Yayın kontrolü
-  isPublic      Boolean         @default(false)            // sadece APPROVED olduğunda true yapılır
-  publishStatus PublishStatus   @default(DRAFT)
-  submittedAt   DateTime?
-  reviewedAt    DateTime?
-  reviewerId    Int?
-  reviewNote    String?
-  reviewer      User?         @relation("TeacherProfileReviewer", fields: [reviewerId], references: [id])
-
-  // Metrikler
-  viewCount     Int             @default(0)
-  ratingAverage Float           @default(0)
-  ratingCount   Int             @default(0)
-  reviews       TeacherReview[]
-
-  createdAt     DateTime        @default(now())
-  updatedAt     DateTime        @updatedAt
-
-  timeZone      String?         @default("Europe/Istanbul")
-
-  // İlişkiler
-  availabilities  TeacherAvailability[]
-  timeOffs        TeacherTimeOff[]
-  appointments    Appointment[]
-  lessons         TeacherLesson[]
-  lessonRequests  StudentLessonRequest[]
+  id             String                 @id @default(cuid())
+  userId         Int                    @unique
+  firstName      String
+  lastName       String
+  subjects       String[]
+  grades         String[]
+  city           String
+  district       String
+  mode           LessonMode             @default(BOTH)
+  priceOnline    Int?
+  priceF2F       Int?
+  bio            String?
+  photoUrl       String?
+  slug           String                 @unique
+  isPublic       Boolean                @default(false)
+  createdAt      DateTime               @default(now())
+  updatedAt      DateTime               @updatedAt
+  ratingAverage  Float                  @default(0)
+  ratingCount    Int                    @default(0)
+  viewCount      Int                    @default(0)
+  timeZone       String?                @default("Europe/Istanbul")
+  whyMe          String?
+  publishStatus  PublishStatus          @default(DRAFT)
+  reviewNote     String?
+  reviewedAt     DateTime?
+  reviewerId     Int?
+  submittedAt    DateTime?
+  appointments   Appointment[]
+  lessonRequests StudentLessonRequest[]
+  availabilities TeacherAvailability[]
+  lessons        TeacherLesson[]
+  reviewer       User?                  @relation("TeacherProfileReviewer", fields: [reviewerId], references: [id])
+  user           User                   @relation("TeacherProfileUser", fields: [userId], references: [id], onDelete: Cascade)
+  reviews        TeacherReview[]
+  timeOffs       TeacherTimeOff[]
 
   @@index([city])
   @@index([district])
@@ -315,128 +274,89 @@ model TeacherProfile {
 model TeacherReview {
   id               String         @id @default(cuid())
   teacherProfileId String
-  teacher          TeacherProfile @relation(fields: [teacherProfileId], references: [id], onDelete: Cascade)
-
   userId           Int?
-  user             User?          @relation("UserTeacherReviews", fields: [userId], references: [id], onDelete: SetNull)
-
-  rating           Int            // 1..5
+  rating           Int
   comment          String?
   createdAt        DateTime       @default(now())
-
-  appointmentId    String?
-
-  appointment      Appointment?   @relation("AppointmentReviews", fields: [appointmentId], references: [id], onDelete: SetNull)
+  appointmentId    String?        @unique
+  appointment      Appointment?   @relation("AppointmentReviews", fields: [appointmentId], references: [id])
+  teacher          TeacherProfile @relation(fields: [teacherProfileId], references: [id], onDelete: Cascade)
+  user             User?          @relation("UserTeacherReviews", fields: [userId], references: [id])
 
   @@index([teacherProfileId])
   @@index([rating])
   @@index([appointmentId])
-  @@unique([appointmentId]) // ✅ Her randevuya en fazla 1 yorum
 }
 
-
-// Appointment Schema
-
-enum AppointmentStatus {
-  PENDING
-  CONFIRMED
-  CANCELLED
-}
-
-// --- Haftalık uygunluk pencereleri (bir günde 0..n aralık) ---
 model TeacherAvailability {
   id               String         @id @default(cuid())
   teacherProfileId String
-  teacher          TeacherProfile @relation(fields: [teacherProfileId], references: [id], onDelete: Cascade)
-
-  // 0=Sun, 1=Mon ... 6=Sat (date-fns standardına uyduk)
   weekday          Int
-  startMin         Int            // gün başından dakika (örn 9*60=540)
-  endMin           Int            // (örn 17*60=1020)
+  startMin         Int
+  endMin           Int
   mode             LessonMode     @default(BOTH)
   isActive         Boolean        @default(true)
-
   createdAt        DateTime       @default(now())
   updatedAt        DateTime       @updatedAt
+  teacher          TeacherProfile @relation(fields: [teacherProfileId], references: [id], onDelete: Cascade)
 
   @@index([teacherProfileId, weekday])
 }
 
-
-// --- Öğretmenin tatil/blokajları (tekil tarih aralıkları) ---
 model TeacherTimeOff {
   id               String         @id @default(cuid())
   teacherProfileId String
-  teacher          TeacherProfile @relation(fields: [teacherProfileId], references: [id], onDelete: Cascade)
-
-  startsAt         DateTime       // UTC
-  endsAt           DateTime       // UTC
+  startsAt         DateTime
+  endsAt           DateTime
   reason           String?
-
   createdAt        DateTime       @default(now())
+  teacher          TeacherProfile @relation(fields: [teacherProfileId], references: [id], onDelete: Cascade)
 
   @@index([teacherProfileId, startsAt, endsAt])
 }
 
-
-// --- Randevu ---
 model Appointment {
-  id               String          @id @default(cuid())
+  id               String            @id @default(cuid())
   teacherProfileId String
-  teacher          TeacherProfile  @relation(fields: [teacherProfileId], references: [id], onDelete: Cascade)
-
   studentUserId    Int?
-  student          User?           @relation(name: "StudentAppointments", fields: [studentUserId], references: [id], onDelete: SetNull)
-
-
-  startsAt         DateTime        // UTC
-  endsAt           DateTime        // UTC
+  startsAt         DateTime
+  endsAt           DateTime
   mode             LessonMode
   status           AppointmentStatus @default(PENDING)
   price            Int?
   title            String?
   notes            String?
-
-  createdAt        DateTime        @default(now())
-  updatedAt        DateTime        @updatedAt
-
-  reviews          TeacherReview[] @relation("AppointmentReviews")
+  createdAt        DateTime          @default(now())
+  updatedAt        DateTime          @updatedAt
+  student          User?             @relation("StudentAppointments", fields: [studentUserId], references: [id])
+  teacher          TeacherProfile    @relation(fields: [teacherProfileId], references: [id], onDelete: Cascade)
+  reviews          TeacherReview?    @relation("AppointmentReviews")
 
   @@index([teacherProfileId, startsAt])
 }
 
-
 model TeacherLesson {
   id               String         @id @default(cuid())
   teacherProfileId String
+  subject          String
+  topic            String?
+  durationMin      Int            @default(60)
+  priceOnline      Int?
+  priceF2F         Int?
+  isActive         Boolean        @default(true)
+  createdAt        DateTime       @default(now())
+  updatedAt        DateTime       @updatedAt
   teacher          TeacherProfile @relation(fields: [teacherProfileId], references: [id], onDelete: Cascade)
-
-  // Görünüm: “Matematik > Genel Matematik”
-  subject   String                // Ana ders (Matematik)
-  topic     String?               // Alt başlık (Genel Matematik) - opsiyonel
-  durationMin Int                 @default(60)
-
-  priceOnline Int?
-  priceF2F   Int?
-
-  isActive   Boolean              @default(true)
-
-  createdAt  DateTime             @default(now())
-  updatedAt  DateTime             @updatedAt
 
   @@index([teacherProfileId])
   @@index([subject])
   @@index([topic])
 }
 
-
 model StudentLessonRequest {
-  id               String   @id @default(cuid())
+  id               String         @id @default(cuid())
   studentId        Int
-  student          User     @relation(fields: [studentId], references: [id])
   teacherProfileId String
-  teacherProfile   TeacherProfile @relation(fields: [teacherProfileId], references: [id])
-
   subject          String
   grade            String
   mode             RequestMode
@@ -444,24 +364,62 @@ model StudentLessonRequest {
   district         String?
   locationNote     String?
   note             String?
-
-  status           RequestStatus @default(SUBMITTED)
-
+  status           RequestStatus  @default(SUBMITTED)
   packageSlug      String?
   packageTitle     String?
   packageUnitPrice Int?
-
   orderId          Int?
-  order            Order?   @relation("OrderStudentRequest", fields: [orderId], references: [id], onDelete: SetNull)
-
-  createdAt        DateTime @default(now())
-  updatedAt        DateTime @updatedAt
+  createdAt        DateTime       @default(now())
+  updatedAt        DateTime       @updatedAt
+  order            Order?         @relation("OrderStudentRequest", fields: [orderId], references: [id])
+  student          User           @relation(fields: [studentId], references: [id])
+  teacherProfile   TeacherProfile @relation(fields: [teacherProfileId], references: [id])
 
   @@index([studentId])
   @@index([teacherProfileId])
   @@index([status, createdAt])
-  @@index([orderId]) // sorgu performansı için iyi olur
+  @@index([orderId])
 }
+
+model StudentPackageRight {
+  id          String   @id @default(cuid())
+  studentId   Int
+  packageSlug String
+  period      String
+  rightsTotal Int
+  rightsUsed  Int      @default(0)
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@unique([studentId, packageSlug, period], name: "studentId_packageSlug_period")
+}
+
+enum CartStatus {
+  OPEN
+  ORDERED
+  ABANDONED
+}
+
+enum LessonMode {
+  ONLINE
+  FACE_TO_FACE
+  BOTH
+}
+
+enum PublishStatus {
+  DRAFT
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+enum AppointmentStatus {
+  PENDING
+  CONFIRMED
+  CANCELLED
+}
+
 enum RequestMode {
   ONLINE
   FACE_TO_FACE
@@ -473,18 +431,4 @@ enum RequestStatus {
   PACKAGE_SELECTED
   PAID
   CANCELLED
-}
-
-model StudentPackageRight {
-  id           String   @id @default(cuid())
-  studentId    Int
-  packageSlug  String
-  period       String   // "once" | "monthly"
-  rightsTotal  Int
-  rightsUsed   Int      @default(0)
-  isActive     Boolean  @default(true)
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
-
-  @@unique([studentId, packageSlug, period], name: "studentId_packageSlug_period")
 }
