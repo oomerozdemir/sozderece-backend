@@ -432,3 +432,31 @@ enum RequestStatus {
   PAID
   CANCELLED
 }
+
+enum InstructorCategory {
+  PDR_GRADUATE      // PDR Mezunu
+  PDR_STUDENT       // PDR Öğrencisi
+  UNIVERSITY_STUDENT // Üniversite Öğrencisi
+}
+
+model InstructorApplication {
+  id          String              @id @default(cuid())
+  firstName   String
+  lastName    String
+  email       String
+  phone       String
+  birthDate   DateTime?
+  category    InstructorCategory
+  university  String?
+  department  String?
+  ranking     String?             // YKS Derecesi
+  message     String?             @db.Text
+  cvUrl       String?             // Cloudinary URL
+  status      String              @default("PENDING") // PENDING, REVIEWED, ACCEPTED, REJECTED
+  createdAt   DateTime            @default(now())
+  updatedAt   DateTime            @updatedAt
+
+  @@index([email])
+  @@index([status])
+  @@index([createdAt])
+}
