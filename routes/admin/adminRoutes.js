@@ -8,6 +8,7 @@ import upload from "../../middleware/upload.js";
 import { sendExpiringOrderReminders } from "../../controllers/reminder.controller.js";
 import { createCoachWithUser, getAllCoaches, updateCoach, deleteCoach, assignCoachToUser } from "../../controllers/adminCoach.controller.js";
 import { listTeacherPublishRequests, approveTeacherPublish, rejectTeacherPublish, getTeacherRequestSummary } from "../../controllers/AdminTeacher.controller.js";
+import { updateCountdown } from "../../controllers/siteSettings.controller.js";
 
 const prisma = new PrismaClient();
 
@@ -139,4 +140,7 @@ router.get("/orders/export", authenticateToken, authorizeRoles("admin"), async (
   }
 });
 
-export default router; 
+// Site ayarları - Countdown
+router.put("/settings/countdown", authenticateToken, authorizeRoles("admin"), updateCountdown);
+
+export default router;

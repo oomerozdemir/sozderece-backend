@@ -460,3 +460,9 @@ model InstructorApplication {
   @@index([status])
   @@index([createdAt])
 }
+model SiteSettings {
+  id        Int      @id @default(autoincrement())
+  key       String   @unique
+  value     String   @db.Text
+  updatedAt DateTime @updatedAt
+}
