@@ -134,6 +134,8 @@ model BillingInfo {
   phone       String
   allowEmails Boolean
   tcNo        String?
+  sinif       String?
+  alan        String?
   orders      Order[] @relation("BillingToOrder")
 }
 
