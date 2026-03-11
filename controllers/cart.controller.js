@@ -8,15 +8,22 @@ export const addToCart = async (req, res) => {
     const userId = req.user?.id ?? null;   // login ise
     const email  = emailFromBody ?? null;  // guest için
 
-    if (!slug || !title || unitPrice == null) {
-      return res.status(400).json({ success: false, message: "slug, title ve unitPrice zorunludur." });
+    if (!slug || !title) {
+      return res.status(400).json({ success: false, message: "slug ve title zorunludur." });
     }
     if (!userId && !email) {
       return res.status(400).json({ success: false, message: "Giriş yapın ya da email gönderin." });
     }
 
     const qty = Number(quantity) || 1;
-    const priceInt = Number(unitPrice);
+
+    // Fiyatı DB'deki güncel paketten al (eğer bu slug bir koçluk paketiyle eşleşiyorsa)
+    let priceInt = Number(unitPrice);
+    const dbPkg = await prisma.package.findUnique({ where: { slug } });
+    if (dbPkg && dbPkg.unitPrice != null) {
+      priceInt = dbPkg.unitPrice;
+    }
+
     if (!Number.isInteger(priceInt) || priceInt < 0) {
       return res.status(400).json({ success: false, message: "unitPrice kuruş cinsinden pozitif tamsayı olmalıdır." });
     }
@@ -42,12 +49,12 @@ export const addToCart = async (req, res) => {
       });
     }
 
-    // Aynı ürün varsa miktarı artır; yoksa oluştur
+    // Aynı ürün varsa fiyatı ve miktarı güncelle; yoksa oluştur
     const existing = cart.items.find((i) => i.slug === slug);
     if (existing) {
       await prisma.cartItem.update({
         where: { id: existing.id },
-        data: { quantity: existing.quantity + qty },
+        data: { quantity: existing.quantity + qty, unitPrice: priceInt, title },
       });
     } else {
       await prisma.cartItem.create({
