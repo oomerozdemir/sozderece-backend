@@ -91,10 +91,25 @@ model Order {
 }
 
 model Package {
-  id          Int    @id @default(autoincrement())
-  name        String
-  description String
-  price       Float
+  id            Int      @id @default(autoincrement())
+  slug          String   @unique
+  name          String
+  description   String
+  price         Float
+  unitPrice     Int?
+  priceText     String?
+  oldPriceText  String?
+  subtitle      String?
+  type          String?
+  hidden        Boolean  @default(false)
+  displayOrder  Int      @default(0)
+  ctaLabel      String?
+  ctaHref       String?
+  features      Json     @default("[]")
+  note          String?
+  freeLessons   Int?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
 }
 
 model Cart {

@@ -9,6 +9,7 @@ import { sendExpiringOrderReminders } from "../../controllers/reminder.controlle
 import { createCoachWithUser, getAllCoaches, updateCoach, deleteCoach, assignCoachToUser } from "../../controllers/adminCoach.controller.js";
 import { listTeacherPublishRequests, approveTeacherPublish, rejectTeacherPublish, getTeacherRequestSummary } from "../../controllers/AdminTeacher.controller.js";
 import { updateCountdown } from "../../controllers/siteSettings.controller.js";
+import { getAllPackages, createPackage, updatePackage, togglePackageVisibility, deletePackage } from "../../controllers/package.controller.js";
 
 const prisma = new PrismaClient();
 
@@ -142,5 +143,15 @@ router.get("/orders/export", authenticateToken, authorizeRoles("admin"), async (
 
 // Site ayarları - Countdown
 router.put("/settings/countdown", authenticateToken, authorizeRoles("admin"), updateCountdown);
+
+// Paket yönetimi
+router.get("/packages", authenticateToken, authorizeRoles("admin"), (req, res, next) => {
+  req.query.all = "true";
+  next();
+}, getAllPackages);
+router.post("/packages", authenticateToken, authorizeRoles("admin"), createPackage);
+router.put("/packages/:id", authenticateToken, authorizeRoles("admin"), updatePackage);
+router.patch("/packages/:id/toggle-visibility", authenticateToken, authorizeRoles("admin"), togglePackageVisibility);
+router.delete("/packages/:id", authenticateToken, authorizeRoles("admin"), deletePackage);
 
 export default router;
