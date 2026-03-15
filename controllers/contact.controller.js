@@ -38,7 +38,16 @@ export const createContact = async (req, res) => {
       }
     });
 
-    // 3. Yöneticiye (Sana) Mail Gönder
+    // 3. Randevu slotunu otomatik olarak dolu işaretle
+    if (meetingDate && meetingTime) {
+      await prisma.consultationSlot.upsert({
+        where: { date_timeSlot: { date: meetingDate, timeSlot: meetingTime } },
+        update: { isBlocked: true },
+        create: { date: meetingDate, timeSlot: meetingTime, isBlocked: true },
+      });
+    }
+
+    // 4. Yöneticiye (Sana) Mail Gönder
     const mailOptions = {
       from: `"Sözderece Web" <${process.env.EMAIL_USER}>`,
       to: process.env.EMAIL_USER, // Mail sana gelecek
@@ -67,7 +76,7 @@ export const createContact = async (req, res) => {
     transporter.sendMail(mailOptions).catch(err => console.error("Mail gönderme hatası:", err));
 
 
-     // 4. FACEBOOK CONVERSION API (Server-Side Tracking) - BU KISIM EKSİKTİ
+     // 5. FACEBOOK CONVERSION API (Server-Side Tracking) - BU KISIM EKSİKTİ
     if (process.env.FACEBOOK_ACCESS_TOKEN && process.env.FACEBOOK_PIXEL_ID) {
         
         // Telefon numarasını temizle (sadece rakam kalsın) ve şifrele
