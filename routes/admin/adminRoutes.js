@@ -10,6 +10,7 @@ import { createCoachWithUser, getAllCoaches, updateCoach, deleteCoach, assignCoa
 import { listTeacherPublishRequests, approveTeacherPublish, rejectTeacherPublish, getTeacherRequestSummary } from "../../controllers/AdminTeacher.controller.js";
 import { updateCountdown } from "../../controllers/siteSettings.controller.js";
 import { getAllPackages, createPackage, updatePackage, togglePackageVisibility, deletePackage } from "../../controllers/package.controller.js";
+import { getAdminConsultationSlots, toggleConsultationSlot, bulkUpdateConsultationSlots } from "../../controllers/consultationSlot.controller.js";
 
 const prisma = new PrismaClient();
 
@@ -143,6 +144,11 @@ router.get("/orders/export", authenticateToken, authorizeRoles("admin"), async (
 
 // Site ayarları - Countdown
 router.put("/settings/countdown", authenticateToken, authorizeRoles("admin"), updateCountdown);
+
+// Randevu slotu yönetimi (Ücretsiz ön görüşme)
+router.get("/consultation-slots", authenticateToken, authorizeRoles("admin"), getAdminConsultationSlots);
+router.post("/consultation-slots/toggle", authenticateToken, authorizeRoles("admin"), toggleConsultationSlot);
+router.post("/consultation-slots/bulk", authenticateToken, authorizeRoles("admin"), bulkUpdateConsultationSlots);
 
 // Paket yönetimi
 router.get("/packages", authenticateToken, authorizeRoles("admin"), (req, res, next) => {

@@ -19,6 +19,17 @@ model Contact {
   userType    String?
 }
 
+model ConsultationSlot {
+  id        Int      @id @default(autoincrement())
+  date      String   // "2026-03-20" formatında
+  timeSlot  String   // "09:00 - 09:20" formatında
+  isBlocked Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([date, timeSlot])
+}
+
 model TrialMeeting {
   id        Int      @id @default(autoincrement())
   name      String
