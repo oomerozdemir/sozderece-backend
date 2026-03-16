@@ -15,6 +15,14 @@ export const getAllOrdersForAdmin = async (req, res) => {
       },
     });
 
+    const merchantOids = orders.map((o) => o.merchantOid).filter(Boolean);
+    const paymentMetas = await prisma.paymentMeta.findMany({
+      where: { merchantOid: { in: merchantOids } },
+      select: { merchantOid: true, couponCode: true, discountRate: true },
+    });
+    const metaMap = {};
+    paymentMetas.forEach((m) => { metaMap[m.merchantOid] = m; });
+
     const formatted = orders.map((order) => ({
       id: order.id,
       package: order.package,
@@ -27,6 +35,8 @@ export const getAllOrdersForAdmin = async (req, res) => {
       billingInfo: order.billingInfo,
       merchantOid: order.merchantOid,
       totalPrice: order.totalPrice,
+      couponCode: order.merchantOid ? (metaMap[order.merchantOid]?.couponCode || null) : null,
+      discountRate: order.merchantOid ? (metaMap[order.merchantOid]?.discountRate ?? null) : null,
     }));
 
     res.status(200).json(formatted);
@@ -139,7 +149,7 @@ export const updateOrder = async (req, res) => {
 // Fatura bilgilerini güncelle
 export const updateBillingInfo = async (req, res) => {
   const orderId = parseInt(req.params.id);
-  const { name, surname, email, phone, address, city, district, postalCode, allowEmails } = req.body;
+  const { name, surname, email, phone, address, city, district, postalCode, tcNo, allowEmails } = req.body;
 
   try {
     const updatedOrder = await prisma.order.update({
@@ -155,6 +165,7 @@ export const updateBillingInfo = async (req, res) => {
             city,
             district,
             postalCode,
+            tcNo,
             allowEmails,
           },
         },
