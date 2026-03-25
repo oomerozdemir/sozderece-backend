@@ -22,7 +22,7 @@ export const createPackage = async (req, res) => {
       slug, name, description, price, unitPrice, priceText, oldPriceText,
       subtitle, type, hidden, displayOrder, ctaLabel, ctaHref, features, note, freeLessons,
       promoPrice, promoUnitPrice, promoEndDate, promoLabel,
-      examDate, examDiscountRate,
+      examDate, examDiscountRate, plans,
     } = req.body;
 
     if (!slug || !name) {
@@ -53,6 +53,7 @@ export const createPackage = async (req, res) => {
         promoLabel: promoLabel || null,
         examDate: examDate ? new Date(examDate) : null,
         examDiscountRate: examDiscountRate !== undefined && examDiscountRate !== "" ? parseFloat(examDiscountRate) : null,
+        plans: Array.isArray(plans) ? plans : [],
       },
     });
     res.status(201).json({ success: true, package: created });
@@ -70,7 +71,7 @@ export const updatePackage = async (req, res) => {
       slug, name, description, price, unitPrice, priceText, oldPriceText,
       subtitle, type, hidden, displayOrder, ctaLabel, ctaHref, features, note, freeLessons,
       promoPrice, promoUnitPrice, promoEndDate, promoLabel,
-      examDate, examDiscountRate,
+      examDate, examDiscountRate, plans,
     } = req.body;
 
     const updated = await prisma.package.update({
@@ -98,6 +99,7 @@ export const updatePackage = async (req, res) => {
         ...(promoLabel !== undefined && { promoLabel: promoLabel || null }),
         ...(examDate !== undefined && { examDate: examDate ? new Date(examDate) : null }),
         ...(examDiscountRate !== undefined && { examDiscountRate: examDiscountRate !== "" ? parseFloat(examDiscountRate) : null }),
+        ...(plans !== undefined && { plans: Array.isArray(plans) ? plans : [] }),
       },
     });
     res.json({ success: true, package: updated });

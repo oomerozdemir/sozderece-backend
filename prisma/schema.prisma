@@ -125,6 +125,7 @@ model Package {
   promoLabel        String?
   examDate          DateTime?
   examDiscountRate  Float?
+  plans             Json     @default("[]")
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
 }

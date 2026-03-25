@@ -4,7 +4,7 @@ import prisma from "../utils/prisma.js";
 /** ✅ 1) Sepete ürün ekleme / güncelleme */
 export const addToCart = async (req, res) => {
   try {
-    const { slug, title, unitPrice, quantity = 1, email: emailFromBody } = req.body;
+    const { slug, title, unitPrice, quantity = 1, email: emailFromBody, planIndex } = req.body;
     const userId = req.user?.id ?? null;   // login ise
     const email  = emailFromBody ?? null;  // guest için
 
@@ -17,12 +17,17 @@ export const addToCart = async (req, res) => {
 
     const qty = Number(quantity) || 1;
 
-    // Fiyatı DB'deki güncel paketten al — öncelik: sınav > statik promo > normal
+    // Fiyatı DB'deki güncel paketten al — öncelik: plan > sınav > statik promo > normal
     let priceInt = Number(unitPrice);
     const dbPkg = await prisma.package.findUnique({ where: { slug } });
     if (dbPkg) {
+      // 0) Çoklu plan seçimi
+      const pkgPlans = Array.isArray(dbPkg.plans) ? dbPkg.plans : [];
+      const selectedPlan = planIndex !== undefined ? pkgPlans[parseInt(planIndex)] : null;
+      if (selectedPlan && selectedPlan.unitPrice) {
+        priceInt = selectedPlan.unitPrice;
       // 1) Sınava özel dinamik fiyat
-      if (dbPkg.examDate && new Date(dbPkg.examDate) > new Date()) {
+      } else if (dbPkg.examDate && new Date(dbPkg.examDate) > new Date()) {
         const today = new Date();
         today.setHours(0, 0, 0, 0);
         const daysLeft = Math.ceil((new Date(dbPkg.examDate) - today) / (1000 * 60 * 60 * 24));

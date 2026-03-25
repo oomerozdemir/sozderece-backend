@@ -29,6 +29,23 @@ export const authenticateToken = (req, res, next) => {
 };
 
 /**
+ * Opsiyonel token doğrulaması.
+ * Token varsa req.user set edilir; yoksa veya geçersizse 401 dönmez, devam eder.
+ */
+export const optionalAuth = (req, res, next) => {
+  const authHeader = req.headers.authorization;
+  if (authHeader && authHeader.startsWith("Bearer ")) {
+    const token = authHeader.split(" ")[1];
+    try {
+      req.user = jwt.verify(token, process.env.JWT_SECRET);
+    } catch {
+      // geçersiz token — guest olarak devam et
+    }
+  }
+  return next();
+};
+
+/**
  * Rol tabanlı yetki kontrolü.
  * Örn: authorizeRoles("admin", "coach")
  */
