@@ -17,16 +17,26 @@ export const addToCart = async (req, res) => {
 
     const qty = Number(quantity) || 1;
 
-    // Fiyatı DB'deki güncel paketten al (eğer bu slug bir koçluk paketiyle eşleşiyorsa)
+    // Fiyatı DB'deki güncel paketten al — öncelik: sınav > statik promo > normal
     let priceInt = Number(unitPrice);
     const dbPkg = await prisma.package.findUnique({ where: { slug } });
-    if (dbPkg && dbPkg.unitPrice != null) {
-      const promoActive = dbPkg.promoPrice &&
-        dbPkg.promoEndDate &&
-        new Date(dbPkg.promoEndDate) > new Date();
-      priceInt = promoActive && dbPkg.promoUnitPrice != null
-        ? dbPkg.promoUnitPrice
-        : dbPkg.unitPrice;
+    if (dbPkg) {
+      // 1) Sınava özel dinamik fiyat
+      if (dbPkg.examDate && new Date(dbPkg.examDate) > new Date()) {
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+        const daysLeft = Math.ceil((new Date(dbPkg.examDate) - today) / (1000 * 60 * 60 * 24));
+        const rate = dbPkg.examDiscountRate ?? 5;
+        const totalTL = (daysLeft / 30) * dbPkg.price;
+        const discountedTL = totalTL * (1 - rate / 100);
+        priceInt = Math.round(discountedTL * 100); // kuruşa çevir
+      // 2) Statik promo fiyat
+      } else if (dbPkg.promoPrice && dbPkg.promoEndDate && new Date(dbPkg.promoEndDate) > new Date() && dbPkg.promoUnitPrice != null) {
+        priceInt = dbPkg.promoUnitPrice;
+      // 3) Normal fiyat
+      } else if (dbPkg.unitPrice != null) {
+        priceInt = dbPkg.unitPrice;
+      }
     }
 
     if (!Number.isInteger(priceInt) || priceInt < 0) {

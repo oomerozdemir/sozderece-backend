@@ -123,6 +123,8 @@ model Package {
   promoUnitPrice    Int?
   promoEndDate      DateTime?
   promoLabel        String?
+  examDate          DateTime?
+  examDiscountRate  Float?
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
 }
