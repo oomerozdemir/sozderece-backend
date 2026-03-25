@@ -119,6 +119,10 @@ model Package {
   features      Json     @default("[]")
   note          String?
   freeLessons   Int?
+  promoPrice        Float?
+  promoUnitPrice    Int?
+  promoEndDate      DateTime?
+  promoLabel        String?
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
 }

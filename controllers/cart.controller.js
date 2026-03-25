@@ -21,7 +21,12 @@ export const addToCart = async (req, res) => {
     let priceInt = Number(unitPrice);
     const dbPkg = await prisma.package.findUnique({ where: { slug } });
     if (dbPkg && dbPkg.unitPrice != null) {
-      priceInt = dbPkg.unitPrice;
+      const promoActive = dbPkg.promoPrice &&
+        dbPkg.promoEndDate &&
+        new Date(dbPkg.promoEndDate) > new Date();
+      priceInt = promoActive && dbPkg.promoUnitPrice != null
+        ? dbPkg.promoUnitPrice
+        : dbPkg.unitPrice;
     }
 
     if (!Number.isInteger(priceInt) || priceInt < 0) {

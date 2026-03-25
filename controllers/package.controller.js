@@ -21,6 +21,7 @@ export const createPackage = async (req, res) => {
     const {
       slug, name, description, price, unitPrice, priceText, oldPriceText,
       subtitle, type, hidden, displayOrder, ctaLabel, ctaHref, features, note, freeLessons,
+      promoPrice, promoUnitPrice, promoEndDate, promoLabel,
     } = req.body;
 
     if (!slug || !name) {
@@ -45,6 +46,10 @@ export const createPackage = async (req, res) => {
         features: features || [],
         note: note || null,
         freeLessons: freeLessons ? parseInt(freeLessons) : null,
+        promoPrice: promoPrice ? parseFloat(promoPrice) : null,
+        promoUnitPrice: promoUnitPrice ? parseInt(promoUnitPrice) : null,
+        promoEndDate: promoEndDate ? new Date(promoEndDate) : null,
+        promoLabel: promoLabel || null,
       },
     });
     res.status(201).json({ success: true, package: created });
@@ -61,6 +66,7 @@ export const updatePackage = async (req, res) => {
     const {
       slug, name, description, price, unitPrice, priceText, oldPriceText,
       subtitle, type, hidden, displayOrder, ctaLabel, ctaHref, features, note, freeLessons,
+      promoPrice, promoUnitPrice, promoEndDate, promoLabel,
     } = req.body;
 
     const updated = await prisma.package.update({
@@ -82,6 +88,10 @@ export const updatePackage = async (req, res) => {
         ...(features !== undefined && { features }),
         ...(note !== undefined && { note }),
         ...(freeLessons !== undefined && { freeLessons: freeLessons ? parseInt(freeLessons) : null }),
+        ...(promoPrice !== undefined && { promoPrice: promoPrice ? parseFloat(promoPrice) : null }),
+        ...(promoUnitPrice !== undefined && { promoUnitPrice: promoUnitPrice ? parseInt(promoUnitPrice) : null }),
+        ...(promoEndDate !== undefined && { promoEndDate: promoEndDate ? new Date(promoEndDate) : null }),
+        ...(promoLabel !== undefined && { promoLabel: promoLabel || null }),
       },
     });
     res.json({ success: true, package: updated });
