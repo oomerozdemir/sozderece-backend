@@ -501,3 +501,21 @@ model SiteSettings {
   value     String   @db.Text
   updatedAt DateTime @updatedAt
 }
+
+model CampPage {
+  id        Int      @id @default(autoincrement())
+  key       String   @unique
+  value     Json
+  updatedAt DateTime @updatedAt
+}
+
+model CampApplication {
+  id        Int      @id @default(autoincrement())
+  firstName String
+  lastName  String
+  phone     String
+  email     String
+  grade     String
+  type      String   @default("free")
+  createdAt DateTime @default(now())
+}
