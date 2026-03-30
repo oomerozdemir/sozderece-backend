@@ -12,6 +12,11 @@ const DEFAULT_CONTENT = {
     subtitle: "Eğer her gün masa başına oturup kalkıyorsun ama denemende hâlâ aynı yerdesin, sorun motivasyon değil — plan.",
     videoUrl: "",
     buttonText: "Yerini Ayırt",
+    chip1: "✅ Sınava Kadar Takip",
+    chip2: "🎯 Kontenjan Dolmadan Kayıt Ol",
+    socialProofText: "+124 Mutlu Öğrenci",
+    socialProofAvatars: ["#3b82f6", "#10b981", "#f59e0b", "#ef4444", "#8b5cf6"],
+    highlightPhrase: "Sözderece ile",
   },
   painPoints: {
     title: "Bu sen misin?",
@@ -30,6 +35,7 @@ const DEFAULT_CONTENT = {
       { week: "2–3. Hafta", title: "Deneme Analizi Döngüsü", desc: "Her denemeden sonra koçunla analiz, yanlış konu tespiti, öncelik sıralaması." },
       { week: "Her Hafta", title: "Plan Güncelleme", desc: "Haftalık program güncelleme, motivasyon desteği, veli bilgilendirmesi." },
     ],
+    comparisonTitle: "Neden Sözderece?",
     comparison: [
       { feature: "Günlük WhatsApp Takibi", sozderece: true, dershane: false, tekli: false },
       { feature: "Deneme Analizi", sozderece: true, dershane: false, tekli: true },
@@ -38,6 +44,8 @@ const DEFAULT_CONTENT = {
       { feature: "Veli Bilgilendirmesi", sozderece: true, dershane: false, tekli: false },
       { feature: "Haftalık Görüşme", sozderece: true, dershane: false, tekli: true },
     ],
+    comparisonRating: "★★★★★ 4.7",
+    comparisonCTAText: "Hemen Kayıt Ol",
   },
   testimonials: {
     title: "Kanıtlanmış Sonuçlar",
@@ -57,6 +65,10 @@ const DEFAULT_CONTENT = {
     price: "2500",
     maxQuota: 10,
     yksDate: "2026-06-15",
+    plans: [
+      { label: "Aylık", price: "850", priceText: "/ ay", desc: "Esnek, istediğinde iptal", badge: null },
+      { label: "Sınava Kadar", price: "2500", priceText: "toplam", desc: "12 haftaya kadar tam destek", badge: "En İyi Değer" },
+    ],
     includes: [
       "Sınava kadar haftalık koç görüşmesi",
       "7/24 WhatsApp takibi",
@@ -66,13 +78,27 @@ const DEFAULT_CONTENT = {
     ],
     guarantees: ["5 gün koşulsuz iade", "Güvenli iletişim", "Derece koç desteği"],
   },
+  form: {
+    title: "Yerini Şimdi Ayırt",
+    subtitle: "Kontenjan dolmadan başvurunu tamamla. Ücretsiz ön görüşme ile başla.",
+    freeButtonText: "🆓 Ücretsiz Görüşme",
+    freeButtonSub: "Tanışalım, ihtiyacını anlayalım",
+    paidButtonText: "💳 Hemen Başla",
+    successTitle: "Başvurun Alındı!",
+    successText: "En kısa sürede seninle iletişime geçeceğiz.",
+  },
 };
 
 export const getCampContent = async (req, res) => {
   try {
-    const record = await prisma.campPage.findUnique({ where: { key: "content" } });
+    const [record, appCount] = await Promise.all([
+      prisma.campPage.findUnique({ where: { key: "content" } }),
+      prisma.campApplication.count(),
+    ]);
     const content = record ? record.value : DEFAULT_CONTENT;
-    return res.json(content);
+    const maxQuota = content?.offer?.maxQuota || 10;
+    const remainingQuota = Math.max(0, maxQuota - appCount);
+    return res.json({ ...content, _quota: { total: appCount, maxQuota, remainingQuota } });
   } catch (err) {
     console.error("getCampContent error:", err);
     return res.status(500).json({ success: false, message: "Sunucu hatası" });
