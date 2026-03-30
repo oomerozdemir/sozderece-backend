@@ -8,7 +8,8 @@ const DEFAULT_CONTENT = {
   slug: "deneme-kampi",
   name: "Deneme Kampı",
   hero: {
-    title: "Denemeler Artık Seni Korkutmasın — Sınava Kadar Her Şey Kontrol Altında",
+    title: "Denemeler Artık Seni Korkutmasın —",
+    titleLine2: "Sınava Kadar Her Şey Kontrol Altında",
     subtitle: "Eğer her gün masa başına oturup kalkıyorsun ama denemende hâlâ aynı yerdesin, sorun motivasyon değil — plan.",
     videoUrl: "",
     buttonText: "Yerini Ayırt",
@@ -17,6 +18,10 @@ const DEFAULT_CONTENT = {
     socialProofText: "+124 Mutlu Öğrenci",
     socialProofAvatars: ["#3b82f6", "#10b981", "#f59e0b", "#ef4444", "#8b5cf6"],
     highlightPhrase: "Sözderece ile",
+    ctaBadges: [
+      { text: "+124 Mutlu Öğrenci", icon: "👥" },
+      { text: "★★★★★ 4.7 Puan", icon: "" },
+    ],
   },
   painPoints: {
     title: "Bu sen misin?",
@@ -66,8 +71,28 @@ const DEFAULT_CONTENT = {
     maxQuota: 10,
     yksDate: "2026-06-15",
     plans: [
-      { label: "Aylık", price: "850", priceText: "/ ay", desc: "Esnek, istediğinde iptal", badge: null },
-      { label: "Sınava Kadar", price: "2500", priceText: "toplam", desc: "12 haftaya kadar tam destek", badge: "En İyi Değer" },
+      {
+        label: "Aylık",
+        price: "850",
+        oldPrice: "",
+        priceText: "/ ay",
+        desc: "Esnek, istediğinde iptal",
+        badge: "",
+        isFeatured: false,
+        ctaText: "Aylık Başla",
+        includes: [],
+      },
+      {
+        label: "Sınava Kadar",
+        price: "2500",
+        oldPrice: "3200",
+        priceText: "toplam",
+        desc: "12 haftaya kadar tam destek",
+        badge: "En İyi Değer",
+        isFeatured: true,
+        ctaText: "Hemen Başla",
+        includes: [],
+      },
     ],
     includes: [
       "Sınava kadar haftalık koç görüşmesi",
@@ -77,6 +102,7 @@ const DEFAULT_CONTENT = {
       "Veli bilgilendirmesi",
     ],
     guarantees: ["5 gün koşulsuz iade", "Güvenli iletişim", "Derece koç desteği"],
+    ctaButtonText: "Hemen Başla",
   },
   form: {
     title: "Yerini Şimdi Ayırt",
