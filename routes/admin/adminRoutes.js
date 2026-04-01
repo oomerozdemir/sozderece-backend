@@ -8,7 +8,7 @@ import upload from "../../middleware/upload.js";
 import { sendExpiringOrderReminders } from "../../controllers/reminder.controller.js";
 import { createCoachWithUser, getAllCoaches, updateCoach, deleteCoach, assignCoachToUser } from "../../controllers/adminCoach.controller.js";
 import { listTeacherPublishRequests, approveTeacherPublish, rejectTeacherPublish, getTeacherRequestSummary } from "../../controllers/AdminTeacher.controller.js";
-import { updateCountdown, updatePopup } from "../../controllers/siteSettings.controller.js";
+import { updateCountdown, updatePopup, updatePaymentPageSettings } from "../../controllers/siteSettings.controller.js";
 import { getAllPackages, createPackage, updatePackage, togglePackageVisibility, deletePackage } from "../../controllers/package.controller.js";
 import { getAdminConsultationSlots, toggleConsultationSlot, bulkUpdateConsultationSlots } from "../../controllers/consultationSlot.controller.js";
 
@@ -147,6 +147,9 @@ router.put("/settings/countdown", authenticateToken, authorizeRoles("admin"), up
 
 // Site ayarları - Popup
 router.put("/settings/popup", authenticateToken, authorizeRoles("admin"), updatePopup);
+
+// Site ayarları - Ödeme Sayfası
+router.put("/settings/payment-page", authenticateToken, authorizeRoles("admin"), updatePaymentPageSettings);
 
 // Randevu slotu yönetimi (Ücretsiz ön görüşme)
 router.get("/consultation-slots", authenticateToken, authorizeRoles("admin"), getAdminConsultationSlots);
