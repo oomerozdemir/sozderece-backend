@@ -1,0 +1,122 @@
+import prisma from "../utils/prisma.js";
+import { sendEmail } from "../utils/sendEmail.js";
+
+const LGS_SETTINGS_KEY = "lgsSettings";
+const DEFAULT_MAX_QUOTA = 10;
+
+export const getLgsSettings = async (req, res) => {
+  try {
+    const [settingRecord, appCount] = await Promise.all([
+      prisma.siteSettings.findUnique({ where: { key: LGS_SETTINGS_KEY } }),
+      prisma.lgsApplication.count(),
+    ]);
+    const settings = settingRecord ? JSON.parse(settingRecord.value) : { maxQuota: DEFAULT_MAX_QUOTA };
+    const maxQuota = settings.maxQuota || DEFAULT_MAX_QUOTA;
+    const remainingQuota = Math.max(0, maxQuota - appCount);
+    return res.json({ maxQuota, remainingQuota, totalApplications: appCount });
+  } catch (err) {
+    console.error("getLgsSettings error:", err);
+    return res.status(500).json({ message: "Sunucu hatası" });
+  }
+};
+
+export const updateLgsSettings = async (req, res) => {
+  try {
+    const { maxQuota } = req.body;
+    const value = JSON.stringify({ maxQuota: parseInt(maxQuota) || DEFAULT_MAX_QUOTA });
+    await prisma.siteSettings.upsert({
+      where: { key: LGS_SETTINGS_KEY },
+      update: { value },
+      create: { key: LGS_SETTINGS_KEY, value },
+    });
+    return res.json({ success: true });
+  } catch (err) {
+    console.error("updateLgsSettings error:", err);
+    return res.status(500).json({ message: "Sunucu hatası" });
+  }
+};
+
+export const submitLgsApplication = async (req, res) => {
+  try {
+    const { name, phone, grade, message, type = "call" } = req.body;
+
+    if (!name || !phone || !grade) {
+      return res.status(400).json({ success: false, message: "Ad, telefon ve sınıf zorunludur." });
+    }
+    const cleanPhone = phone.replace(/\D/g, "");
+    if (cleanPhone.length < 10) {
+      return res.status(400).json({ success: false, message: "Geçerli bir telefon numarası giriniz." });
+    }
+
+    const application = await prisma.lgsApplication.create({
+      data: { name, phone: cleanPhone, grade, message: message || null, type },
+    });
+
+    const adminEmail = process.env.ADMIN_EMAIL || "iletisim@sozderecekocluk.com";
+    const html = `
+      <div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;background:#f8f9fa;padding:20px;border-radius:12px">
+        <div style="background:#100481;color:white;padding:24px;border-radius:10px 10px 0 0;text-align:center">
+          <h2 style="margin:0;font-size:22px">📚 Yeni LGS Hazırlık Başvurusu</h2>
+        </div>
+        <div style="background:white;padding:24px;border-radius:0 0 10px 10px">
+          <div style="background:#eff6ff;border:1px solid #93c5fd;color:#1e40af;font-weight:bold;text-align:center;padding:10px 16px;border-radius:8px;margin-bottom:20px;font-size:14px">📞 GERİ ARAMA TALEBİ</div>
+          <table style="width:100%;border-collapse:collapse">
+            <tr style="background:#f1f5f9"><td style="padding:10px 14px;font-weight:bold;color:#374151;width:40%">Ad Soyad</td><td style="padding:10px 14px;color:#111827">${name}</td></tr>
+            <tr><td style="padding:10px 14px;font-weight:bold;color:#374151">Telefon</td><td style="padding:10px 14px;color:#111827">${phone}</td></tr>
+            <tr style="background:#f1f5f9"><td style="padding:10px 14px;font-weight:bold;color:#374151">Sınıf</td><td style="padding:10px 14px;color:#111827">${grade}</td></tr>
+            ${message ? `<tr><td style="padding:10px 14px;font-weight:bold;color:#374151">Mesaj</td><td style="padding:10px 14px;color:#111827">${message}</td></tr>` : ""}
+          </table>
+          <p style="font-size:12px;color:#9ca3af;margin-top:20px;text-align:center">Başvuru No: #${application.id} — ${new Date().toLocaleString("tr-TR")}</p>
+        </div>
+      </div>
+    `;
+
+    try {
+      await sendEmail({
+        to: adminEmail,
+        subject: `[Sözderece] Yeni LGS Başvurusu — ${name}`,
+        html,
+      });
+    } catch (mailErr) {
+      console.error("LGS başvuru maili gönderilemedi:", mailErr.message);
+    }
+
+    return res.status(201).json({ success: true, message: "Başvurunuz alındı, en kısa sürede sizi arayacağız." });
+  } catch (err) {
+    console.error("submitLgsApplication error:", err);
+    return res.status(500).json({ success: false, message: "Sunucu hatası" });
+  }
+};
+
+export const listLgsApplications = async (req, res) => {
+  try {
+    const [applications, settingRecord] = await Promise.all([
+      prisma.lgsApplication.findMany({ orderBy: { createdAt: "desc" } }),
+      prisma.siteSettings.findUnique({ where: { key: LGS_SETTINGS_KEY } }),
+    ]);
+    const settings = settingRecord ? JSON.parse(settingRecord.value) : { maxQuota: DEFAULT_MAX_QUOTA };
+    const maxQuota = settings.maxQuota || DEFAULT_MAX_QUOTA;
+    const remainingQuota = Math.max(0, maxQuota - applications.length);
+    return res.json({ success: true, applications, total: applications.length, maxQuota, remainingQuota });
+  } catch (err) {
+    console.error("listLgsApplications error:", err);
+    return res.status(500).json({ success: false, message: "Sunucu hatası" });
+  }
+};
+
+export const exportLgsCsv = async (req, res) => {
+  try {
+    const applications = await prisma.lgsApplication.findMany({ orderBy: { createdAt: "desc" } });
+    const header = "ID,Ad Soyad,Telefon,Sınıf,Mesaj,Tür,Tarih";
+    const rows = applications.map((a) =>
+      [a.id, `"${a.name}"`, a.phone, a.grade, `"${a.message || ""}"`, a.type, new Date(a.createdAt).toLocaleString("tr-TR")].join(",")
+    );
+    const csv = [header, ...rows].join("\n");
+    res.setHeader("Content-Type", "text/csv; charset=utf-8");
+    res.setHeader("Content-Disposition", "attachment; filename=lgs-applications.csv");
+    return res.send("\uFEFF" + csv);
+  } catch (err) {
+    console.error("exportLgsCsv error:", err);
+    return res.status(500).json({ success: false, message: "Sunucu hatası" });
+  }
+};

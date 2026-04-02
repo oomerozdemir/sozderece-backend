@@ -519,3 +519,13 @@ model CampApplication {
   type      String   @default("free")
   createdAt DateTime @default(now())
 }
+
+model LgsApplication {
+  id        Int      @id @default(autoincrement())
+  name      String
+  phone     String
+  grade     String
+  message   String?
+  type      String   @default("call")
+  createdAt DateTime @default(now())
+}

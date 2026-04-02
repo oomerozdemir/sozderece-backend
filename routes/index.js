@@ -18,6 +18,7 @@ import studentRequestRouter from "./public/studentRequest.routes.js";
 import applicationRoutes from "./public/application.routes.js";
 import settingsRoutes from "./public/settings.routes.js";
 import campPageRoutes from "./public/campPage.routes.js";
+import lgsApplicationRoutes from "./public/lgsApplication.routes.js";
 
 
 // 🔐 Admin routes
@@ -44,6 +45,7 @@ router.use("/v1/student-requests", studentRequestRouter);
 router.use("/v1/applications", applicationRoutes);
 router.use("/settings", settingsRoutes);
 router.use("/", campPageRoutes);
+router.use("/", lgsApplicationRoutes);
 
 
 
