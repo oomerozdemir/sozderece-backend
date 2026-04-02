@@ -2,7 +2,108 @@ import prisma from "../utils/prisma.js";
 import { sendEmail } from "../utils/sendEmail.js";
 
 const LGS_SETTINGS_KEY = "lgsSettings";
+const LGS_CONTENT_KEY = "lgsContent";
 const DEFAULT_MAX_QUOTA = 10;
+
+const DEFAULT_LGS_CONTENT = {
+  lgsDate: "2026-06-14",
+  hero: {
+    subtitle: "Her gün yanında biri var — koçu, planı, sistemi.",
+    chip1: "📅 LGS'ye kadar günlük takip",
+    chip2: "👨‍👩‍👧 Haftalık veli raporu",
+    ctaPrimary: "⚡ Yerimi Şimdi Ayırt →",
+    ctaSecondary: "📞 Önce Konuşalım",
+    navbarCta: "Yerimi Ayırt →",
+  },
+  painPoints: {
+    title: "Tanıdık geliyor mu?",
+    subtitle: "Pek çok velinin yaşadığı sorunlar — çözümsüz değil.",
+    items: [
+      { emoji: "📚", title: "Çalışıyor ama sonuç alamıyor", desc: "Masa başında saatler geçiyor, denemeler yerinde sayıyor." },
+      { emoji: "📱", title: "Telefonu bir türlü bıraktıramıyorsunuz", desc: "Her 20 dakikada bir telefon, her seferinde sıfırdan başlıyor." },
+      { emoji: "🤷", title: "Ödevleri yapıp yapmadığını bilemiyorsunuz", desc: "Yaptım diyor ama emin olamıyorsunuz." },
+      { emoji: "❓", title: "LGS'ye nasıl hazırlanılır bilmiyorsunuz", desc: "Hangi kaynak, hangi konu, ne kadar süre — cevabı yok." },
+      { emoji: "😔", title: "Stres ve motivasyon iniş çıkış", desc: "Bir gün hevesli, ertesi gün hiç çalışmak istemiyor." },
+    ],
+  },
+  howItWorks: {
+    steps: [
+      { title: "Çocuğunuzu tanıyoruz", desc: "Hangi konular zayıf, nerede takılıyor, asıl sorun ne. Bunu anlamadan plan kurmak işe yaramıyor." },
+      { title: "Günlük plan, günlük takip", desc: "Her gün ne çalışacağı belli. Telefon kullanımı da planlanıyor. Ödevler takip ediliyor." },
+      { title: "Sizi de bilgilendiriyoruz", desc: "Haftalık ilerleme raporu veliye. Çocuğunuzun sürecini uzaktan görebiliyorsunuz." },
+    ],
+    comparisonTitle: "Neden Sözderece?",
+    comparisonCta: "Hemen Kayıt Ol →",
+    comparison: [
+      { label: "Günlük plan" },
+      { label: "Deneme analizi" },
+      { label: "Telefon yönetimi" },
+      { label: "Veli bilgilendirmesi" },
+      { label: "Motivasyon takibi" },
+    ],
+  },
+  socialProof: {
+    title: "Sadece söz değil —",
+    titleAccent: "aileler konuşuyor",
+    stats: [
+      { val: "21", label: "Aktif öğrenci" },
+      { val: "📋", label: "Haftalık veli raporu" },
+    ],
+    testimonials: [
+      { quote: "Kızım çalışıyordu ama sonuç alamıyordu. İki hafta sonra ağladım — ilerliyordu.", author: "8. Sınıf Öğrenci Velisi", isParent: true },
+      { quote: "Başka koçluktan geliyorum. Orada haftalık mesaj atıyorlardı. Burada koçum her gün ne çalıştığımı biliyor.", author: "Elif, LGS Öğrencisi", isParent: false },
+    ],
+  },
+  offer: {
+    title: "LGS'ye Kadar Yanındayız",
+    subtitle: "Tek seferlik ödeme, LGS'ye kadar tam destek.",
+    price: "2500",
+    priceLabel: "LGS'ye kadar — tek seferlik",
+    buyLink: "/paket-detay",
+    ctaPrimary: "⚡ Yerimi Ayırt",
+    ctaSecondary: "📞 Önce Konuşalım",
+    includes: [
+      "Günlük kişisel çalışma planı",
+      "Haftalık deneme analizi",
+      "Telefon yönetimi desteği",
+      "Haftalık veli raporu",
+      "Motivasyon koçluğu",
+    ],
+  },
+  form: {
+    title: "Hâlâ sorunuz var mı?",
+    subtitle: "Formu doldurun, sizi arayalım.",
+    submitText: "Gönder, Sizi Arayalım →",
+    successTitle: "Başvurunuz alındı!",
+    successSubtitle: "En kısa sürede sizi arayacağız.",
+  },
+};
+
+export const getLgsContent = async (req, res) => {
+  try {
+    const record = await prisma.siteSettings.findUnique({ where: { key: LGS_CONTENT_KEY } });
+    if (!record) return res.json(DEFAULT_LGS_CONTENT);
+    return res.json(JSON.parse(record.value));
+  } catch (err) {
+    console.error("getLgsContent error:", err);
+    return res.status(500).json({ message: "Sunucu hatası" });
+  }
+};
+
+export const updateLgsContent = async (req, res) => {
+  try {
+    const value = JSON.stringify(req.body);
+    await prisma.siteSettings.upsert({
+      where: { key: LGS_CONTENT_KEY },
+      update: { value },
+      create: { key: LGS_CONTENT_KEY, value },
+    });
+    return res.json({ success: true });
+  } catch (err) {
+    console.error("updateLgsContent error:", err);
+    return res.status(500).json({ message: "Sunucu hatası" });
+  }
+};
 
 export const getLgsSettings = async (req, res) => {
   try {
