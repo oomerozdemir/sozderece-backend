@@ -166,4 +166,8 @@ router.put("/packages/:id", authenticateToken, authorizeRoles("admin"), updatePa
 router.patch("/packages/:id/toggle-visibility", authenticateToken, authorizeRoles("admin"), togglePackageVisibility);
 router.delete("/packages/:id", authenticateToken, authorizeRoles("admin"), deletePackage);
 
+// Görsel yükleme (Cloudinary → WebP)
+import uploadRoutes from "./upload.routes.js";
+router.use("/", uploadRoutes);
+
 export default router;
