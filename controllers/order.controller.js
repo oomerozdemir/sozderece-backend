@@ -3,7 +3,7 @@ import prisma from "../utils/prisma.js";
 import axios from "axios";
 import crypto from "crypto";
 import qs from "qs";
-import { sendPaymentSuccessEmail } from "../utils/sendEmail.js";
+import { sendPaymentSuccessEmail, sendEmail } from "../utils/sendEmail.js";
 import { v4 as uuidv4 } from "uuid";
 import { cleanMerchantOid, cleanPrice, requireFields } from "../utils/helpers.js";
 import { getPackageConfig } from "../utils/packageCatalog.js";
@@ -107,6 +107,7 @@ export const prepareOrder = async (req, res) => {
       user_name: `${billingInfo.name} ${billingInfo.surname}`.trim(),
       user_address: billingInfo.address,
       user_phone: billingInfo.phone,
+      billingEmail: billingInfo.email,
     };
 
     const tokenResponse = await axios.post(
@@ -199,7 +200,7 @@ export const handlePaytrCallback = async (req, res) => {
 
       order = await prisma.order.create({
         data: {
-          user: { connect: { id: pmForCreate.userId } },
+          ...(pmForCreate.userId ? { user: { connect: { id: pmForCreate.userId } } } : {}),
           merchantOid: merchant_oid,
           totalPrice: pmForCreate.totalPrice,
           status: "pending",
@@ -225,7 +226,48 @@ export const handlePaytrCallback = async (req, res) => {
     }
 
     if (status === "success") {
-      // 3) Order'ı PAID yap
+      // 3) Guest ise fatura bilgilerinden öğrenci hesabı oluştur
+      if (!order.userId) {
+        try {
+          const pmGuest = await prisma.paymentMeta.findUnique({ where: { merchantOid: merchant_oid } });
+          const bi = pmGuest?.billingInfo;
+          if (bi?.email) {
+            const upserted = await prisma.user.upsert({
+              where: { email: bi.email },
+              update: {},
+              create: {
+                email: bi.email,
+                name: `${bi.name || ""} ${bi.surname || ""}`.trim() || null,
+                phone: bi.phone || null,
+                grade: bi.sinif || null,
+                track: bi.alan || null,
+                role: "student",
+                isVerified: true,
+                emailVerified: true,
+              },
+            });
+            await prisma.order.update({ where: { id: order.id }, data: { userId: upserted.id } });
+            order = { ...order, userId: upserted.id };
+
+            const isNew = upserted.createdAt.getTime() > Date.now() - 15000;
+            if (isNew) {
+              try {
+                await sendEmail({
+                  to: bi.email,
+                  subject: "[Sözderece] Hesabınız Hazır",
+                  html: `<p>Merhaba ${bi.name || ""},</p>
+                         <p>Ödemeniz başarıyla alındı. Sözderece hesabınız otomatik olarak oluşturuldu.</p>
+                         <p>Giriş yapmak için: <a href="${process.env.FRONTEND_URL}/login">Giriş Yap</a></p>
+                         <p>E-posta adresiniz: <strong>${bi.email}</strong><br/>
+                         Şifre oluşturmak için "Şifremi Unuttum" seçeneğini kullanabilirsiniz.</p>`,
+                });
+              } catch (e) { console.warn("Hoş geldin maili gönderilemedi:", e?.message); }
+            }
+          }
+        } catch (e) { console.warn("Otomatik hesap oluşturulamadı:", e?.message); }
+      }
+
+      // 4) Order'ı PAID yap
       order = await prisma.order.update({
         where: { id: order.id },
         data: { status: "paid" },
@@ -436,8 +478,9 @@ export const initiatePaytrPayment = async (req, res) => {
     const merchantOid = cleanMerchantOid(req.body.merchantOid);
     const user = req.user;
 
-    if (!user || !user.email) {
-      return res.status(400).json({ error: "Kullanıcı verisi eksik veya geçersiz" });
+    const email = user?.email || req.body.billingEmail || null;
+    if (!email) {
+      return res.status(400).json({ error: "E-posta adresi eksik" });
     }
 
     requireFields({ cart, totalPrice, merchantOid, user_name, user_address, user_phone });
@@ -461,7 +504,6 @@ export const initiatePaytrPayment = async (req, res) => {
       req.connection.remoteAddress ||
       "127.0.0.1";
 
-    const email = user.email;
     const payment_amount = parseInt((parseFloat(totalPrice) * 100).toFixed(0));
     const currency = "TL";
     const no_installment = "0";
