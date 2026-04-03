@@ -45,9 +45,10 @@ const DEFAULT_LGS_CONTENT = {
   socialProof: {
     title: "Sadece söz değil —",
     titleAccent: "aileler konuşuyor",
+    subtitle: "",
     stats: [
-      { val: "21", label: "Aktif öğrenci" },
-      { val: "📋", label: "Haftalık veli raporu" },
+      { icon: "", val: "21", label: "Aktif öğrenci", desc: "" },
+      { icon: "", val: "📋", label: "Haftalık veli raporu", desc: "" },
     ],
     testimonials: [
       { quote: "Kızım çalışıyordu ama sonuç alamıyordu. İki hafta sonra ağladım — ilerliyordu.", author: "8. Sınıf Öğrenci Velisi", isParent: true },
