@@ -64,6 +64,7 @@ export const prepareOrder = async (req, res) => {
       return res.status(400).json({ error: "Eksik sipariş verisi" });
     }
 
+
     // 1) Server sepeti kullanılacaksa: aktif sepeti oku ve normalize et
     if (useServerCart) {
       const openCart = await prisma.cart.findFirst({
