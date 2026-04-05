@@ -1,6 +1,17 @@
 import prisma from "../utils/prisma.js";
 import { sendEmail } from "../utils/sendEmail.js";
 
+// Mail template'inde HTML Injection'a karşı kullanıcı verilerini escape eder
+const escapeHtml = (str) => {
+  if (!str) return "";
+  return String(str)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#039;");
+};
+
 const LGS_SETTINGS_KEY = "lgsSettings";
 const LGS_CONTENT_KEY = "lgsContent";
 const DEFAULT_MAX_QUOTA = 10;
@@ -179,6 +190,13 @@ export const submitLgsApplication = async (req, res) => {
     });
 
     const adminEmail = process.env.ADMIN_EMAIL || "iletisim@sozderecekocluk.com";
+    // Kullanıcı verileri HTML escape edilerek mail injection önleniyor
+    const safe = {
+      name: escapeHtml(name),
+      phone: escapeHtml(cleanPhone),
+      grade: escapeHtml(grade),
+      message: escapeHtml(message || ""),
+    };
     const html = `
       <div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;background:#f8f9fa;padding:20px;border-radius:12px">
         <div style="background:#100481;color:white;padding:24px;border-radius:10px 10px 0 0;text-align:center">
@@ -187,10 +205,10 @@ export const submitLgsApplication = async (req, res) => {
         <div style="background:white;padding:24px;border-radius:0 0 10px 10px">
           <div style="background:#eff6ff;border:1px solid #93c5fd;color:#1e40af;font-weight:bold;text-align:center;padding:10px 16px;border-radius:8px;margin-bottom:20px;font-size:14px">📞 GERİ ARAMA TALEBİ</div>
           <table style="width:100%;border-collapse:collapse">
-            <tr style="background:#f1f5f9"><td style="padding:10px 14px;font-weight:bold;color:#374151;width:40%">Ad Soyad</td><td style="padding:10px 14px;color:#111827">${name}</td></tr>
-            <tr><td style="padding:10px 14px;font-weight:bold;color:#374151">Telefon</td><td style="padding:10px 14px;color:#111827">${phone}</td></tr>
-            <tr style="background:#f1f5f9"><td style="padding:10px 14px;font-weight:bold;color:#374151">Sınıf</td><td style="padding:10px 14px;color:#111827">${grade}</td></tr>
-            ${message ? `<tr><td style="padding:10px 14px;font-weight:bold;color:#374151">Mesaj</td><td style="padding:10px 14px;color:#111827">${message}</td></tr>` : ""}
+            <tr style="background:#f1f5f9"><td style="padding:10px 14px;font-weight:bold;color:#374151;width:40%">Ad Soyad</td><td style="padding:10px 14px;color:#111827">${safe.name}</td></tr>
+            <tr><td style="padding:10px 14px;font-weight:bold;color:#374151">Telefon</td><td style="padding:10px 14px;color:#111827">${safe.phone}</td></tr>
+            <tr style="background:#f1f5f9"><td style="padding:10px 14px;font-weight:bold;color:#374151">Sınıf</td><td style="padding:10px 14px;color:#111827">${safe.grade}</td></tr>
+            ${safe.message ? `<tr><td style="padding:10px 14px;font-weight:bold;color:#374151">Mesaj</td><td style="padding:10px 14px;color:#111827">${safe.message}</td></tr>` : ""}
           </table>
           <p style="font-size:12px;color:#9ca3af;margin-top:20px;text-align:center">Başvuru No: #${application.id} — ${new Date().toLocaleString("tr-TR")}</p>
         </div>

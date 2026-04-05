@@ -75,9 +75,15 @@ export const validateCoupon = async (req, res) => {
   }
 };
 
-// ✅ Kuponu kullanıcı adına işaretleme (kullanıldı)
+// ✅ Kuponu kullanıcı adına işaretleme (kullanıldı) — sadece admin çağırabilir
 export const markCouponUsed = async (req, res) => {
-  const { code, userId } = req.body;
+  // IDOR fix: userId artık güvenilir JWT token'dan alınır, body'den değil.
+  // Admin farklı bir kullanıcı için işaretlemek istiyorsa targetUserId parametresi kullanılır.
+  const { code, targetUserId } = req.body;
+  const userId = targetUserId || req.user.id;
+
+  if (!code) return res.status(400).json({ error: "Kupon kodu gerekli." });
+  if (!userId) return res.status(400).json({ error: "Kullanıcı ID gerekli." });
 
   try {
     const coupon = await prisma.coupon.findUnique({ where: { code } });
@@ -92,7 +98,7 @@ export const markCouponUsed = async (req, res) => {
 
     return res.status(200).json({ message: "Kupon başarıyla kullanıldı" });
   } catch (err) {
-    console.error("Kupon kullanım hatası:");
+    console.error("Kupon kullanım hatası:", err);
     res.status(500).json({ error: "Sunucu hatası" });
   }
 };

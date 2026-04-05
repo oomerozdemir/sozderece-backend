@@ -64,8 +64,16 @@ async function clearRememberCookie(req, res) {
 /* --------------- REGISTER --------------- */
 export const registerUser = async (req, res) => {
   try {
-    const { name, email, password, role, phone, grade, track } = req.body;
-    const normalizedEmail = email.trim().toLowerCase();
+    // Güvenlik: role alanı body'den alınmaz — hardcode "student" atanır (role injection koruması)
+    const { name, email, password, phone, grade, track } = req.body;
+    const normalizedEmail = (email || "").trim().toLowerCase();
+
+    if (!normalizedEmail || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizedEmail)) {
+      return res.status(400).json({ success: false, message: "Geçerli bir e-posta adresi giriniz." });
+    }
+    if (!password || password.length < 8) {
+      return res.status(400).json({ success: false, message: "Şifre en az 8 karakter olmalıdır." });
+    }
 
     const existingUser = await prisma.user.findUnique({ where: { email: normalizedEmail } });
     if (existingUser) {
@@ -79,7 +87,7 @@ export const registerUser = async (req, res) => {
         name,
         email: normalizedEmail,
         password: hashedPassword,
-        role: role || "student",
+        role: "student", // Role body'den alınmaz — her zaman "student"
         phone,
         grade,
         track,
@@ -533,6 +541,9 @@ export const resetPassword = async (req, res) => {
     const { token, newPassword, confirmPassword } = req.body;
     if (!token || !newPassword || !confirmPassword) {
       return res.status(400).json({ success: false, message: "Eksik alan." });
+    }
+    if (newPassword.length < 8) {
+      return res.status(400).json({ success: false, message: "Şifre en az 8 karakter olmalıdır." });
     }
     if (newPassword !== confirmPassword) {
       return res

@@ -4,7 +4,8 @@ import { authenticateToken, authorizeRoles } from "../../middleware/authMiddlewa
 const router = express.Router();
 
 router.post("/validate", authenticateToken, validateCoupon);
-router.post("/mark-used",authorizeRoles("admin"), markCouponUsed);
+// authenticateToken eksikti: req.user undefined olduğunda authorizeRoles crash veriyordu
+router.post("/mark-used", authenticateToken, authorizeRoles("admin"), markCouponUsed);
 router.get("/all", authenticateToken,authorizeRoles("admin"), getAllCoupons);
 router.delete("/:id", authenticateToken,authorizeRoles("admin"), deleteCoupon);
 router.post("/create", authenticateToken, authorizeRoles("admin"),createCoupon);

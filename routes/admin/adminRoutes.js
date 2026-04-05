@@ -30,8 +30,8 @@ router.get("/orders/refund-requests", authenticateToken, authorizeRoles("admin")
 router.put("/orders/:id/approve-refund", authenticateToken, authorizeRoles("admin"), approveRefundRequest);
 router.put("/orders/:id/reject-refund", authenticateToken, authorizeRoles("admin"), rejectRefund);
 
-// Siparis Islemleri
-router.get("/orders", authenticateToken, getAllOrdersForAdmin);
+// Siparis Islemleri — authorizeRoles eksikti: herhangi bir authenticated kullanıcı tüm siparişleri görebiliyordu
+router.get("/orders", authenticateToken, authorizeRoles("admin"), getAllOrdersForAdmin);
 router.delete("/orders/:id", authenticateToken, authorizeRoles("admin"), deleteOrder);
 router.put("/orders/:id", authenticateToken, authorizeRoles("admin"), updateOrder);
 router.put("/orders/:id/billing", authenticateToken, authorizeRoles("admin"), updateBillingInfo);

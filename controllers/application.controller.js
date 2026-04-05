@@ -1,6 +1,17 @@
 import prisma from "../utils/prisma.js";
 import { sendEmail } from "../utils/sendEmail.js";
 
+// Mail template'inde HTML Injection'a karşı kullanıcı verilerini escape eder
+const escapeHtml = (str) => {
+  if (!str) return "";
+  return String(str)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#039;");
+};
+
 /**
  * POST /api/v1/applications/apply
  * Öğretmen başvurusu oluşturma
@@ -111,6 +122,20 @@ export const createInstructorApplication = async (req, res) => {
         UNIVERSITY_STUDENT: "Üniversite Öğrencisi",
       };
 
+      // Kullanıcı verileri HTML escape edilerek mail injection önleniyor
+      const safe = {
+        firstName: escapeHtml(firstName),
+        lastName: escapeHtml(lastName),
+        email: escapeHtml(email),
+        cleanPhone: escapeHtml(cleanPhone),
+        category: escapeHtml(categoryLabels[category] || category),
+        university: escapeHtml(university || ""),
+        department: escapeHtml(department || ""),
+        ranking: escapeHtml(ranking || ""),
+        message: escapeHtml(message || ""),
+        cvUrl: escapeHtml(cvUrl || ""),
+      };
+
       const emailHtml = `
         <div style="font-family: Arial, sans-serif; background-color: #f8fafc; padding: 20px;">
           <table width="100%" style="max-width: 650px; margin: auto; background: white; border-radius: 12px; overflow: hidden; box-shadow: 0 2px 8px rgba(0,0,0,0.08);">
@@ -119,7 +144,7 @@ export const createInstructorApplication = async (req, res) => {
                 <h1 style="color: white; margin: 0; font-size: 24px;">🎓 Yeni Öğretmen Başvurusu</h1>
               </td>
             </tr>
-            
+
             <tr>
               <td style="padding: 30px;">
                 <div style="background: #f0f9ff; border-left: 4px solid #100481; padding: 16px; margin-bottom: 24px;">
@@ -137,15 +162,15 @@ export const createInstructorApplication = async (req, res) => {
                 <table style="width: 100%; border-collapse: collapse;">
                   <tr style="border-bottom: 1px solid #e2e8f0;">
                     <td style="padding: 12px 8px; font-weight: 600; color: #475569; width: 35%;">Ad Soyad:</td>
-                    <td style="padding: 12px 8px; color: #1e293b;">${firstName} ${lastName}</td>
+                    <td style="padding: 12px 8px; color: #1e293b;">${safe.firstName} ${safe.lastName}</td>
                   </tr>
                   <tr style="border-bottom: 1px solid #e2e8f0;">
                     <td style="padding: 12px 8px; font-weight: 600; color: #475569;">E-posta:</td>
-                    <td style="padding: 12px 8px; color: #1e293b;"><a href="mailto:${email}" style="color: #100481; text-decoration: none;">${email}</a></td>
+                    <td style="padding: 12px 8px; color: #1e293b;"><a href="mailto:${safe.email}" style="color: #100481; text-decoration: none;">${safe.email}</a></td>
                   </tr>
                   <tr style="border-bottom: 1px solid #e2e8f0;">
                     <td style="padding: 12px 8px; font-weight: 600; color: #475569;">Telefon:</td>
-                    <td style="padding: 12px 8px; color: #1e293b;"><a href="tel:${cleanPhone}" style="color: #100481; text-decoration: none;">${cleanPhone}</a></td>
+                    <td style="padding: 12px 8px; color: #1e293b;"><a href="tel:${safe.cleanPhone}" style="color: #100481; text-decoration: none;">${safe.cleanPhone}</a></td>
                   </tr>
                   ${
                     parsedBirthDate
@@ -161,47 +186,47 @@ export const createInstructorApplication = async (req, res) => {
                     <td style="padding: 12px 8px; font-weight: 600; color: #475569;">Kategori:</td>
                     <td style="padding: 12px 8px;">
                       <span style="background: #FF6B35; color: white; padding: 4px 12px; border-radius: 12px; font-size: 13px; font-weight: 600;">
-                        ${categoryLabels[category]}
+                        ${safe.category}
                       </span>
                     </td>
                   </tr>
                   ${
-                    university
+                    safe.university
                       ? `
                   <tr style="border-bottom: 1px solid #e2e8f0;">
                     <td style="padding: 12px 8px; font-weight: 600; color: #475569;">Üniversite:</td>
-                    <td style="padding: 12px 8px; color: #1e293b;">${university}</td>
+                    <td style="padding: 12px 8px; color: #1e293b;">${safe.university}</td>
                   </tr>
                   `
                       : ""
                   }
                   ${
-                    department
+                    safe.department
                       ? `
                   <tr style="border-bottom: 1px solid #e2e8f0;">
                     <td style="padding: 12px 8px; font-weight: 600; color: #475569;">Bölüm:</td>
-                    <td style="padding: 12px 8px; color: #1e293b;">${department}</td>
+                    <td style="padding: 12px 8px; color: #1e293b;">${safe.department}</td>
                   </tr>
                   `
                       : ""
                   }
                   ${
-                    ranking
+                    safe.ranking
                       ? `
                   <tr style="border-bottom: 1px solid #e2e8f0;">
                     <td style="padding: 12px 8px; font-weight: 600; color: #475569;">YKS Derecesi:</td>
-                    <td style="padding: 12px 8px; color: #1e293b;">${ranking}</td>
+                    <td style="padding: 12px 8px; color: #1e293b;">${safe.ranking}</td>
                   </tr>
                   `
                       : ""
                   }
                   ${
-                    cvUrl
+                    safe.cvUrl
                       ? `
                   <tr style="border-bottom: 1px solid #e2e8f0;">
                     <td style="padding: 12px 8px; font-weight: 600; color: #475569;">CV:</td>
                     <td style="padding: 12px 8px;">
-                      <a href="${cvUrl}" style="background: #100481; color: white; padding: 8px 16px; border-radius: 6px; text-decoration: none; display: inline-block; font-size: 13px;">
+                      <a href="${safe.cvUrl}" style="background: #100481; color: white; padding: 8px 16px; border-radius: 6px; text-decoration: none; display: inline-block; font-size: 13px;">
                         📄 CV'yi Görüntüle
                       </a>
                     </td>
@@ -212,11 +237,11 @@ export const createInstructorApplication = async (req, res) => {
                 </table>
 
                 ${
-                  message
+                  safe.message
                     ? `
                 <div style="margin-top: 24px; background: #fef3c7; border: 1px solid #fde68a; padding: 16px; border-radius: 8px;">
                   <h3 style="margin: 0 0 8px; color: #92400e; font-size: 14px; font-weight: 600;">📝 Mesaj:</h3>
-                  <p style="margin: 0; color: #78350f; white-space: pre-wrap; font-size: 14px; line-height: 1.6;">${message}</p>
+                  <p style="margin: 0; color: #78350f; white-space: pre-wrap; font-size: 14px; line-height: 1.6;">${safe.message}</p>
                 </div>
                 `
                     : ""
@@ -229,7 +254,7 @@ export const createInstructorApplication = async (req, res) => {
                 </div>
               </td>
             </tr>
-            
+
             <tr>
               <td style="background-color: #f8fafc; padding: 20px; text-align: center; font-size: 12px; color: #94a3b8;">
                 <p style="margin: 0;">© ${new Date().getFullYear()} SözDerece Koçluk • Bu mail otomatik olarak gönderilmiştir.</p>

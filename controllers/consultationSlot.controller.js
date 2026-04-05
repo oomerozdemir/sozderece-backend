@@ -8,8 +8,21 @@ export const getConsultationSlots = async (req, res) => {
       return res.json({ blockedSlots: [] });
     }
 
+    // Date format ve mantık kontrolü (YYYY-MM-DD, geçmiş tarih veya çok uzak gelecek reddedilir)
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(String(date))) {
+      return res.status(400).json({ blockedSlots: [], error: "Geçersiz tarih formatı." });
+    }
+    const dateObj = new Date(date);
+    const todayStart = new Date();
+    todayStart.setHours(0, 0, 0, 0);
+    const maxDateObj = new Date();
+    maxDateObj.setMonth(maxDateObj.getMonth() + 3);
+    if (isNaN(dateObj.getTime()) || dateObj < todayStart || dateObj > maxDateObj) {
+      return res.json({ blockedSlots: [] });
+    }
+
     const slots = await prisma.consultationSlot.findMany({
-      where: { date, isBlocked: true },
+      where: { date: String(date), isBlocked: true },
       select: { timeSlot: true },
     });
 

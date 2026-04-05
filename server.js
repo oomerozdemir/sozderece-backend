@@ -30,9 +30,9 @@ app.use(cors({
   allowedHeaders: ["Content-Type", "Authorization", "X-Requested-With"],
 
 }));
-/* Body parsers */
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
+/* Body parsers — 50kb üzeri payload reddedilir (DoS / memory bomb koruması) */
+app.use(express.json({ limit: "50kb" }));
+app.use(express.urlencoded({ limit: "50kb", extended: true }));
 
 /* COOKIE PARSER MUTLAKA ROUTE'LARDAN ÖNCE OLMALI */
 app.use(cookieParser());
