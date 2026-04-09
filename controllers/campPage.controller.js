@@ -113,6 +113,16 @@ const DEFAULT_CONTENT = {
     successTitle: "Başvurun Alındı!",
     successText: "En kısa sürede seninle iletişime geçeceğiz.",
   },
+  faq: {
+    title: "Sık Sorulan Sorular",
+    items: [
+      { question: "Deneme Kampı ne kadar sürer?", answer: "Kamp, sınav tarihine kadar devam eder. Aylık plan ile başlayıp dilediğinde tam programa geçebilirsin." },
+      { question: "Günlük ne kadar zaman ayırmam gerekiyor?", answer: "Koçunla birlikte belirlediğin programa göre değişir. Ortalama günde 4–6 saatlik, kişiselleştirilmiş çalışma planlanır." },
+      { question: "Koçumla nasıl iletişim kuracağım?", answer: "WhatsApp üzerinden günlük takip ve haftada en az bir Zoom/Meet görüşmesi yapılır. Sorularını her zaman iletebilirsin." },
+      { question: "Ücret iadesi mümkün mü?", answer: "Evet. İlk 5 gün içinde herhangi bir gerekçe bildirmeksizin koşulsuz iade hakkın var." },
+      { question: "Kampa başlamak için deneme çözüyor olmam şart mı?", answer: "Hayır. Koçun ilk görüşmede mevcut durumunu analiz eder ve sıfırdan bir çalışma planı oluşturur." },
+    ],
+  },
 };
 
 export const getCampContent = async (req, res) => {
