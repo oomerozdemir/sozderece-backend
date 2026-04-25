@@ -529,3 +529,15 @@ model LgsApplication {
   type      String   @default("call")
   createdAt DateTime @default(now())
 }
+
+model NavbarItem {
+  id         Int      @id @default(autoincrement())
+  name       String
+  path       String
+  visible    Boolean  @default(true)
+  order      Int      @default(0)
+  isExternal Boolean  @default(false)
+  openInNew  Boolean  @default(false)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+}

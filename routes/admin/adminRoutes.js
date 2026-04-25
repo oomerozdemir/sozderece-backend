@@ -11,6 +11,7 @@ import { listTeacherPublishRequests, approveTeacherPublish, rejectTeacherPublish
 import { updateCountdown, updatePopup, updatePaymentPageSettings, updateEarlyRegistration } from "../../controllers/siteSettings.controller.js";
 import { getAllPackages, createPackage, updatePackage, togglePackageVisibility, deletePackage } from "../../controllers/package.controller.js";
 import { getAdminConsultationSlots, toggleConsultationSlot, bulkUpdateConsultationSlots } from "../../controllers/consultationSlot.controller.js";
+import { getAllNavbarItems, createNavbarItem, updateNavbarItem, deleteNavbarItem, reorderNavbarItems } from "../../controllers/navbarItem.controller.js";
 
 const prisma = new PrismaClient();
 
@@ -168,6 +169,13 @@ router.post("/packages", authenticateToken, authorizeRoles("admin"), createPacka
 router.put("/packages/:id", authenticateToken, authorizeRoles("admin"), updatePackage);
 router.patch("/packages/:id/toggle-visibility", authenticateToken, authorizeRoles("admin"), togglePackageVisibility);
 router.delete("/packages/:id", authenticateToken, authorizeRoles("admin"), deletePackage);
+
+// Navbar yönetimi
+router.get("/navbar", authenticateToken, authorizeRoles("admin"), getAllNavbarItems);
+router.post("/navbar", authenticateToken, authorizeRoles("admin"), createNavbarItem);
+router.put("/navbar/reorder", authenticateToken, authorizeRoles("admin"), reorderNavbarItems);
+router.put("/navbar/:id", authenticateToken, authorizeRoles("admin"), updateNavbarItem);
+router.delete("/navbar/:id", authenticateToken, authorizeRoles("admin"), deleteNavbarItem);
 
 // Görsel yükleme (Cloudinary → WebP)
 import uploadRoutes from "./upload.routes.js";
