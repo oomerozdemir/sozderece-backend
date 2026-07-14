@@ -85,7 +85,7 @@ model Order {
   id              Int                    @id @default(autoincrement())
   package         String
   createdAt       DateTime               @default(now())
-  userId          Int
+  userId          Int?
   billingInfoId   Int
   endDate         DateTime
   startDate       DateTime               @default(now())
@@ -96,7 +96,7 @@ model Order {
   merchantOid     String?                @unique
   totalPrice      Float?
   billingInfo     BillingInfo            @relation("BillingToOrder", fields: [billingInfoId], references: [id])
-  user            User                   @relation(fields: [userId], references: [id])
+  user            User?                  @relation(fields: [userId], references: [id])
   orderItems      OrderItem[]
   studentRequests StudentLessonRequest[] @relation("OrderStudentRequest")
 }
@@ -229,7 +229,7 @@ model PasswordResetToken {
 model PaymentMeta {
   id           Int      @id @default(autoincrement())
   merchantOid  String   @unique
-  userId       Int
+  userId       Int?
   cart         Json
   billingInfo  Json
   packageName  String
@@ -239,7 +239,7 @@ model PaymentMeta {
   createdAt    DateTime @default(now())
   requestId    String?  @db.VarChar(191)
   packageSlug  String?
-  user         User     @relation(fields: [userId], references: [id])
+  user         User?    @relation(fields: [userId], references: [id])
 
   @@index([requestId])
 }
