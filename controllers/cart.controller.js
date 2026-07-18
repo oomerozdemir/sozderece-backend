@@ -1,4 +1,5 @@
 import prisma from "../utils/prisma.js";
+import { computeUnitPriceForPackage } from "../utils/packagePricing.js";
 
 
 /** ✅ 1) Sepete ürün ekleme / güncelleme */
@@ -21,72 +22,62 @@ export const addToCart = async (req, res) => {
     let priceInt = Number(unitPrice);
     const dbPkg = await prisma.package.findUnique({ where: { slug } });
     if (dbPkg) {
-      // 0) Çoklu plan seçimi
-      const pkgPlans = Array.isArray(dbPkg.plans) ? dbPkg.plans : [];
-      const selectedPlan = planIndex !== undefined ? pkgPlans[parseInt(planIndex)] : null;
-      if (selectedPlan && selectedPlan.unitPrice) {
-        priceInt = selectedPlan.unitPrice;
-      // 1) Sınava özel dinamik fiyat
-      } else if (dbPkg.examDate && new Date(dbPkg.examDate) > new Date()) {
-        const today = new Date();
-        today.setHours(0, 0, 0, 0);
-        const daysLeft = Math.ceil((new Date(dbPkg.examDate) - today) / (1000 * 60 * 60 * 24));
-        const rate = dbPkg.examDiscountRate ?? 5;
-        const totalTL = (daysLeft / 30) * dbPkg.price;
-        const discountedTL = totalTL * (1 - rate / 100);
-        priceInt = Math.round(discountedTL * 100); // kuruşa çevir
-      // 2) Statik promo fiyat
-      } else if (dbPkg.promoPrice && dbPkg.promoEndDate && new Date(dbPkg.promoEndDate) > new Date() && dbPkg.promoUnitPrice != null) {
-        priceInt = dbPkg.promoUnitPrice;
-      // 3) Normal fiyat
-      } else if (dbPkg.unitPrice != null) {
-        priceInt = dbPkg.unitPrice;
-      }
+      const computed = computeUnitPriceForPackage(dbPkg, planIndex);
+      if (computed != null) priceInt = computed;
     }
 
     if (!Number.isInteger(priceInt) || priceInt < 0) {
       return res.status(400).json({ success: false, message: "unitPrice kuruş cinsinden pozitif tamsayı olmalıdır." });
     }
 
-    // Aktif sepeti bul (completed:false) veya oluştur
-    let cart = await prisma.cart.findFirst({
-      where: {
-        completed: false,
-        ...(userId ? { userId } : { email })
-      },
-      include: { items: true },
-    });
+    // Aynı kullanıcı/e-posta için eşzamanlı "sepet yoksa oluştur" isteklerinin
+    // iki ayrı açık sepet üretmesini engellemek üzere transaction-scoped
+    // Postgres advisory lock (unique constraint eklemeden race-safe hale getirir).
+    const lockKey = userId ? `cart_user_${userId}` : `cart_email_${email}`;
+    const cart = await prisma.$transaction(async (tx) => {
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${lockKey}))`;
 
-    if (!cart) {
-      cart = await prisma.cart.create({
-        data: {
+      let c = await tx.cart.findFirst({
+        where: {
           completed: false,
-          userId,
-          // Prisma'da opsiyonel alanı 'undefined' bırakmak gerekiyor, yoksa null set edersin
-          email: userId ? undefined : email,
+          ...(userId ? { userId } : { email })
         },
         include: { items: true },
       });
-    }
 
-    // Aynı ürün varsa fiyatı ve miktarı güncelle; yoksa oluştur
-    const existing = cart.items.find((i) => i.slug === slug);
-    if (existing) {
-      await prisma.cartItem.update({
-        where: { id: existing.id },
-        data: { quantity: existing.quantity + qty, unitPrice: priceInt, title },
-      });
-    } else {
-      await prisma.cartItem.create({
-        data: {
-          cartId: cart.id,
-          slug,
-          title,
-          unitPrice: priceInt,
-          quantity: qty,
-        },
-      });
-    }
+      if (!c) {
+        c = await tx.cart.create({
+          data: {
+            completed: false,
+            userId,
+            // Prisma'da opsiyonel alanı 'undefined' bırakmak gerekiyor, yoksa null set edersin
+            email: userId ? undefined : email,
+          },
+          include: { items: true },
+        });
+      }
+
+      // Aynı ürün varsa fiyatı ve miktarı güncelle; yoksa oluştur
+      const existing = c.items.find((i) => i.slug === slug);
+      if (existing) {
+        await tx.cartItem.update({
+          where: { id: existing.id },
+          data: { quantity: existing.quantity + qty, unitPrice: priceInt, title },
+        });
+      } else {
+        await tx.cartItem.create({
+          data: {
+            cartId: c.id,
+            slug,
+            title,
+            unitPrice: priceInt,
+            quantity: qty,
+          },
+        });
+      }
+
+      return c;
+    });
 
     const updated = await prisma.cart.findUnique({
       where: { id: cart.id },

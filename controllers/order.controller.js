@@ -3,10 +3,11 @@ import prisma from "../utils/prisma.js";
 import axios from "axios";
 import crypto from "crypto";
 import qs from "qs";
-import { sendPaymentSuccessEmail, sendEmail } from "../utils/sendEmail.js";
+import { sendPaymentSuccessEmail, sendEmail, emailShell } from "../utils/sendEmail.js";
 import { v4 as uuidv4 } from "uuid";
 import { cleanMerchantOid, cleanPrice, requireFields } from "../utils/helpers.js";
 import { getPackageConfig } from "../utils/packageCatalog.js";
+import { getAllValidUnitPrices } from "../utils/packagePricing.js";
 
 /* =========================
    Siparişleri getir (My Orders)
@@ -94,6 +95,29 @@ export const prepareOrder = async (req, res) => {
       price: cleanPrice(item.price),
       quantity: item.quantity || 1,
     }));
+
+    // 2b) Fiyat manipülasyonu koruması: useServerCart yolunda cart.controller.js
+    // zaten sepete ekleme anında sunucu tarafında fiyatlandırıyor (güvenli).
+    // Client'ın doğrudan gönderdiği sepette ise slug'ı bir Package'a karşılık
+    // gelen her kalemin fiyatı, o paketin o an geçerli meşru fiyatlarından
+    // biriyle eşleşmeli — aksi halde devtools'tan düşürülmüş bir tutarla
+    // ödeme tamamlanabilir.
+    if (!useServerCart) {
+      for (const item of cleanedCart) {
+        if (!item.slug) continue;
+        const dbPkg = await prisma.package.findUnique({ where: { slug: item.slug } });
+        if (!dbPkg) continue; // Package tablosunda yok (ör. özel ders kalemi) — kapsam dışı
+        const validPrices = getAllValidUnitPrices(dbPkg);
+        const claimedKurus = Math.round(item.price * 100);
+        const matches = validPrices.some((p) => Math.abs(p - claimedKurus) <= 1);
+        if (!matches) {
+          console.warn(
+            `🚨 prepareOrder fiyat uyuşmazlığı: slug=${item.slug} claimed=${claimedKurus} valid=[${validPrices.join(",")}]`
+          );
+          return res.status(400).json({ error: "Fiyat bilgisi doğrulanamadı. Lütfen sayfayı yenileyip tekrar deneyin." });
+        }
+      }
+    }
 
     const test_mode = process.env.PAYTR_TEST_MODE || "0";
     const merchantOid = cleanMerchantOid(uuidv4());
@@ -269,14 +293,28 @@ export const handlePaytrCallback = async (req, res) => {
             const isNew = upserted.createdAt.getTime() > Date.now() - 15000;
             if (isNew) {
               try {
+                const loginUrl = `${process.env.FRONTEND_URL}/giris-yap`;
                 await sendEmail({
                   to: bi.email,
                   subject: "[Sözderece] Hesabınız Hazır",
-                  html: `<p>Merhaba ${bi.name || ""},</p>
-                         <p>Ödemeniz başarıyla alındı. Sözderece hesabınız otomatik olarak oluşturuldu.</p>
-                         <p>Giriş yapmak için: <a href="${process.env.FRONTEND_URL}/login">Giriş Yap</a></p>
-                         <p>E-posta adresiniz: <strong>${bi.email}</strong><br/>
-                         Şifre oluşturmak için "Şifremi Unuttum" seçeneğini kullanabilirsiniz.</p>`,
+                  html: emailShell({
+                    eyebrow: "Hoş Geldin",
+                    title: "Hesabın hazır 🎉",
+                    subtitle: `Merhaba ${bi.name || ""}, ödemen başarıyla alındı.`,
+                    bodyHtml: `
+                      <p style="font-size:14px; color:#6b7280; line-height:1.6;">
+                        Sözderece hesabın otomatik olarak oluşturuldu. Aşağıdaki e-posta adresinle giriş yapabilirsin —
+                        şifre oluşturmak için giriş ekranındaki "Şifremi Unuttum" seçeneğini kullanman yeterli.
+                      </p>
+                      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#f4f2fa; border:1px solid #eeeaf7; border-radius:14px; padding:2px 18px; margin:14px 0;">
+                        <tr>
+                          <td style="padding:7px 0; font-size:13px; color:#6b7280;">E-posta adresin</td>
+                          <td style="padding:7px 0; font-size:14px; color:#1e1b3a; font-weight:700; text-align:right;">${bi.email}</td>
+                        </tr>
+                      </table>`,
+                    ctaLabel: "Giriş Yap",
+                    ctaUrl: loginUrl,
+                  }),
                 });
               } catch (e) { console.warn("Hoş geldin maili gönderilemedi:", e?.message); }
             }

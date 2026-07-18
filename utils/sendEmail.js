@@ -35,59 +35,138 @@ export const sendEmail = async ({ to, subject, html }) => {
   }
 };
 
+/* ============================================================
+   Marka şablonu — sitenin renk paletiyle (lacivert #100481,
+   turuncu #FF6B35, lime #D8FF4F) tüm e-postalarda tek, tutarlı
+   bir görünüm sağlar. Her e-posta kendi içeriğini bu kabuğa verir.
+============================================================ */
+
+const BRAND = {
+  navy: "#100481",
+  navyDark: "#0D0A2E",
+  orange: "#FF6B35",
+  lime: "#D8FF4F",
+  textDark: "#1e1b3a",
+  textMuted: "#6b7280",
+  bgPage: "#f4f2fa",
+  bgCard: "#ffffff",
+  border: "#eeeaf7",
+};
+
+/**
+ * Markalı e-posta kabuğu (header + gövde + opsiyonel CTA + footer).
+ * @param {{eyebrow?:string, title:string, subtitle?:string, bodyHtml:string, ctaLabel?:string, ctaUrl?:string}} opts
+ */
+export function emailShell({ eyebrow, title, subtitle, bodyHtml, ctaLabel, ctaUrl }) {
+  return `
+  <div style="background:${BRAND.bgPage}; padding:32px 16px; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;">
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:560px; margin:0 auto; background:${BRAND.bgCard}; border-radius:20px; overflow:hidden; box-shadow:0 8px 30px rgba(16,4,129,0.08);">
+      <tr>
+        <td style="background:${BRAND.navy}; padding:26px 32px; text-align:center;">
+          <div style="font-weight:800; font-size:22px; letter-spacing:1.5px; color:${BRAND.lime};">SÖZDERECE</div>
+        </td>
+      </tr>
+      <tr>
+        <td style="padding:36px 32px 4px; text-align:center;">
+          ${eyebrow ? `<div style="font-size:12px; font-weight:700; letter-spacing:2px; text-transform:uppercase; color:${BRAND.orange}; margin-bottom:10px;">${eyebrow}</div>` : ""}
+          <h1 style="margin:0; font-size:22px; line-height:1.3; color:${BRAND.navyDark};">${title}</h1>
+          ${subtitle ? `<p style="margin:10px 0 0; font-size:14px; color:${BRAND.textMuted};">${subtitle}</p>` : ""}
+        </td>
+      </tr>
+      <tr>
+        <td style="padding:16px 32px 4px;">
+          ${bodyHtml}
+        </td>
+      </tr>
+      ${
+        ctaUrl
+          ? `<tr>
+              <td style="padding:12px 32px 32px; text-align:center;">
+                <a href="${ctaUrl}" style="display:inline-block; background:${BRAND.orange}; color:#ffffff; text-decoration:none; font-weight:700; font-size:15px; padding:14px 30px; border-radius:999px;">${ctaLabel}</a>
+              </td>
+            </tr>`
+          : `<tr><td style="height:24px;"></td></tr>`
+      }
+      <tr>
+        <td style="background:#faf9fd; padding:18px 32px; text-align:center; border-top:1px solid ${BRAND.border};">
+          <p style="margin:0; font-size:12px; color:#a3a0b8;">© ${new Date().getFullYear()} Sözderece Koçluk · sozderecekocluk.com</p>
+        </td>
+      </tr>
+    </table>
+  </div>`;
+}
+
+/**
+ * Etiket/değer satırlarından oluşan bilgi kartı (email-safe: table tabanlı,
+ * flexbox kullanmıyor — Outlook gibi istemcilerde de doğru render olur).
+ * @param {[string, string][]} rows
+ */
+export function infoCard(rows, opts = {}) {
+  const { bg = BRAND.bgPage, border = BRAND.border } = opts;
+  const rowsHtml = rows
+    .filter(([, v]) => v !== null && v !== undefined && v !== "")
+    .map(
+      ([label, value]) => `
+      <tr>
+        <td style="padding:7px 0; font-size:13px; color:${BRAND.textMuted}; white-space:nowrap;">${label}</td>
+        <td style="padding:7px 0; font-size:14px; color:${BRAND.textDark}; font-weight:700; text-align:right;">${value}</td>
+      </tr>`
+    )
+    .join("");
+  return `
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:${bg}; border:1px solid ${border}; border-radius:14px; padding:2px 18px; margin:14px 0;">
+      ${rowsHtml}
+    </table>`;
+}
+
+/**
+ * Uyarı/not kutusu (ör. öğrenci notu, önemli hatırlatma).
+ */
+export function noteCard(text, opts = {}) {
+  const { bg = "#fef6e7", border = "#f6e2b3", textColor = "#8a6d1f" } = opts;
+  return `
+    <div style="background:${bg}; border:1px solid ${border}; border-radius:14px; padding:14px 18px; margin:14px 0; font-size:13px; color:${textColor}; line-height:1.6; white-space:pre-wrap;">
+      ${text}
+    </div>`;
+}
+
 /**
  * Ödeme başarı maili
  */
 export const sendPaymentSuccessEmail = async (to, order) => {
   const discounted = order.discountRate > 0;
 
-  const html = `
-  <div style="font-family: Arial, sans-serif; background-color: #f9f9f9; padding: 20px;">
-    <table width="100%" style="max-width: 600px; margin: auto; background: white; border-radius: 12px; overflow: hidden; box-shadow: 0 2px 8px rgba(0,0,0,0.05);">
-      <tr>
-        <td style="padding: 24px; text-align: center;">
-          <h2 style="color: #10b981; margin: 0;">Ödemeniz Alındı 🎉</h2>
-          <p style="color: #555; margin: 8px 0 0;">Teşekkür ederiz, <strong>${order.billingInfo.name} ${order.billingInfo.surname}</strong></p>
-        </td>
-      </tr>
-      <tr>
-        <td style="padding: 0 24px 24px;">
-          <div style="background: #ecfdf5; border: 1px solid #d1fae5; padding: 16px; border-radius: 8px;">
-            <p><strong> Sipariş No:</strong> #${order.id}</p>
-            <p><strong> Paket İsmi:</strong> ${order.package}</p>
-            <p><strong>  Geçerlilik Tarihi:</strong> ${new Date(order.startDate).toLocaleDateString()} - ${new Date(order.endDate).toLocaleDateString()}</p>
-            ${
-              discounted
-                ? `
-              <p><strong> Kupon:</strong> ${order.couponCode} (%${order.discountRate})</p>
-              <p><strong> İndirimsiz Tutar:</strong> <del>${order.originalPrice.toFixed(2)} TL</del></p>
-              <p><strong> İndirimli Tutar:</strong> ${order.totalPrice.toFixed(2)} TL</p>
-            `
-                : `
-              <p><strong>💰 Ödenen Tutar:</strong> ${order.totalPrice.toFixed(2)} TL</p>
-            `
-            }
-          </div>
+  const rows = [
+    ["Sipariş No", `#${order.id}`],
+    ["Paket", order.package],
+    [
+      "Geçerlilik",
+      `${new Date(order.startDate).toLocaleDateString("tr-TR")} – ${new Date(order.endDate).toLocaleDateString("tr-TR")}`,
+    ],
+  ];
+  if (discounted) {
+    rows.push(["Kupon", `${order.couponCode} (%${order.discountRate})`]);
+    rows.push([
+      "İndirimsiz Tutar",
+      `<span style="text-decoration:line-through; color:#a3a0b8; font-weight:600;">${order.originalPrice.toFixed(2)} TL</span>`,
+    ]);
+    rows.push(["Ödenen Tutar", `${order.totalPrice.toFixed(2)} TL`]);
+  } else {
+    rows.push(["Ödenen Tutar", `${order.totalPrice.toFixed(2)} TL`]);
+  }
 
-          <div style="margin-top: 20px;">
-            <p style="color: #666; font-size: 14px;">
-              Siparişiniz başarıyla tamamlandı ve hesabınıza tanımlandı. Herhangi bir sorunuz olursa destek ekibimizle iletişime geçebilirsiniz.
-            </p>
-          </div>
-
-          <div style="text-align: center; margin-top: 30px;">
-            <a href="https://sozderecekocluk.com/siparislerim" style="background-color: #10b981; color: white; padding: 12px 24px; border-radius: 8px; text-decoration: none; font-weight: bold;">Siparişlerimi Görüntüle</a>
-          </div>
-        </td>
-      </tr>
-      <tr>
-        <td style="background-color: #f3f4f6; padding: 16px; text-align: center; font-size: 12px; color: #999;">
-          © ${new Date().getFullYear()} SözDerece. Tüm hakları saklıdır.
-        </td>
-      </tr>
-    </table>
-  </div>
-  `;
+  const html = emailShell({
+    eyebrow: "Ödeme Onaylandı",
+    title: "Siparişiniz alındı 🎉",
+    subtitle: `Teşekkürler, ${order.billingInfo.name} ${order.billingInfo.surname}`,
+    bodyHtml: `
+      ${infoCard(rows, { bg: "#eafaf0", border: "#c9f0da" })}
+      <p style="font-size:14px; color:${BRAND.textMuted}; line-height:1.6; margin:16px 0 0;">
+        Siparişiniz başarıyla tamamlandı ve hesabınıza tanımlandı. Herhangi bir sorunuz olursa destek ekibimizle iletişime geçebilirsiniz.
+      </p>`,
+    ctaLabel: "Siparişlerimi Görüntüle",
+    ctaUrl: "https://sozderecekocluk.com/orders",
+  });
 
   await sendEmail({
     to,
@@ -100,11 +179,17 @@ export const sendPaymentSuccessEmail = async (to, order) => {
  * Doğrulama kodu gönderimi
  */
 export const sendVerificationEmail = async (to, code) => {
-  const html = `
-    <p>Merhaba,</p>
-    <p>Doğrulama kodunuz: <strong>${code}</strong></p>
-    <p>Bu kod 5 dakika için geçerlidir.</p>
-  `;
+  const html = emailShell({
+    eyebrow: "Güvenlik",
+    title: "Doğrulama kodunuz",
+    bodyHtml: `
+      <div style="text-align:center; margin:18px 0;">
+        <span style="display:inline-block; background:${BRAND.bgPage}; border:1px dashed #c9c2e8; border-radius:12px; padding:16px 28px; font-size:30px; font-weight:800; letter-spacing:9px; color:${BRAND.navy};">${code}</span>
+      </div>
+      <p style="font-size:13px; color:${BRAND.textMuted}; text-align:center; line-height:1.6;">
+        Bu kod <strong>5 dakika</strong> için geçerlidir. Bu isteği siz yapmadıysanız bu e-postayı görmezden gelebilirsiniz.
+      </p>`,
+  });
 
   await sendEmail({
     to,
@@ -114,12 +199,19 @@ export const sendVerificationEmail = async (to, code) => {
 };
 
 export const sendPasswordResetEmail = async (to, resetUrl) => {
-  const html = `
-    <h2>Şifre Sıfırlama</h2>
-    <p>Şifrenizi sıfırlamak için aşağıdaki bağlantıya tıklayın:</p>
-    <p><a href="${resetUrl}">${resetUrl}</a></p>
-    <p>Bu bağlantı 15 dakika boyunca geçerlidir.</p>
-  `;
+  const html = emailShell({
+    eyebrow: "Hesap Güvenliği",
+    title: "Şifreni sıfırla",
+    subtitle: "Aşağıdaki butona tıklayarak yeni bir şifre belirleyebilirsin.",
+    bodyHtml: `
+      <p style="font-size:12.5px; color:#a3a0b8; text-align:center; word-break:break-all; margin:18px 0 0;">
+        Buton çalışmazsa bu bağlantıyı tarayıcına yapıştır:<br/>
+        <a href="${resetUrl}" style="color:${BRAND.navy};">${resetUrl}</a>
+      </p>
+      <p style="font-size:13px; color:${BRAND.textMuted}; text-align:center;">Bu bağlantı 15 dakika boyunca geçerlidir.</p>`,
+    ctaLabel: "Şifremi Sıfırla",
+    ctaUrl: resetUrl,
+  });
 
   await sendEmail({
     to,
@@ -129,36 +221,18 @@ export const sendPasswordResetEmail = async (to, resetUrl) => {
 };
 
 export const sendCoachAssignmentToStudent = async (to, coach) => {
-  const html = `
-  <div style="font-family: Arial, sans-serif; background-color: #f9f9f9; padding: 20px;">
-    <table width="100%" style="max-width: 600px; margin: auto; background: white; border-radius: 12px; overflow: hidden; box-shadow: 0 2px 8px rgba(0,0,0,0.05);">
-      <tr>
-        <td style="padding: 24px; text-align: center;">
-          <h2 style="color: #3b82f6; margin: 0;">🎓 Yeni Koç Atamanız</h2>
-          <p style="color: #555;">Size bir koç atandı!</p>
-        </td>
-      </tr>
-      <tr>
-        <td style="padding: 0 24px 24px;">
-          <div style="background: #eff6ff; border: 1px solid #bfdbfe; padding: 16px; border-radius: 8px;">
-            <p><strong>👤 Koç Adı:</strong> ${coach.name}</p>
-            <p><strong>📧 E-posta:</strong> ${coach.user?.email || "Belirtilmedi"}</p>
-          </div>
-          <div style="margin-top: 20px; color: #555; font-size: 14px;">
-            <p>Artık çalışmalarınızı destekleyecek bir koçunuz var.</p>
-            <p><strong>Koçunuzla ilgili tüm bilgilere öğrenci panelinden ulaşabilirsiniz.</strong></p>
-            <p><strong>Sözderece Koçluk'u tercih ettiğiniz için teşekkür ederiz.</strong></p>
-          </div>
-        </td>
-      </tr>
-      <tr>
-        <td style="background-color: #f3f4f6; padding: 16px; text-align: center; font-size: 12px; color: #999;">
-          © ${new Date().getFullYear()} SözDerece. Tüm hakları saklıdır.
-        </td>
-      </tr>
-    </table>
-  </div>
-  `;
+  const html = emailShell({
+    eyebrow: "Koçluk",
+    title: "Sana bir koç atandı 🎓",
+    bodyHtml: `
+      ${infoCard([["Koç Adı", coach.name], ["E-posta", coach.user?.email || "Belirtilmedi"]], { bg: "#eef1fd", border: "#d6ddf7" })}
+      <p style="font-size:14px; color:${BRAND.textMuted}; line-height:1.6; margin-top:14px;">
+        Artık çalışmalarını destekleyecek bir koçun var. Koçunla ilgili tüm bilgilere öğrenci panelinden ulaşabilirsin.
+      </p>
+      <p style="font-size:14px; color:${BRAND.textMuted};">Sözderece Koçluk'u tercih ettiğin için teşekkür ederiz.</p>`,
+    ctaLabel: "Öğrenci Panelime Git",
+    ctaUrl: "https://sozderecekocluk.com/student/dashboard",
+  });
 
   await sendEmail({
     to,
@@ -168,34 +242,17 @@ export const sendCoachAssignmentToStudent = async (to, coach) => {
 };
 
 export const sendStudentAssignmentToCoach = async (to, student) => {
-  const html = `
-  <div style="font-family: Arial, sans-serif; background-color: #f9f9f9; padding: 20px;">
-    <table width="100%" style="max-width: 600px; margin: auto; background: white; border-radius: 12px; overflow: hidden; box-shadow: 0 2px 8px rgba(0,0,0,0.05);">
-      <tr>
-        <td style="padding: 24px; text-align: center;">
-          <h2 style="color: #10b981; margin: 0;">👨‍🎓 Yeni Öğrenci Ataması</h2>
-          <p style="color: #555;">Size yeni bir öğrenci atandı.</p>
-        </td>
-      </tr>
-      <tr>
-        <td style="padding: 0 24px 24px;">
-          <div style="background: #ecfdf5; border: 1px solid #d1fae5; padding: 16px; border-radius: 8px;">
-            <p><strong>👤 Öğrenci Adı:</strong> ${student.name}</p>
-            <p><strong>📧 E-Posta:</strong> ${student.email}</p>
-          </div>
-          <div style="margin-top: 20px; color: #555; font-size: 14px;">
-            <p>Koç panelinden öğrenciyle alakalı bilgileri görüntüleyip iletişim kurarabilir, ilk görüşmenizi oluşturabilirsiniz. İyi çalışmalar dileriz!</p>
-          </div>
-        </td>
-      </tr>
-      <tr>
-        <td style="background-color: #f3f4f6; padding: 16px; text-align: center; font-size: 12px; color: #999;">
-          © ${new Date().getFullYear()} SözDerece. Tüm hakları saklıdır.
-        </td>
-      </tr>
-    </table>
-  </div>
-  `;
+  const html = emailShell({
+    eyebrow: "Koçluk",
+    title: "Yeni bir öğrenci atandı 👨‍🎓",
+    bodyHtml: `
+      ${infoCard([["Öğrenci Adı", student.name], ["E-Posta", student.email]], { bg: "#eafaf0", border: "#c9f0da" })}
+      <p style="font-size:14px; color:${BRAND.textMuted}; line-height:1.6; margin-top:14px;">
+        Koç panelinden öğrenciyle alakalı bilgileri görüntüleyip iletişim kurabilir, ilk görüşmenizi oluşturabilirsiniz. İyi çalışmalar dileriz!
+      </p>`,
+    ctaLabel: "Koç Panelime Git",
+    ctaUrl: "https://sozderecekocluk.com/coach/dashboard",
+  });
 
   await sendEmail({
     to,
@@ -205,29 +262,20 @@ export const sendStudentAssignmentToCoach = async (to, student) => {
 };
 
 export const sendOrderExpiryReminder = async (to, order) => {
-  const html = `
-    <div style="font-family: Arial, sans-serif; background-color: #fefce8; padding: 20px;">
-      <table width="100%" style="max-width: 600px; margin: auto; background: white; border-radius: 12px; overflow: hidden; box-shadow: 0 2px 8px rgba(0,0,0,0.05);">
-        <tr>
-          <td style="padding: 24px; text-align: center;">
-            <h2 style="color: #f59e0b; margin: 0;">⏳ Süre Dolmak Üzere</h2>
-            <p style="color: #555;">Siparişinizin süresi yakında sona eriyor.</p>
-          </td>
-        </tr>
-        <tr>
-          <td style="padding: 0 24px 24px;">
-            <div style="background: #fef3c7; border: 1px solid #fde68a; padding: 16px; border-radius: 8px;">
-              <p><strong>Paket:</strong> ${order.package}</p>
-              <p><strong>Bitiş Tarihi:</strong> ${new Date(order.endDate).toLocaleDateString()}</p>
-            </div>
-            <div style="margin-top: 20px; text-align: center;">
-              <a href="https://sozderecekocluk.com/paketler" style="background-color: #f59e0b; color: white; padding: 12px 24px; border-radius: 8px; text-decoration: none; font-weight: bold;">Paketi Yenile</a>
-            </div>
-          </td>
-        </tr>
-      </table>
-    </div>
-  `;
+  const html = emailShell({
+    eyebrow: "Hatırlatma",
+    title: "Süreniz dolmak üzere ⏳",
+    subtitle: "Paketinizin süresi yakında sona eriyor.",
+    bodyHtml: infoCard(
+      [
+        ["Paket", order.package],
+        ["Bitiş Tarihi", new Date(order.endDate).toLocaleDateString("tr-TR")],
+      ],
+      { bg: "#fef6e7", border: "#f6e2b3" }
+    ),
+    ctaLabel: "Paketi Yenile",
+    ctaUrl: "https://sozderecekocluk.com/paket-detay",
+  });
 
   await sendEmail({
     to,
@@ -236,7 +284,7 @@ export const sendOrderExpiryReminder = async (to, order) => {
   });
 };
 
-/** 🆕 Öğretmene “yeni talep” bildirimi */
+/** Öğretmene "yeni talep" bildirimi */
 export async function sendNewRequestToTeacher(to, payload = {}) {
   const {
     teacherName,
@@ -245,62 +293,45 @@ export async function sendNewRequestToTeacher(to, payload = {}) {
     studentPhone,
     subject,
     grade,
-    modeLabel,        // "Online" | "Yüz yüze"
-    packageTitle,     // varsa
-    lessonsCount,     // varsa
-    note,             // öğrencinin notu
+    modeLabel, // "Online" | "Yüz yüze"
+    packageTitle, // varsa
+    lessonsCount, // varsa
+    note, // öğrencinin notu
     requestId,
     createdAt,
-    panelUrl = "https://sozderecekocluk.com/ogretmen/panel",
+    panelUrl = "https://sozderecekocluk.com/ogretmen/panel/profil",
   } = payload;
 
-  const html = `
-  <div style="font-family: Arial, sans-serif; background:#f8fafc; padding:20px;">
-    <table width="100%" style="max-width:600px; margin:auto; background:#fff; border-radius:12px; overflow:hidden; box-shadow:0 2px 8px rgba(0,0,0,0.06);">
-      <tr>
-        <td style="padding:24px; text-align:center;">
-          <h2 style="margin:0; color:#111827;">🆕 Yeni Ders Talebi</h2>
-          <p style="margin:8px 0 0; color:#6b7280;">${teacherName ? `${teacherName}, ` : ""}size yeni bir talep ulaştı.</p>
-        </td>
-      </tr>
-      <tr>
-        <td style="padding:0 24px 24px;">
-          <div style="background:#f3f4f6; border:1px solid #e5e7eb; padding:16px; border-radius:8px;">
-            <p style="margin:0 0 6px;"><strong>📅 Talep Zamanı:</strong> ${new Date(createdAt || Date.now()).toLocaleString("tr-TR")}</p>
-            ${requestId ? `<p style="margin:0 0 6px;"><strong>🆔 Talep No:</strong> #${requestId}</p>` : ""}
-            <p style="margin:0 0 6px;"><strong>📚 Ders:</strong> ${subject || "—"}</p>
-            <p style="margin:0 0 6px;"><strong>🎓 Seviye:</strong> ${grade || "—"}</p>
-            <p style="margin:0 0 6px;"><strong>🧭 Tür:</strong> ${modeLabel || "—"}</p>
-            ${(packageTitle || lessonsCount) ? `<p style="margin:0 0 6px;"><strong>🏷️ Paket:</strong> ${packageTitle || "—"} ${lessonsCount ? `(${lessonsCount} ders)` : ""}</p>` : ""}
-          </div>
+  const rows = [
+    ["Talep Zamanı", new Date(createdAt || Date.now()).toLocaleString("tr-TR")],
+    requestId ? ["Talep No", `#${requestId}`] : null,
+    ["Ders", subject || "—"],
+    ["Seviye", grade || "—"],
+    ["Tür", modeLabel || "—"],
+    packageTitle || lessonsCount
+      ? ["Paket", `${packageTitle || "—"}${lessonsCount ? ` (${lessonsCount} ders)` : ""}`]
+      : null,
+  ].filter(Boolean);
 
-          <div style="margin-top:14px; background:#ecfeff; border:1px solid #a5f3fc; padding:16px; border-radius:8px;">
-            <p style="margin:0 0 6px;"><strong>👤 Öğrenci:</strong> ${studentName || "Öğrenci"}</p>
-            <p style="margin:0 0 6px;"><strong>📧 E-posta:</strong> ${studentEmail || "—"}</p>
-            <p style="margin:0;"><strong>📞 Telefon:</strong> ${studentPhone || "—"}</p>
-          </div>
-
-          ${note ? `
-            <div style="margin-top:14px; background:#fefce8; border:1px solid #fde68a; padding:16px; border-radius:8px;">
-              <p style="margin:0 0 6px; color:#7c6d00;"><strong>📝 Öğrenci Notu:</strong></p>
-              <p style="margin:0; white-space:pre-wrap; color:#7c6d00;">${note}</p>
-            </div>` : ""
-          }
-
-          <div style="text-align:center; margin-top:22px;">
-            <a href="${panelUrl}" style="display:inline-block; background:#10b981; color:#fff; text-decoration:none; padding:12px 20px; border-radius:8px; font-weight:600;">
-              Öğretmen Paneline Git
-            </a>
-          </div>
-        </td>
-      </tr>
-      <tr>
-        <td style="background:#f3f4f6; padding:12px; text-align:center; color:#9ca3af; font-size:12px;">
-          © ${new Date().getFullYear()} SözDerece • Bu bir bilgilendirme mesajıdır.
-        </td>
-      </tr>
-    </table>
-  </div>`;
+  const html = emailShell({
+    eyebrow: "Yeni Talep",
+    title: "Size yeni bir ders talebi ulaştı 🆕",
+    subtitle: teacherName || undefined,
+    bodyHtml: `
+      ${infoCard(rows, { bg: BRAND.bgPage, border: BRAND.border })}
+      ${infoCard(
+        [
+          ["Öğrenci", studentName || "Öğrenci"],
+          ["E-posta", studentEmail || "—"],
+          ["Telefon", studentPhone || "—"],
+        ],
+        { bg: "#eafbfd", border: "#c7eef4" }
+      )}
+      ${note ? noteCard(`<strong>Öğrenci Notu:</strong><br/>${note}`) : ""}
+    `,
+    ctaLabel: "Öğretmen Paneline Git",
+    ctaUrl: panelUrl,
+  });
 
   await sendEmail({ to, subject: "🆕 Yeni Ders Talebi Var", html });
 }
@@ -311,10 +342,10 @@ export async function sendAppointmentConfirmedToStudent(to, payload = {}) {
     teacherName = "",
     subject = "",
     grade = "",
-    modeLabel = "",           // "Online" | "Yüz yüze"
-    startsAt,                 // Date or ISO
-    endsAt,                   // Date or ISO
-    panelUrl = "https://sozderecekocluk.com/ogrenci/panel",
+    modeLabel = "", // "Online" | "Yüz yüze"
+    startsAt, // Date or ISO
+    endsAt, // Date or ISO
+    panelUrl = "https://sozderecekocluk.com/student/dashboard",
   } = payload;
 
   const when =
@@ -322,37 +353,22 @@ export async function sendAppointmentConfirmedToStudent(to, payload = {}) {
       ? `${new Date(startsAt).toLocaleString("tr-TR", { dateStyle: "medium", timeStyle: "short" })} – ${new Date(endsAt).toLocaleTimeString("tr-TR", { hour: "2-digit", minute: "2-digit" })}`
       : "Planlanan saat";
 
-  const html = `
-  <div style="font-family: Arial, sans-serif; background:#f8fafc; padding:20px;">
-    <table width="100%" style="max-width:600px; margin:auto; background:#fff; border-radius:12px; overflow:hidden; box-shadow:0 2px 8px rgba(0,0,0,0.06);">
-      <tr>
-        <td style="padding:24px; text-align:center;">
-          <h2 style="margin:0; color:#111827;">✅ Talebiniz Onaylandı</h2>
-          <p style="margin:8px 0 0; color:#6b7280;">${studentName ? `${studentName}, ` : ""}randevunuz onaylandı.</p>
-        </td>
-      </tr>
-      <tr>
-        <td style="padding:0 24px 24px;">
-          <div style="background:#ecfdf5; border:1px solid #bbf7d0; padding:16px; border-radius:8px;">
-            <p style="margin:0 0 6px;"><strong>👨‍🏫 Öğretmen:</strong> ${teacherName || "Öğretmen"}</p>
-            <p style="margin:0 0 6px;"><strong>📚 Ders:</strong> ${subject || "—"} ${grade ? `(${grade})` : ""}</p>
-            <p style="margin:0 0 6px;"><strong>🧭 Tür:</strong> ${modeLabel || "—"}</p>
-            <p style="margin:0;"><strong>🗓 Tarih/Saat:</strong> ${when}</p>
-          </div>
+  const html = emailShell({
+    eyebrow: "Randevu Onaylandı",
+    title: "Talebiniz onaylandı ✅",
+    subtitle: studentName ? `${studentName}, randevunuz onaylandı.` : "Randevunuz onaylandı.",
+    bodyHtml: infoCard(
+      [
+        ["Öğretmen", teacherName || "Öğretmen"],
+        ["Ders", `${subject || "—"}${grade ? ` (${grade})` : ""}`],
+        ["Tür", modeLabel || "—"],
+        ["Tarih/Saat", when],
+      ],
+      { bg: "#eafaf0", border: "#c9f0da" }
+    ),
+    ctaLabel: "Öğrenci Panelini Aç",
+    ctaUrl: panelUrl,
+  });
 
-          <div style="text-align:center; margin-top:22px;">
-            <a href="${panelUrl}" style="display:inline-block; background:#10b981; color:#fff; text-decoration:none; padding:12px 20px; border-radius:8px; font-weight:600;">
-              Öğrenci Panelini Aç
-            </a>
-          </div>
-        </td>
-      </tr>
-      <tr>
-        <td style="background:#f3f4f6; padding:12px; text-align:center; color:#9ca3af; font-size:12px;">
-          © ${new Date().getFullYear()} SözDerece • Bu bir bilgilendirme mesajıdır.
-        </td>
-      </tr>
-    </table>
-  </div>`;
   await sendEmail({ to, subject: "✅ Talebiniz Onaylandı", html });
 }

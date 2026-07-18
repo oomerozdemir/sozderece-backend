@@ -3,6 +3,7 @@ import nodemailer from "nodemailer";
 import dotenv from "dotenv";
 import axios from "axios";
 import crypto from "crypto";
+import { emailShell, infoCard, noteCard } from "../utils/sendEmail.js";
 
 dotenv.config();
 
@@ -105,11 +106,28 @@ export const createContact = async (req, res) => {
     // --- message: max 1000 karakter ---
     const trimmedMessage = message ? String(message).trim().slice(0, 1000) : "";
 
-    // --- Slot müsaitlik kontrolü (race condition'a karşı önce kontrol et) ---
-    const existingSlot = await prisma.consultationSlot.findUnique({
-      where: { date_timeSlot: { date: meetingDate, timeSlot: meetingTime } },
+    // --- Slotu ATOMİK olarak dene (önce claim, sonra kaydet — check-then-act
+    // yerine tek adımlı DB işlemleri kullanılıyor, iki eşzamanlı istek aynı
+    // slotu alamaz) ---
+    let slotClaimed = false;
+    const claimResult = await prisma.consultationSlot.updateMany({
+      where: { date: meetingDate, timeSlot: meetingTime, isBlocked: false },
+      data: { isBlocked: true },
     });
-    if (existingSlot?.isBlocked) {
+    if (claimResult.count > 0) {
+      slotClaimed = true;
+    } else {
+      try {
+        await prisma.consultationSlot.create({
+          data: { date: meetingDate, timeSlot: meetingTime, isBlocked: true },
+        });
+        slotClaimed = true;
+      } catch (e) {
+        // P2002: unique constraint çakışması — slot az önce başka bir istekle alındı
+        if (e.code !== "P2002") throw e;
+      }
+    }
+    if (!slotClaimed) {
       return res.status(409).json({ success: false, message: "Bu randevu saati dolmuştur. Lütfen başka bir saat seçin." });
     }
 
@@ -124,13 +142,6 @@ export const createContact = async (req, res) => {
         meetingTime,
         message: trimmedMessage,
       },
-    });
-
-    // --- Randevu slotunu dolu işaretle ---
-    await prisma.consultationSlot.upsert({
-      where: { date_timeSlot: { date: meetingDate, timeSlot: meetingTime } },
-      update: { isBlocked: true },
-      create: { date: meetingDate, timeSlot: meetingTime, isBlocked: true },
     });
 
     // --- Mail Gönder (tüm veriler HTML escape edilmiş) ---
@@ -148,22 +159,27 @@ export const createContact = async (req, res) => {
       from: `"Sözderece Web" <${process.env.EMAIL_USER}>`,
       to: process.env.EMAIL_USER,
       subject: `📅 Yeni Randevu Talebi: ${safe.name}`,
-      html: `
-        <div style="font-family: Arial, sans-serif; padding: 20px; border: 1px solid #eee;">
-          <h2 style="color: #100481;">Yeni Bir Görüşme Talebiniz Var!</h2>
-          <p>Web sitesi üzerinden yeni bir form dolduruldu.</p>
-          <table style="width: 100%; border-collapse: collapse;">
-            <tr><td style="padding: 8px; border-bottom: 1px solid #ddd;"><strong>Ad Soyad:</strong></td><td style="padding: 8px; border-bottom: 1px solid #ddd;">${safe.name}</td></tr>
-            <tr><td style="padding: 8px; border-bottom: 1px solid #ddd;"><strong>Durumu:</strong></td><td style="padding: 8px; border-bottom: 1px solid #ddd;">${safe.userType}</td></tr>
-            <tr><td style="padding: 8px; border-bottom: 1px solid #ddd;"><strong>Telefon:</strong></td><td style="padding: 8px; border-bottom: 1px solid #ddd;"><a href="tel:${safe.phone}">${safe.phone}</a></td></tr>
-            <tr><td style="padding: 8px; border-bottom: 1px solid #ddd;"><strong>E-posta:</strong></td><td style="padding: 8px; border-bottom: 1px solid #ddd;">${safe.email}</td></tr>
-            <tr><td style="padding: 8px; border-bottom: 1px solid #ddd;"><strong>Randevu Tarihi:</strong></td><td style="padding: 8px; border-bottom: 1px solid #ddd; background-color: #fff3cd;"><strong>${safe.meetingDate}</strong></td></tr>
-            <tr><td style="padding: 8px; border-bottom: 1px solid #ddd;"><strong>Randevu Saati:</strong></td><td style="padding: 8px; border-bottom: 1px solid #ddd; background-color: #fff3cd;"><strong>${safe.meetingTime}</strong></td></tr>
-            <tr><td style="padding: 8px; border-bottom: 1px solid #ddd;"><strong>Mesaj:</strong></td><td style="padding: 8px; border-bottom: 1px solid #ddd;">${safe.message}</td></tr>
-          </table>
-          <p style="margin-top: 20px; font-size: 12px; color: #888;">Bu mail otomatik olarak gönderilmiştir.</p>
-        </div>
-      `,
+      html: emailShell({
+        eyebrow: "Ücretsiz Görüşme Formu",
+        title: "Yeni bir görüşme talebiniz var!",
+        subtitle: "Web sitesi üzerinden yeni bir form dolduruldu.",
+        bodyHtml: `
+          ${infoCard([
+            ["Ad Soyad", safe.name],
+            ["Durumu", safe.userType],
+            ["Telefon", `<a href="tel:${safe.phone}" style="color:#1e1b3a;">${safe.phone}</a>`],
+            ["E-posta", safe.email],
+          ])}
+          ${infoCard(
+            [
+              ["Randevu Tarihi", safe.meetingDate],
+              ["Randevu Saati", safe.meetingTime],
+            ],
+            { bg: "#fef6e7", border: "#f6e2b3" }
+          )}
+          ${safe.message ? noteCard(`<strong>Mesaj:</strong><br/>${safe.message}`) : ""}
+        `,
+      }),
     };
 
     transporter.sendMail(mailOptions).catch((err) => console.error("Mail gönderme hatası:", err));

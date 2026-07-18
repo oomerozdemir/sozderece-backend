@@ -90,8 +90,9 @@ router.get("/orders/export", authenticateToken, authorizeRoles("admin"), async (
     const orders = await prisma.order.findMany({
       include: {
         billingInfo: true,
-        user: true,
-        selectedCoach: true, // 👈 Eklendi
+        // Order'da doğrudan bir coach ilişkisi yok; atanan koç User.assignedCoach
+        // üzerinden geliyor.
+        user: { include: { assignedCoach: true } },
       }
     });
 
@@ -125,8 +126,8 @@ router.get("/orders/export", authenticateToken, authorizeRoles("admin"), async (
         order.billingInfo ? `${order.billingInfo.address}, ${order.billingInfo.district}` : "",
         order.billingInfo?.city || "",
         order.billingInfo?.postalCode || "",
-        order.selectedCoach?.name || "",         // 👈 Yeni veri
-        order.selectedCoach?.subject || ""       // 👈 Yeni veri
+        order.user?.assignedCoach?.name || "",
+        order.user?.assignedCoach?.subject || ""
       ])
     ];
 

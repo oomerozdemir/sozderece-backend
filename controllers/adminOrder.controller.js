@@ -95,16 +95,9 @@ export const approveRefundRequest = async (req, res) => {
       include: { user: true },
     });
 
-    await prisma.notification.create({
-      data: {
-        userId: updatedOrder.userId,
-        message: `#${updatedOrder.id} numaralı siparişinizin iadesi onaylandı.`,
-      },
-    });
-
     res.status(200).json({ message: "İade onaylandı.", updatedOrder });
   } catch (error) {
-    console.error("İade onayı başarısız:");
+    console.error("İade onayı başarısız:", error);
     res.status(500).json({ error: "İade onayı başarısız." });
   }
 };
@@ -115,7 +108,10 @@ export const rejectRefund = async (req, res) => {
   try {
     const updatedOrder = await prisma.order.update({
       where: { id: orderId },
-      data: { status: "active" },
+      // "paid" lifecycle'ına geri döner — aksi halde sipariş bir daha
+      // asla yeniden iade talebine konu olamaz (createRefundRequest ve
+      // sendExpiringOrderReminders yalnızca status:"paid" arıyor).
+      data: { status: "paid" },
       include: { user: true },
     });
     res.status(200).json({ message: "İade talebi reddedildi.", updatedOrder });

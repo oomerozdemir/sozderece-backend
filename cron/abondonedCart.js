@@ -1,7 +1,7 @@
 import cron from "node-cron";
 import prisma from "../utils/prisma.js";
 
-import { sendEmail } from "../utils/sendEmail.js"; 
+import { sendEmail, emailShell } from "../utils/sendEmail.js";
 
 
 const FRONTEND_URL = process.env.FRONTEND_URL || "https://sozderecekocluk.com";
@@ -13,69 +13,51 @@ cron.schedule("0 * * * *", async () => {
   try {
     const twelveHoursAgo = new Date(Date.now() - 12 * 60 * 60 * 1000);
 
-    // Yalnızca hiç mail gitmemiş (reminderStep=0) ve 12+ saatlik sepetler
+    // Yalnızca hiç mail gitmemiş (reminderStep=0) ve 12+ saatlik sepetler.
+    // Giriş yapmış kullanıcı sepetlerinde Cart.email hep null kalıyor
+    // (bkz. cart.controller.js#addToCart) — bu yüzden email VEYA userId
+    // dolu olan sepetlerin ikisi de kapsanıyor.
     const abandonedCarts = await prisma.cart.findMany({
       where: {
         completed: false,
         reminderStep: 0,               // <— tekrarı engeller
         createdAt: { lte: twelveHoursAgo },
-        email: { not: null }
+        OR: [{ email: { not: null } }, { userId: { not: null } }],
       },
-      include: { items: true },
+      include: { items: true, user: true },
     });
 
     for (const cart of abandonedCarts) {
-      if (!cart.email) continue;
+      const to = cart.email || cart.user?.email;
+      if (!to) continue;
 
       // CartItem'da 'title' var
-      const itemsList = cart.items
-        .map(i => `<li style="margin-bottom:8px;">${i.title}</li>`)
+      const itemsRows = cart.items
+        .map(
+          (i) => `
+            <tr>
+              <td style="padding:8px 0; font-size:14px; color:#1e1b3a;">${i.title}</td>
+            </tr>`
+        )
         .join("");
 
-      const htmlContent = `
-      <!DOCTYPE html>
-      <html>
-      <head>
-        <meta charset="UTF-8">
-        <title>Sepetiniz Sizi Bekliyor 🚀</title>
-      </head>
-      <body style="font-family: Arial, sans-serif; background-color: #f9f9f9; padding: 20px;">
-        <table width="100%" cellpadding="0" cellspacing="0" border="0" style="max-width:600px; margin:auto; background:#ffffff; border-radius:8px; overflow:hidden; box-shadow:0 4px 10px rgba(0,0,0,0.1);">
-          <tr>
-            <td style="background:#4f46e5; color:#ffffff; padding:20px; text-align:center;">
-              <h1 style="margin:0; font-size:22px;">Sepetinizde Ürünler Sizi Bekliyor</h1>
-            </td>
-          </tr>
-          <tr>
-            <td style="padding:20px; color:#333;">
-              <p>Merhaba,</p>
-              <p>Sepetinizde bıraktığınız ürünler hâlâ sizi bekliyor 👇</p>
-              <ul style="padding-left:20px; font-size:16px; line-height:1.6;">
-                ${itemsList || "<li>Seçili ürün(ler)</li>"}
-              </ul>
-              <p>Şimdi geri dönün ve alışverişinizi kolayca tamamlayın!</p>
-              <div style="text-align:center; margin:30px 0;">
-                <a href="${FRONTEND_URL}/sepet"
-                  style="background:#4f46e5; color:#ffffff; text-decoration:none; padding:12px 24px; border-radius:6px; font-size:16px; font-weight:bold;">
-                  Sepetime Git →
-                </a>
-              </div>
-              <p style="font-size:12px; color:#777;">Bu maili yanlışlıkla aldıysanız dikkate almayabilirsiniz.</p>
-            </td>
-          </tr>
-          <tr>
-            <td style="background:#f3f4f6; color:#666; font-size:12px; padding:15px; text-align:center;">
-              © ${new Date().getFullYear()} Senin Şirketin. Tüm hakları saklıdır.
-            </td>
-          </tr>
-        </table>
-      </body>
-      </html>
-      `;
+      const htmlContent = emailShell({
+        eyebrow: "Sepetin Seni Bekliyor",
+        title: "Bıraktığın ürünler hâlâ orada 🚀",
+        subtitle: "Sepetindeki yerini kaybetmeden şimdi tamamla.",
+        bodyHtml: `
+          <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#f4f2fa; border:1px solid #eeeaf7; border-radius:14px; padding:4px 18px; margin:14px 0;">
+            ${itemsRows || `<tr><td style="padding:8px 0; font-size:14px; color:#1e1b3a;">Seçili ürün(ler)</td></tr>`}
+          </table>
+          <p style="font-size:12px; color:#a3a0b8; text-align:center; margin-top:18px;">Bu maili yanlışlıkla aldıysanız dikkate almayabilirsiniz.</p>
+        `,
+        ctaLabel: "Sepetime Git →",
+        ctaUrl: `${FRONTEND_URL}/sepet`,
+      });
 
       // mail gönder
       await sendEmail({
-        to: cart.email,
+        to,
         subject: "Sepetiniz sizi bekliyor 🚀",
         html: htmlContent,
       });
@@ -86,7 +68,7 @@ cron.schedule("0 * * * *", async () => {
         data: { reminderStep: 1 }
       });
 
-      console.log(`📧 HTML hatırlatma maili gönderildi ve işaretlendi: ${cart.email}`);
+      console.log(`📧 HTML hatırlatma maili gönderildi ve işaretlendi: ${to}`);
     }
   } catch (err) {
     console.error("❌ Abandoned cart cron hatası:", err);
