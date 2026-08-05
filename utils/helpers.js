@@ -12,3 +12,8 @@ export const requireFields = (fields) => {
   }
   return null;
 };
+
+export const getUserIp = (req) =>
+  req.headers["x-forwarded-for"]?.split(",")[0]?.trim() ||
+  req.connection?.remoteAddress ||
+  "127.0.0.1";

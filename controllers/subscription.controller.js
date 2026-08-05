@@ -1,6 +1,6 @@
 import prisma from "../utils/prisma.js";
 import { v4 as uuidv4 } from "uuid";
-import { cleanMerchantOid } from "../utils/helpers.js";
+import { cleanMerchantOid, getUserIp } from "../utils/helpers.js";
 import { buildCardRegistrationFields } from "../utils/paytrRecurring.js";
 import {
   sendSubscriptionStartedEmail,
@@ -13,10 +13,6 @@ import {
 // yani ilk denemeden 2 gün sonra tekrar, ondan 2 gün sonra son deneme.
 const RETRY_INTERVAL_DAYS = 2;
 const MAX_ATTEMPTS = 3;
-
-function getUserIp(req) {
-  return req.headers["x-forwarded-for"] || req.connection?.remoteAddress || "127.0.0.1";
-}
 
 // Frontend'deki onay kutusuyla BİREBİR aynı metin olmalı — chargeback/itiraz
 // savunmasında "kullanıcı tam olarak neyi onayladı" sorusunun kanıtı budur.

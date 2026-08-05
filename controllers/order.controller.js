@@ -5,9 +5,10 @@ import crypto from "crypto";
 import qs from "qs";
 import { sendPaymentSuccessEmail, sendEmail, emailShell } from "../utils/sendEmail.js";
 import { v4 as uuidv4 } from "uuid";
-import { cleanMerchantOid, cleanPrice, requireFields } from "../utils/helpers.js";
+import { cleanMerchantOid, cleanPrice, requireFields, getUserIp } from "../utils/helpers.js";
 import { getPackageConfig } from "../utils/packageCatalog.js";
 import { getAllValidUnitPrices } from "../utils/packagePricing.js";
+import { buildCardRegistrationFields } from "../utils/paytrRecurring.js";
 import { finalizeSubscriptionStart, resolveChargeSuccess, resolveChargeFailure } from "./subscription.controller.js";
 
 /* =========================
@@ -120,33 +121,31 @@ export const prepareOrder = async (req, res) => {
       }
     }
 
-    const test_mode = process.env.PAYTR_TEST_MODE || "0";
     const merchantOid = cleanMerchantOid(uuidv4());
-
-    // 3) PayTR token al
-    const paytrPayload = {
-      user: req.user,
-      merchantOid,
-      cart: cleanedCart,
-      totalPrice,
-      test_mode,
-      user_name: `${billingInfo.name} ${billingInfo.surname}`.trim(),
-      user_address: billingInfo.address,
-      user_phone: billingInfo.phone,
-      billingEmail: billingInfo.email,
-    };
-
-    const tokenResponse = await axios.post(
-      `${process.env.BACKEND_URL}/api/paytr/initiate`,
-      paytrPayload,
-      { headers: { Authorization: req.headers.authorization } }
-    );
-
-    const { token } = tokenResponse.data || {};
-    if (!token) {
-      console.error("🚨 PayTR'den token alınamadı.");
-      return res.status(500).json({ error: "Ödeme token alınamadı" });
+    const email = req.user?.email || billingInfo.email;
+    if (!email) {
+      return res.status(400).json({ error: "E-posta adresi eksik" });
     }
+
+    // 3) PayTR Direkt API ödeme formu alanlarını hazırla (storeCard="0" —
+    // tek seferlik ödeme, kart saklanmıyor). Mağazada Direkt API açıkken
+    // klasik iFrame API (/odeme/api/get-token) PayTR tarafında kapatıldığı
+    // için tek seferlik akış da abonelik başlatmayla aynı Direkt API yolunu
+    // kullanıyor — kart alanları tarayıcıda toplanıp doğrudan PayTR'ye POST
+    // edilecek, bkz. paytrRecurring.js#buildCardRegistrationFields.
+    const fields = buildCardRegistrationFields({
+      merchantOid,
+      userIp: getUserIp(req),
+      email,
+      amountTL: Number(totalPrice).toFixed(2),
+      userName: `${billingInfo.name} ${billingInfo.surname}`.trim(),
+      userAddress: billingInfo.address,
+      userPhone: billingInfo.phone,
+      cart: cleanedCart,
+      okUrl: process.env.PAYTR_OK_URL,
+      failUrl: process.env.PAYTR_FAIL_URL,
+      storeCard: "0",
+    });
 
     // 4) PaymentMeta oluştur
     await prisma.paymentMeta.create({
@@ -182,8 +181,11 @@ export const prepareOrder = async (req, res) => {
       }
     }
 
-    // 6) FE'ye token ve merchantOid dön
-    return res.json({ token, merchantOid });
+    // 6) FE'ye Direkt API form alanlarını ve merchantOid dön — FE bunlarla
+    // kendi kart formunu (cc_owner/card_number/expiry_month/expiry_year/cvv)
+    // birleştirip doğrudan PayTR'ye POST edecek (bkz. SubscriptionStart.jsx
+    // ile aynı desen).
+    return res.json({ fields, paytrEndpoint: "https://www.paytr.com/odeme", merchantOid });
   } catch (err) {
     console.error("❌ prepareOrder hatası:", err);
     return res.status(500).json({ error: "Sipariş hazırlanırken hata oluştu" });

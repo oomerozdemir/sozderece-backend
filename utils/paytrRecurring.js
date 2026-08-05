@@ -65,10 +65,18 @@ function buildUserBasket(cart) {
 
 /**
  * Tarayıcının doğrudan PayTR'ye (https://www.paytr.com/odeme) POST edeceği
- * "Yeni Kart Ekleme + İlk Ödeme" formu için gereken TÜM alanları hazırlar —
- * kart alanları (cc_owner/card_number/expiry_month/expiry_year/cvv) HARİÇ,
- * onlar kullanıcı tarafından tarayıcıda doğrudan girilip forma eklenecek ve
+ * "Yeni Kart Ekleme + Ödeme" formu için gereken TÜM alanları hazırlar — kart
+ * alanları (cc_owner/card_number/expiry_month/expiry_year/cvv) HARİÇ, onlar
+ * kullanıcı tarafından tarayıcıda doğrudan girilip forma eklenecek ve
  * sunucumuza hiç uğramayacak.
+ *
+ * İki senaryoda kullanılıyor:
+ *  - Abonelik başlatma: storeCard="1" (kart, gelecekteki otomatik çekimler
+ *    için PayTR'de saklanır, bkz. subscription.controller.js).
+ *  - Tek seferlik ödeme: storeCard="0" (kart saklanmaz, sadece o anki tutar
+ *    tahsil edilir) — PayTR mağazada Direkt API açıkken klasik iFrame API'yi
+ *    kapattığı için tek seferlik akış da bu fonksiyonu kullanıyor, bkz.
+ *    order.controller.js#prepareOrder.
  */
 export function buildCardRegistrationFields({
   merchantOid,
@@ -82,13 +90,14 @@ export function buildCardRegistrationFields({
   okUrl,
   failUrl,
   existingUtoken, // varsa, aynı kullanıcının önceki kartına bu yeni kartı da bağlamak için
+  storeCard = "1",
 }) {
   const { merchant_id, merchant_key, merchant_salt } = getCreds();
   const test_mode = process.env.PAYTR_TEST_MODE || "0";
   const payment_type = "card";
-  const installment_count = "0"; // Abonelikte taksit sunulmuyor (aylık zaten tekrarlayan bir ödeme)
+  const installment_count = "0";
   const currency = "TL";
-  const non_3d = "0"; // İlk kayıt/ödeme 3D Secure İLE yapılır (dolandırıcılık koruması)
+  const non_3d = "0"; // Kart bilgisi girilirken müşteri ekranda — 3D Secure İLE yapılır (dolandırıcılık koruması)
 
   const paytr_token = computeDirectApiHash({
     merchantId: merchant_id,
@@ -117,7 +126,7 @@ export function buildCardRegistrationFields({
     currency,
     test_mode,
     non_3d,
-    store_card: "1",
+    store_card: storeCard,
     ...(existingUtoken ? { utoken: existingUtoken } : {}),
     merchant_ok_url: okUrl,
     merchant_fail_url: failUrl,
