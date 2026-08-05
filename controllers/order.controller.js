@@ -8,6 +8,7 @@ import { v4 as uuidv4 } from "uuid";
 import { cleanMerchantOid, cleanPrice, requireFields } from "../utils/helpers.js";
 import { getPackageConfig } from "../utils/packageCatalog.js";
 import { getAllValidUnitPrices } from "../utils/packagePricing.js";
+import { finalizeSubscriptionStart, resolveChargeSuccess, resolveChargeFailure } from "./subscription.controller.js";
 
 /* =========================
    Siparişleri getir (My Orders)
@@ -195,7 +196,7 @@ export const prepareOrder = async (req, res) => {
 ========================= */
 export const handlePaytrCallback = async (req, res) => {
   try {
-    const { merchant_oid, status, total_amount, hash } = req.body;
+    const { merchant_oid, status, total_amount, hash, utoken, ctoken } = req.body;
 
     // 0) Hash doğrulama
     const hashStr = `${merchant_oid}${process.env.PAYTR_MERCHANT_SALT}${status}${total_amount}`;
@@ -207,6 +208,42 @@ export const handlePaytrCallback = async (req, res) => {
     if (expectedHash !== hash) {
       console.warn("❌ PayTR hash doğrulama başarısız");
       return res.status(403).send("INVALID HASH");
+    }
+
+    // 0b) Abonelik başlatma (kart kaydı) mı? PayTR'nin tek/sabit bildirim
+    // URL'si her callback'i buraya gönderiyor — mevcut tek-seferlik sipariş
+    // akışıyla aynı yoldan geçip PaymentMeta'daki işarete göre ayrılıyor.
+    const pmCheckEarly = await prisma.paymentMeta.findUnique({ where: { merchantOid: merchant_oid } });
+    if (pmCheckEarly?.cart?.[0]?.isSubscriptionStart) {
+      const existingOrder = await prisma.order.findUnique({ where: { merchantOid: merchant_oid } });
+      if (existingOrder) return res.send("OK"); // idempotans
+
+      const result = await finalizeSubscriptionStart({
+        pm: pmCheckEarly,
+        merchantOid: merchant_oid,
+        status,
+        utoken,
+        ctoken,
+      });
+      if (!result.ok) {
+        console.warn(`⚠️ Abonelik başlatma finalize edilemedi (${merchant_oid}):`, result.reason);
+      }
+      return res.send("OK");
+    }
+
+    // 0c) Bekleyen bir aylık abonelik çekimi mi? (sync_mode yanıtı "wait_callback"
+    // dönüp cron kesin sonucu bu asenkron callback'e bıraktığında buraya düşer —
+    // bkz. cron/subscriptionBilling.js + utils/paytrRecurring.js sync_mode notları.
+    // resolveChargeSuccess/Failure zaten idempotent (pending değilse no-op),
+    // yani sync_mode yanıtı cron'da zaten kesinleşmişse burada tekrar işlenmez.
+    const pendingCharge = await prisma.subscriptionCharge.findUnique({ where: { merchantOid: merchant_oid } });
+    if (pendingCharge) {
+      if (status === "success") {
+        await resolveChargeSuccess({ subscriptionId: pendingCharge.subscriptionId, merchantOid: merchant_oid });
+      } else {
+        await resolveChargeFailure({ subscriptionId: pendingCharge.subscriptionId, merchantOid: merchant_oid, reason: status });
+      }
+      return res.send("OK");
     }
 
     // 1) Order'ı bul / yoksa paymentMeta'dan oluştur
@@ -614,12 +651,16 @@ export const initiatePaytrPayment = async (req, res) => {
     );
 
     if (!response.data?.token) {
-      console.error("🚨 PayTR token alınamadı:");
-      return res.status(500).json({ error: "PayTR token alınamadı" });
+      // PayTR'nin ret sebebini (ör. hesap yetkisi/ayar çakışması) sunucu
+      // logunda görünür kıl — önceden burada sessizce yutuluyordu ve gerçek
+      // sebep sadece "Sipariş hazırlanırken hata oluştu" olarak görünüyordu.
+      console.error("🚨 PayTR token alınamadı:", JSON.stringify(response.data));
+      return res.status(500).json({ error: "PayTR token alınamadı", reason: response.data?.reason });
     }
 
     return res.json({ token: response.data.token });
   } catch (error) {
+    console.error("🚨 initiatePaytrPayment hatası:", error?.response?.data || error?.message);
     return res.status(500).json({ error: "Ödeme başlatılamadı" });
   }
 };

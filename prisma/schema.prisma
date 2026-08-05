@@ -68,6 +68,7 @@ model User {
   teacherReviews      TeacherReview[]        @relation("UserTeacherReviews")
   assignedCoach       Coach?                 @relation("AssignedCoach", fields: [assignedCoachId], references: [id])
   verificationCodes   VerificationCode[]
+  subscriptions       Subscription[]
 }
 
 model Coach {
@@ -95,10 +96,61 @@ model Order {
   refundReason    String?
   merchantOid     String?                @unique
   totalPrice      Float?
+  subscriptionId  Int?
   billingInfo     BillingInfo            @relation("BillingToOrder", fields: [billingInfoId], references: [id])
   user            User?                  @relation(fields: [userId], references: [id])
+  subscription    Subscription?          @relation(fields: [subscriptionId], references: [id])
   orderItems      OrderItem[]
   studentRequests StudentLessonRequest[] @relation("OrderStudentRequest")
+}
+
+// Aylık otomatik ödeme (abonelik). PayTR'nin Direct API / Kart Saklama
+// sistemiyle çalışır — utoken/ctoken PayTR'nin kendi kart-saklama servisinden
+// dönen referans token'larıdır, ham kart bilgisi burada hiç tutulmaz.
+model Subscription {
+  id                Int       @id @default(autoincrement())
+  userId            Int
+  packageSlug       String
+  planLabel         String
+  amount            Int // kuruş/ay
+  status            String    @default("active") // "active" | "past_due" | "cancelled"
+  utoken            String
+  ctoken            String
+  cardLast4         String?
+  cardBrand         String?
+  currentPeriodEnd  DateTime
+  nextBillingDate   DateTime
+  cancelAtPeriodEnd Boolean   @default(false)
+  cancelledAt       DateTime?
+  failedAttempts    Int       @default(0)
+  lastFailureReason String?
+  // Chargeback/itiraz savunması için rıza kanıt izi: kayıt anındaki IP,
+  // zaman damgası ve kullanıcının onayladığı tam metin.
+  consentIp         String?
+  consentAt         DateTime?
+  consentText       String?
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+  user              User                 @relation(fields: [userId], references: [id])
+  charges           SubscriptionCharge[]
+  orders            Order[]
+
+  @@index([userId])
+  @@index([status, nextBillingDate])
+}
+
+model SubscriptionCharge {
+  id             Int      @id @default(autoincrement())
+  subscriptionId Int
+  merchantOid    String   @unique
+  amount         Int
+  status         String // "success" | "failed"
+  failReason     String?
+  attemptNumber  Int      @default(1)
+  attemptedAt    DateTime @default(now())
+  subscription   Subscription @relation(fields: [subscriptionId], references: [id])
+
+  @@index([subscriptionId])
 }
 
 model Package {

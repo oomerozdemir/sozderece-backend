@@ -17,7 +17,7 @@ const LGS_CONTENT_KEY = "lgsContent";
 const DEFAULT_MAX_QUOTA = 10;
 
 const DEFAULT_LGS_CONTENT = {
-  lgsDate: "2026-06-14",
+  lgsDate: "2027-06-12",
   hero: {
     subtitle: "Her gün yanında biri var — koçu, planı, sistemi.",
     chip1: "📅 LGS'ye kadar günlük takip",

@@ -12,6 +12,7 @@ import { updateCountdown, updatePopup, updatePaymentPageSettings, updateEarlyReg
 import { getAllPackages, createPackage, updatePackage, togglePackageVisibility, deletePackage } from "../../controllers/package.controller.js";
 import { getAdminConsultationSlots, toggleConsultationSlot, bulkUpdateConsultationSlots } from "../../controllers/consultationSlot.controller.js";
 import { getAllNavbarItems, createNavbarItem, updateNavbarItem, deleteNavbarItem, reorderNavbarItems } from "../../controllers/navbarItem.controller.js";
+import { getAllSubscriptionsForAdmin, adminCancelSubscription } from "../../controllers/subscription.controller.js";
 
 const prisma = new PrismaClient();
 
@@ -56,6 +57,10 @@ router.post("/assign-coach", authenticateToken, authorizeRoles("admin"), assignC
 
 // Süresi yaklaşan siparişler için e-posta hatırlatması gönder
 router.post("/orders/send-expiry-reminders", authenticateToken, authorizeRoles("admin"), sendExpiringOrderReminders);
+
+// Abonelik yönetimi
+router.get("/subscriptions", authenticateToken, authorizeRoles("admin"), getAllSubscriptionsForAdmin);
+router.put("/subscriptions/:id/cancel", authenticateToken, authorizeRoles("admin"), adminCancelSubscription);
 
 
 //teacher publish requests

@@ -5,6 +5,7 @@ import cookieParser from "cookie-parser";
 import path from "path";
 import allRoutes from "./routes/index.js";
 import "./cron/abondonedCart.js";
+import "./cron/subscriptionBilling.js";
 
 dotenv.config();
 const app = express();

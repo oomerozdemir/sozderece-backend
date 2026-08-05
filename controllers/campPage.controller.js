@@ -69,7 +69,7 @@ const DEFAULT_CONTENT = {
     title: "Sınava Kadar Koçluk Kampı",
     price: "2500",
     maxQuota: 10,
-    yksDate: "2026-06-15",
+    yksDate: "2027-06-20",
     plans: [
       {
         label: "Aylık",

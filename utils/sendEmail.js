@@ -372,3 +372,82 @@ export async function sendAppointmentConfirmedToStudent(to, payload = {}) {
 
   await sendEmail({ to, subject: "✅ Talebiniz Onaylandı", html });
 }
+
+/* ============================================================
+   Abonelik (aylık otomatik ödeme) e-postaları
+============================================================ */
+
+export const sendSubscriptionStartedEmail = async (to, subscription) => {
+  const html = emailShell({
+    eyebrow: "Abonelik Başladı",
+    title: "Aboneliğin aktif 🎉",
+    subtitle: "Her ay otomatik olarak yenilenecek.",
+    bodyHtml: `
+      ${infoCard(
+        [
+          ["Paket", subscription.planLabel],
+          ["Aylık Tutar", `${(subscription.amount / 100).toFixed(2)} TL`],
+          ["Kayıtlı Kart", subscription.cardLast4 ? `•••• ${subscription.cardLast4}` : "—"],
+          ["Sonraki Çekim", new Date(subscription.nextBillingDate).toLocaleDateString("tr-TR")],
+        ],
+        { bg: "#eafaf0", border: "#c9f0da" }
+      )}
+      <p style="font-size:13px; color:${BRAND.textMuted}; line-height:1.6; margin-top:14px;">
+        Aboneliğini dilediğin zaman "Siparişlerim" sayfasından tek tıkla iptal edebilirsin — iptal ettiğinde
+        o an ödediğin dönem sonuna kadar erişimin devam eder, bir sonraki ay tekrar çekim yapılmaz.
+      </p>`,
+    ctaLabel: "Aboneliğimi Görüntüle",
+    ctaUrl: "https://sozderecekocluk.com/orders",
+  });
+
+  await sendEmail({ to, subject: "🎉 Aboneliğin Başladı", html });
+};
+
+export const sendSubscriptionPaymentFailedEmail = async (to, { subscription, attemptNumber, nextRetryDate }) => {
+  const html = emailShell({
+    eyebrow: "Ödeme Sorunu",
+    title: "Aylık çekim gerçekleşmedi ⚠️",
+    subtitle: "Kartında bir sorun olabilir (süre dolmuş, bakiye yetersiz vb.)",
+    bodyHtml: `
+      ${infoCard(
+        [
+          ["Paket", subscription.planLabel],
+          ["Tutar", `${(subscription.amount / 100).toFixed(2)} TL`],
+          ["Deneme", `${attemptNumber}. deneme`],
+          nextRetryDate ? ["Sonraki Deneme", new Date(nextRetryDate).toLocaleDateString("tr-TR")] : null,
+        ].filter(Boolean),
+        { bg: "#fef6e7", border: "#f6e2b3" }
+      )}
+      <p style="font-size:13px; color:${BRAND.textMuted}; line-height:1.6; margin-top:14px;">
+        ${nextRetryDate
+          ? "Kartını güncel tutarsan otomatik olarak tekrar deneyeceğiz. Sorun devam ederse aboneliğin duraklatılabilir."
+          : "Tüm otomatik deneme haklarımız tükendi, aboneliğin iptal edildi. Devam etmek istersen yeniden başlatabilirsin."}
+      </p>`,
+    ctaLabel: "Ödeme Bilgilerimi Güncelle",
+    ctaUrl: "https://sozderecekocluk.com/orders",
+  });
+
+  await sendEmail({ to, subject: "⚠️ Aylık Ödemen Alınamadı", html });
+};
+
+export const sendSubscriptionCancelledEmail = async (to, subscription) => {
+  const html = emailShell({
+    eyebrow: "Abonelik Sona Erdi",
+    title: "Aboneliğin iptal edildi",
+    bodyHtml: `
+      ${infoCard(
+        [
+          ["Paket", subscription.planLabel],
+          ["Son Erişim Tarihi", new Date(subscription.currentPeriodEnd).toLocaleDateString("tr-TR")],
+        ],
+        { bg: BRAND.bgPage, border: BRAND.border }
+      )}
+      <p style="font-size:13px; color:${BRAND.textMuted}; line-height:1.6; margin-top:14px;">
+        Bundan sonra kartından herhangi bir çekim yapılmayacak. Fikrini değiştirirsen aynı paketi istediğin zaman yeniden başlatabilirsin.
+      </p>`,
+    ctaLabel: "Paketlere Göz At",
+    ctaUrl: "https://sozderecekocluk.com/paket-detay",
+  });
+
+  await sendEmail({ to, subject: "Aboneliğin İptal Edildi", html });
+};
