@@ -178,6 +178,9 @@ model Package {
   examDate          DateTime?
   examDiscountRate  Float?
   plans             Json     @default("[]")
+  // Sekmeli süre planı (plans[]) YOKSA paketin kendisinin tek seferlik mi
+  // yoksa aylık abonelik mi olduğunu belirler — "once" | "monthly".
+  billingCycle  String   @default("once")
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
 }

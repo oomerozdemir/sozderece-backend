@@ -32,8 +32,8 @@ export const startSubscription = async (req, res) => {
     const userId = req.user.id;
     const { slug, planIndex, billingInfo, consentAccepted } = req.body;
 
-    if (!slug || planIndex === undefined || planIndex === null || !billingInfo) {
-      return res.status(400).json({ error: "Eksik veri: slug, planIndex ve billingInfo zorunludur." });
+    if (!slug || !billingInfo) {
+      return res.status(400).json({ error: "Eksik veri: slug ve billingInfo zorunludur." });
     }
     if (consentAccepted !== true) {
       return res.status(400).json({ error: "Otomatik yenileme onayı olmadan abonelik başlatılamaz." });
@@ -42,9 +42,18 @@ export const startSubscription = async (req, res) => {
     const pkg = await prisma.package.findUnique({ where: { slug } });
     if (!pkg) return res.status(404).json({ error: "Paket bulunamadı." });
 
+    // Paketin sekmeli süre planları (plans[]) varsa ve geçerli bir planIndex
+    // gönderilmişse o planın billingCycle'ı kullanılır; aksi halde (sekmesiz,
+    // tek fiyatlı paket) paketin kendi billingCycle/unitPrice alanları
+    // "sanal bir plan" gibi kullanılır — admin panelde "normal paket ekleme"
+    // formundaki Ödeme Tipi seçimi buraya karşılık geliyor.
     const plans = Array.isArray(pkg.plans) ? pkg.plans : [];
-    const plan = plans[parseInt(planIndex)];
-    if (!plan || plan.billingCycle !== "monthly") {
+    const hasPlanIndex = planIndex !== undefined && planIndex !== null && plans[parseInt(planIndex)];
+    const plan = hasPlanIndex
+      ? plans[parseInt(planIndex)]
+      : { label: pkg.name, unitPrice: pkg.unitPrice, billingCycle: pkg.billingCycle };
+
+    if (plan.billingCycle !== "monthly") {
       return res.status(400).json({ error: "Seçilen plan bir abonelik planı değil." });
     }
     if (!plan.unitPrice) {
@@ -57,7 +66,8 @@ export const startSubscription = async (req, res) => {
 
     const merchantOid = cleanMerchantOid(uuidv4());
     const amountTL = (plan.unitPrice / 100).toFixed(2);
-    const cart = [{ name: `${pkg.name} (${plan.label})`, price: amountTL, quantity: 1 }];
+    const packageName = hasPlanIndex ? `${pkg.name} (${plan.label})` : pkg.name;
+    const cart = [{ name: packageName, price: amountTL, quantity: 1 }];
     const consentIp = getUserIp(req);
     const consentAt = new Date().toISOString();
 
@@ -73,7 +83,7 @@ export const startSubscription = async (req, res) => {
           ...cart[0],
           isSubscriptionStart: true,
           packageSlug: slug,
-          planIndex: parseInt(planIndex),
+          planIndex: hasPlanIndex ? parseInt(planIndex) : null,
           planLabel: plan.label,
           amount: plan.unitPrice,
           consentIp,
@@ -81,7 +91,7 @@ export const startSubscription = async (req, res) => {
           consentText: SUBSCRIPTION_CONSENT_TEXT,
         }],
         billingInfo,
-        packageName: `${pkg.name} (${plan.label})`,
+        packageName,
         packageSlug: slug,
         discountRate: 0,
         totalPrice: parseFloat(amountTL),
