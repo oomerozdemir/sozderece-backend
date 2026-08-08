@@ -220,6 +220,27 @@ export const sendPasswordResetEmail = async (to, resetUrl) => {
   });
 };
 
+export const sendCoachWelcomeEmail = async (to, { name, tempPassword }) => {
+  const html = emailShell({
+    eyebrow: "Koç Hesabı",
+    title: `Hoş geldin${name ? `, ${name}` : ""}!`,
+    subtitle: "Sözderece Koçluk ekibine katıldın — hesabın oluşturuldu.",
+    bodyHtml: `
+      ${infoCard([["E-posta", to], ["Geçici Şifre", tempPassword]], { bg: "#eef1fd", border: "#d6ddf7" })}
+      <p style="font-size:14px; color:${BRAND.textMuted}; line-height:1.6; margin-top:14px;">
+        Bu geçici şifreyle giriş yaptıktan sonra, güvenliğin için ilk fırsatta şifreni değiştirmeni öneririz.
+      </p>`,
+    ctaLabel: "Giriş Yap",
+    ctaUrl: "https://sozderecekocluk.com/giris-yap",
+  });
+
+  await sendEmail({
+    to,
+    subject: "Sözderece Koçluk — Hesabın Hazır",
+    html,
+  });
+};
+
 export const sendCoachAssignmentToStudent = async (to, coach) => {
   const html = emailShell({
     eyebrow: "Koçluk",

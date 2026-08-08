@@ -1,7 +1,8 @@
 import prisma from "../utils/prisma.js";
 
 import bcrypt from 'bcrypt';
-import { sendCoachAssignmentToStudent, sendStudentAssignmentToCoach } from "../utils/sendEmail.js";
+import crypto from "crypto";
+import { sendCoachAssignmentToStudent, sendStudentAssignmentToCoach, sendCoachWelcomeEmail } from "../utils/sendEmail.js";
 import { uploadBufferToCloudinary } from "../helpers/cloudinaryUpload.js";
 
 
@@ -47,10 +48,20 @@ export const createCoachWithUser = async (req, res) => {
     const existing = await prisma.user.findUnique({ where: { email } });
     if (existing) return res.status(409).json({ message: "Bu e-posta ile bir kullanıcı zaten var." });
 
-    const hashedPassword = await bcrypt.hash("default123", 10);
+    // Her koça özel, rastgele bir geçici şifre — önceden herkese sabit
+    // "default123" veriliyordu (herkesin bildiği, kaynak kodda görünen bir
+    // şifre; /api/auth/login endpoint'i canlı olduğu için gerçek bir risk).
+    const tempPassword = crypto.randomBytes(9).toString("base64url");
+    const hashedPassword = await bcrypt.hash(tempPassword, 10);
     const newUser = await prisma.user.create({
       data: { name, email, password: hashedPassword, role: "coach", isVerified: true, emailVerified: true },
     });
+
+    try {
+      await sendCoachWelcomeEmail(email, { name, tempPassword });
+    } catch (e) {
+      console.warn("Koç hoş geldin maili gönderilemedi:", e?.message);
+    }
 
    let imageUrl = null;
 

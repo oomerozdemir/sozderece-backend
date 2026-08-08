@@ -145,7 +145,7 @@ export const updateOrder = async (req, res) => {
 // Fatura bilgilerini güncelle
 export const updateBillingInfo = async (req, res) => {
   const orderId = parseInt(req.params.id);
-  const { name, surname, email, phone, address, city, district, postalCode, tcNo, allowEmails } = req.body;
+  const { name, surname, email, phone, address, city, district, postalCode, tcNo, allowEmails, sinif, alan } = req.body;
 
   try {
     const updatedOrder = await prisma.order.update({
@@ -163,6 +163,8 @@ export const updateBillingInfo = async (req, res) => {
             postalCode,
             tcNo,
             allowEmails,
+            sinif,
+            alan,
           },
         },
       },
