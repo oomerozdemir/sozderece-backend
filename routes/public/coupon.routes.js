@@ -1,5 +1,5 @@
 import express from "express";
-import { validateCoupon, markCouponUsed, createCoupon, getAllCoupons, deleteCoupon } from "../../controllers/coupon.controller.js";
+import { validateCoupon, markCouponUsed, createCoupon, updateCoupon, getAllCoupons, deleteCoupon } from "../../controllers/coupon.controller.js";
 import { authenticateToken, authorizeRoles } from "../../middleware/authMiddleware.js";
 const router = express.Router();
 
@@ -9,5 +9,6 @@ router.post("/mark-used", authenticateToken, authorizeRoles("admin"), markCoupon
 router.get("/all", authenticateToken,authorizeRoles("admin"), getAllCoupons);
 router.delete("/:id", authenticateToken,authorizeRoles("admin"), deleteCoupon);
 router.post("/create", authenticateToken, authorizeRoles("admin"),createCoupon);
+router.put("/:id", authenticateToken, authorizeRoles("admin"), updateCoupon);
 
 export default router;

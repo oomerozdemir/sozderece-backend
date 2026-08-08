@@ -26,18 +26,23 @@ export const validateCoupon = async (req, res) => {
       return res.status(404).json({ error: "Kupon bulunamadı." });
     }
 
-    // 2. Kullanıcı daha önce kullandı mı? (Kupon bazlı kontrol)
+    // 2. Süresi dolmuş mu?
+    if (coupon.expiresAt && new Date(coupon.expiresAt) < new Date()) {
+      return res.status(400).json({ error: "Bu kuponun süresi dolmuş." });
+    }
+
+    // 3. Kullanıcı daha önce kullandı mı? (Kupon bazlı kontrol)
     const userUsed = coupon.usedBy.some((usage) => usage.userId === userId);
     if (userUsed) {
       return res.status(400).json({ error: "Bu kuponu zaten kullandınız." });
     }
 
-    // 3. Genel kullanım limiti doldu mu?
+    // 4. Genel kullanım limiti doldu mu?
     if (coupon.usedBy.length >= coupon.usageLimit) {
       return res.status(400).json({ error: "Kupon kullanım hakkı dolmuş." });
     }
 
-    // ✅ 4. "İlk Sipariş" Kontrolü (DÜZELTİLEN KISIM)
+    // ✅ 5. "İlk Sipariş" Kontrolü (DÜZELTİLEN KISIM)
     const isFirstOrderCoupon = code === "SOZDERECE200" || coupon.isFirstOrder === true;
 
     if (isFirstOrderCoupon) {
@@ -59,7 +64,7 @@ export const validateCoupon = async (req, res) => {
       }
     }
 
-    // 5. Başarılı yanıt
+    // 6. Başarılı yanıt
     return res.json({ 
       success: true, 
       code: coupon.code,
@@ -107,7 +112,7 @@ export const markCouponUsed = async (req, res) => {
 export const createCoupon = async (req, res) => {
   try {
     // Frontend'den gelen veriler (validPackages dizisi dahil)
-    const { code, discountRate, maxUsage, type, isFirstOrder, discountAmount, validPackages } = req.body;
+    const { code, discountRate, maxUsage, type, isFirstOrder, discountAmount, validPackages, expiresAt } = req.body;
 
     // --- DÜZELTME BURADA ---
     // Eğer Sabit Tutar (FIXED) seçildiyse, gelen TL tutarını Kuruşa çevir (x100)
@@ -124,12 +129,14 @@ export const createCoupon = async (req, res) => {
         type: type || "RATE",
         isFirstOrder: isFirstOrder || false,
         discountRate: discountRate ? parseInt(discountRate) : null,
-        
+
         // Hesaplanan kuruş değerini kaydediyoruz
-        discountAmount: finalDiscountAmount, 
-        
+        discountAmount: finalDiscountAmount,
+
         // Paket kısıtlaması
-        validPackages: validPackages || [] 
+        validPackages: validPackages || [],
+
+        expiresAt: expiresAt ? new Date(expiresAt) : null,
       },
     });
 
@@ -141,6 +148,43 @@ export const createCoupon = async (req, res) => {
     }
     console.error("Kupon oluşturulamadı:", error);
     res.status(500).json({ error: "Kupon oluşturulamadı." });
+  }
+};
+
+// ✅ Admin tarafından kupon düzenleme — silip yeniden oluşturmak yerine
+// (bu, geçmiş kullanım kayıtlarının couponId ilişkisini koparırdı) mevcut
+// kaydı güncelliyor.
+export const updateCoupon = async (req, res) => {
+  const id = parseInt(req.params.id);
+  try {
+    const { code, discountRate, maxUsage, type, isFirstOrder, discountAmount, validPackages, expiresAt } = req.body;
+
+    let finalDiscountAmount = null;
+    if (type === "FIXED" && discountAmount) {
+      finalDiscountAmount = parseFloat(discountAmount) * 100;
+    }
+
+    const updated = await prisma.coupon.update({
+      where: { id },
+      data: {
+        code: code.toUpperCase(),
+        usageLimit: parseInt(maxUsage),
+        type: type || "RATE",
+        isFirstOrder: isFirstOrder || false,
+        discountRate: type === "RATE" && discountRate ? parseInt(discountRate) : null,
+        discountAmount: finalDiscountAmount,
+        validPackages: validPackages || [],
+        expiresAt: expiresAt ? new Date(expiresAt) : null,
+      },
+    });
+
+    res.status(200).json({ message: "Kupon güncellendi.", coupon: updated });
+  } catch (error) {
+    if (error.code === "P2002") {
+      return res.status(400).json({ error: "Bu kupon kodu zaten kullanımda." });
+    }
+    console.error("Kupon güncellenemedi:", error);
+    res.status(500).json({ error: "Kupon güncellenemedi." });
   }
 };
 

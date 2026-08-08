@@ -247,6 +247,7 @@ model Coupon {
   isFirstOrder   Boolean       @default(false)
   type           String        @default("RATE")
   validPackages  String[]      @default([])
+  expiresAt      DateTime?
   usedBy         CouponUsage[]
 }
 
