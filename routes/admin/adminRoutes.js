@@ -8,7 +8,7 @@ import upload from "../../middleware/upload.js";
 import { sendExpiringOrderReminders } from "../../controllers/reminder.controller.js";
 import { createCoachWithUser, getAllCoaches, updateCoach, deleteCoach, assignCoachToUser } from "../../controllers/adminCoach.controller.js";
 import { listTeacherPublishRequests, approveTeacherPublish, rejectTeacherPublish, getTeacherRequestSummary } from "../../controllers/AdminTeacher.controller.js";
-import { updateCountdown, updatePopup, updatePaymentPageSettings, updateEarlyRegistration } from "../../controllers/siteSettings.controller.js";
+import { updateCountdown, updatePopup, updatePaymentPageSettings, updateEarlyRegistration, updatePricingVideo } from "../../controllers/siteSettings.controller.js";
 import { getAllPackages, createPackage, updatePackage, togglePackageVisibility, deletePackage } from "../../controllers/package.controller.js";
 import { getAdminConsultationSlots, toggleConsultationSlot, bulkUpdateConsultationSlots } from "../../controllers/consultationSlot.controller.js";
 import { getAllNavbarItems, createNavbarItem, updateNavbarItem, deleteNavbarItem, reorderNavbarItems } from "../../controllers/navbarItem.controller.js";
@@ -164,6 +164,7 @@ router.put("/settings/early-registration", authenticateToken, authorizeRoles("ad
 
 // Site ayarları - Ödeme Sayfası
 router.put("/settings/payment-page", authenticateToken, authorizeRoles("admin"), updatePaymentPageSettings);
+router.put("/settings/pricing-video", authenticateToken, authorizeRoles("admin"), updatePricingVideo);
 
 // Randevu slotu yönetimi (Ücretsiz ön görüşme)
 router.get("/consultation-slots", authenticateToken, authorizeRoles("admin"), getAdminConsultationSlots);

@@ -4,6 +4,12 @@ const COUNTDOWN_KEY = "countdown";
 const POPUP_KEY = "discountPopup";
 const PAYMENT_PAGE_KEY = "paymentPage";
 const EARLY_REG_KEY = "earlyRegistration";
+const PRICING_VIDEO_KEY = "pricingVideo";
+
+const DEFAULT_PRICING_VIDEO = {
+  enabled: false,
+  videoUrl: "",
+};
 
 const DEFAULT_EARLY_REG = {
   enabled: false,
@@ -145,6 +151,35 @@ export const updateEarlyRegistration = async (req, res) => {
   } catch (err) {
     console.error("updateEarlyRegistration error:", err);
     res.status(500).json({ message: "Erken kayıt ayarları kaydedilemedi." });
+  }
+};
+
+// GET /api/settings/pricing-video - Herkese açık
+export const getPricingVideo = async (req, res) => {
+  try {
+    const setting = await prisma.siteSettings.findUnique({ where: { key: PRICING_VIDEO_KEY } });
+    if (!setting) return res.json(DEFAULT_PRICING_VIDEO);
+    return res.json(JSON.parse(setting.value));
+  } catch (err) {
+    console.error("getPricingVideo error:", err);
+    res.status(500).json({ message: "Video ayarları alınamadı." });
+  }
+};
+
+// PUT /api/admin/settings/pricing-video - Admin only
+export const updatePricingVideo = async (req, res) => {
+  try {
+    const { enabled, videoUrl } = req.body;
+    const value = JSON.stringify({ enabled: !!enabled, videoUrl: videoUrl || "" });
+    await prisma.siteSettings.upsert({
+      where: { key: PRICING_VIDEO_KEY },
+      update: { value },
+      create: { key: PRICING_VIDEO_KEY, value },
+    });
+    res.json({ success: true });
+  } catch (err) {
+    console.error("updatePricingVideo error:", err);
+    res.status(500).json({ message: "Video ayarları kaydedilemedi." });
   }
 };
 
