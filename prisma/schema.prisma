@@ -30,15 +30,6 @@ model ConsultationSlot {
   @@unique([date, timeSlot])
 }
 
-model TrialMeeting {
-  id        Int      @id @default(autoincrement())
-  name      String
-  email     String
-  phone     String
-  userType  String
-  message   String
-  createdAt DateTime @default(now())
-}
 
 model User {
   id                  Int                    @id @default(autoincrement())
@@ -573,6 +564,7 @@ model CampApplication {
   email     String
   grade     String
   type      String   @default("free")
+  status    String   @default("new")
   createdAt DateTime @default(now())
 }
 
@@ -583,6 +575,7 @@ model LgsApplication {
   grade     String
   message   String?
   type      String   @default("call")
+  status    String   @default("new")
   createdAt DateTime @default(now())
 }
 

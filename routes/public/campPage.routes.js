@@ -6,6 +6,8 @@ import {
   submitApplication,
   listApplications,
   exportApplicationsCSV,
+  updateApplicationStatus,
+  deleteApplication,
 } from "../../controllers/campPage.controller.js";
 
 const router = express.Router();
@@ -15,5 +17,7 @@ router.post("/camp-page/apply", submitApplication);
 router.put("/admin/camp-page", authenticateToken, authorizeRoles("admin"), updateCampContent);
 router.get("/admin/camp-applications", authenticateToken, authorizeRoles("admin"), listApplications);
 router.get("/admin/camp-applications/export", authenticateToken, authorizeRoles("admin"), exportApplicationsCSV);
+router.put("/admin/camp-applications/:id/status", authenticateToken, authorizeRoles("admin"), updateApplicationStatus);
+router.delete("/admin/camp-applications/:id", authenticateToken, authorizeRoles("admin"), deleteApplication);
 
 export default router;

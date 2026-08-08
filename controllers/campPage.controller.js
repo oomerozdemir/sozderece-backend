@@ -228,6 +228,34 @@ export const listApplications = async (req, res) => {
   }
 };
 
+const VALID_LEAD_STATUSES = ["new", "contacted", "converted", "no-show"];
+
+export const updateApplicationStatus = async (req, res) => {
+  try {
+    const id = parseInt(req.params.id);
+    const { status } = req.body;
+    if (!VALID_LEAD_STATUSES.includes(status)) {
+      return res.status(400).json({ success: false, message: "Geçersiz durum değeri." });
+    }
+    const updated = await prisma.campApplication.update({ where: { id }, data: { status } });
+    return res.json({ success: true, application: updated });
+  } catch (err) {
+    console.error("updateApplicationStatus (camp) error:", err);
+    return res.status(500).json({ success: false, message: "Durum güncellenemedi." });
+  }
+};
+
+export const deleteApplication = async (req, res) => {
+  try {
+    const id = parseInt(req.params.id);
+    await prisma.campApplication.delete({ where: { id } });
+    return res.json({ success: true });
+  } catch (err) {
+    console.error("deleteApplication (camp) error:", err);
+    return res.status(500).json({ success: false, message: "Başvuru silinemedi." });
+  }
+};
+
 export const exportApplicationsCSV = async (req, res) => {
   try {
     const applications = await prisma.campApplication.findMany({ orderBy: { createdAt: "desc" } });

@@ -9,6 +9,8 @@ import {
   submitLgsApplication,
   listLgsApplications,
   exportLgsCsv,
+  updateLgsApplicationStatus,
+  deleteLgsApplication,
 } from "../../controllers/lgsApplication.controller.js";
 
 const router = express.Router();
@@ -30,6 +32,8 @@ router.post("/lgs-application", lgsApplicationLimiter, submitLgsApplication);
 // Admin
 router.get("/admin/lgs-applications", authenticateToken, authorizeRoles("admin"), listLgsApplications);
 router.get("/admin/lgs-applications/export", authenticateToken, authorizeRoles("admin"), exportLgsCsv);
+router.put("/admin/lgs-applications/:id/status", authenticateToken, authorizeRoles("admin"), updateLgsApplicationStatus);
+router.delete("/admin/lgs-applications/:id", authenticateToken, authorizeRoles("admin"), deleteLgsApplication);
 router.put("/admin/settings/lgs", authenticateToken, authorizeRoles("admin"), updateLgsSettings);
 router.put("/admin/lgs-content", authenticateToken, authorizeRoles("admin"), updateLgsContent);
 

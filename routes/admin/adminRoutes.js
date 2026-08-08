@@ -1,5 +1,5 @@
 import express from "express";
-import { getAllUsers, deleteUser, updateUser, createUserAsAdmin } from "../../controllers/adminController.js";
+import { getAllUsers, deleteUser, updateUser, createUserAsAdmin, getAllContacts, deleteContact } from "../../controllers/adminController.js";
 import {deleteOrder, getAllOrdersForAdmin, getRefundRequests, approveRefundRequest, 
   rejectRefund, updateOrder, updateBillingInfo, checkPaytrStatus} from "../../controllers/adminOrder.controller.js";
 import { authenticateToken, authorizeRoles } from "../../middleware/authMiddleware.js";
@@ -26,6 +26,10 @@ router.delete("/users/:id", authenticateToken, authorizeRoles("admin"), deleteUs
 // Kullanıcı güncelle
 router.put("/users/:id", authenticateToken, authorizeRoles("admin"), updateUser);
 router.post("/users", authenticateToken, authorizeRoles("admin"), createUserAsAdmin);
+
+// Ücretsiz görüşme randevusu (Contact) talepleri
+router.get("/contacts", authenticateToken, authorizeRoles("admin"), getAllContacts);
+router.delete("/contacts/:id", authenticateToken, authorizeRoles("admin"), deleteContact);
 
 // Iade islemleri
 router.get("/orders/refund-requests", authenticateToken, authorizeRoles("admin"), getRefundRequests);

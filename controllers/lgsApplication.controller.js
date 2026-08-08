@@ -258,6 +258,34 @@ export const listLgsApplications = async (req, res) => {
   }
 };
 
+const VALID_LEAD_STATUSES = ["new", "contacted", "converted", "no-show"];
+
+export const updateLgsApplicationStatus = async (req, res) => {
+  try {
+    const id = parseInt(req.params.id);
+    const { status } = req.body;
+    if (!VALID_LEAD_STATUSES.includes(status)) {
+      return res.status(400).json({ success: false, message: "Geçersiz durum değeri." });
+    }
+    const updated = await prisma.lgsApplication.update({ where: { id }, data: { status } });
+    return res.json({ success: true, application: updated });
+  } catch (err) {
+    console.error("updateLgsApplicationStatus error:", err);
+    return res.status(500).json({ success: false, message: "Durum güncellenemedi." });
+  }
+};
+
+export const deleteLgsApplication = async (req, res) => {
+  try {
+    const id = parseInt(req.params.id);
+    await prisma.lgsApplication.delete({ where: { id } });
+    return res.json({ success: true });
+  } catch (err) {
+    console.error("deleteLgsApplication error:", err);
+    return res.status(500).json({ success: false, message: "Başvuru silinemedi." });
+  }
+};
+
 export const exportLgsCsv = async (req, res) => {
   try {
     const applications = await prisma.lgsApplication.findMany({ orderBy: { createdAt: "desc" } });

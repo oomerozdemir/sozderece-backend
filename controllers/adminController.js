@@ -75,6 +75,28 @@ export const updateUser = async (req, res) => {
 };
 
 
+// Ücretsiz görüşme randevusu (Contact) taleplerini listele
+export const getAllContacts = async (req, res) => {
+  try {
+    const contacts = await prisma.contact.findMany({ orderBy: { createdAt: "desc" } });
+    res.status(200).json({ success: true, contacts, total: contacts.length });
+  } catch (error) {
+    console.error("Admin getAllContacts error:", error);
+    res.status(500).json({ error: "Randevu talepleri getirilemedi." });
+  }
+};
+
+export const deleteContact = async (req, res) => {
+  try {
+    const id = parseInt(req.params.id);
+    await prisma.contact.delete({ where: { id } });
+    res.json({ success: true });
+  } catch (error) {
+    console.error("Randevu talebi silinemedi:", error);
+    res.status(500).json({ error: "Randevu talebi silinemedi." });
+  }
+};
+
 export const createUserAsAdmin = async (req, res) => {
   const { name, email, password, role } = req.body;
   const existingUser = await prisma.user.findUnique({
