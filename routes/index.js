@@ -19,6 +19,7 @@ import applicationRoutes from "./public/application.routes.js";
 import settingsRoutes from "./public/settings.routes.js";
 import campPageRoutes from "./public/campPage.routes.js";
 import lgsApplicationRoutes from "./public/lgsApplication.routes.js";
+import yksApplicationRoutes from "./public/yksApplication.routes.js";
 import subscriptionRoutes from "./public/subscription.routes.js";
 
 
@@ -47,6 +48,7 @@ router.use("/v1/applications", applicationRoutes);
 router.use("/settings", settingsRoutes);
 router.use("/", campPageRoutes);
 router.use("/", lgsApplicationRoutes);
+router.use("/", yksApplicationRoutes);
 router.use("/", subscriptionRoutes);
 
 

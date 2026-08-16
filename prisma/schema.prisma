@@ -579,6 +579,17 @@ model LgsApplication {
   createdAt DateTime @default(now())
 }
 
+model YksApplication {
+  id        Int      @id @default(autoincrement())
+  name      String
+  phone     String
+  grade     String
+  message   String?
+  type      String   @default("call")
+  status    String   @default("new")
+  createdAt DateTime @default(now())
+}
+
 model NavbarItem {
   id         Int      @id @default(autoincrement())
   name       String
