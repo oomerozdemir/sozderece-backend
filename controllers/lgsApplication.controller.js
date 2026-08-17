@@ -120,7 +120,7 @@ const DEFAULT_LGS_CONTENT = {
       { question: "Çocuğum çok geri kaldı, yine de fayda görür mü?", answer: "Evet. Koçumuz önce mevcut durumu analiz eder ve gerçekçi bir yol haritası çizer. Geç kalmış yoktur, doğru yönlendirme her şeyi değiştirir." },
       { question: "Veli olarak süreçte nasıl yer alıyorum?", answer: "Haftalık veli raporu ile çocuğunuzun ilerlemesini takip edebilirsiniz. Ayrıca talep ettiğinizde koçla birebir görüşme yapabilirsiniz." },
       { question: "Görüşmeler nasıl gerçekleşiyor?", answer: "Tüm görüşmeler online (Zoom veya Google Meet) yapılır. Haftada en az bir koç görüşmesi ve WhatsApp üzerinden günlük takip sağlanır." },
-      { question: "Ücret iadesi mümkün mü?", answer: "Evet. Kayıt tarihinden itibaren ilk 5 gün içinde koşulsuz iade hakkınız bulunuyor." },
+      { question: "Ücret iadesi mümkün mü?", answer: "Evet. Kayıt tarihinden itibaren ilk 14 gün içinde koşulsuz iade hakkınız bulunuyor." },
     ],
   },
 };

@@ -88,7 +88,7 @@ const DEFAULT_YKS_CONTENT = {
       { question: "YKS Koçluğu hangi sınıflar için uygundur?", answer: "Program, 9-12. sınıf ve mezun öğrenciler için tasarlanmıştır. Her öğrenci için ayrı bir kişisel plan hazırlanır." },
       { question: "Net sayım çok düşük, yine de fayda görür müyüm?", answer: "Evet. Koçun önce mevcut durumunu analiz eder ve gerçekçi bir yol haritası çizer. Geç kalmış yoktur, doğru yönlendirme her şeyi değiştirir." },
       { question: "Görüşmeler nasıl gerçekleşiyor?", answer: "Tüm görüşmeler online (Zoom veya Google Meet) yapılır. Haftada en az bir koç görüşmesi ve WhatsApp üzerinden günlük takip sağlanır." },
-      { question: "Ücret iadesi mümkün mü?", answer: "Evet. Kayıt tarihinden itibaren ilk 5 gün içinde koşulsuz iade hakkınız bulunuyor." },
+      { question: "Ücret iadesi mümkün mü?", answer: "Evet. Kayıt tarihinden itibaren ilk 14 gün içinde koşulsuz iade hakkınız bulunuyor." },
     ],
   },
 };
