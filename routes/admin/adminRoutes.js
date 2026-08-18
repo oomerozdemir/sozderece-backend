@@ -1,7 +1,7 @@
 import express from "express";
 import { getAllUsers, deleteUser, updateUser, createUserAsAdmin, getAllContacts, deleteContact } from "../../controllers/adminController.js";
-import {deleteOrder, getAllOrdersForAdmin, getRefundRequests, approveRefundRequest, 
-  rejectRefund, updateOrder, updateBillingInfo, checkPaytrStatus} from "../../controllers/adminOrder.controller.js";
+import {deleteOrder, getAllOrdersForAdmin, getRefundRequests, approveRefundRequest,
+  rejectRefund, updateOrder, updateBillingInfo, checkPaytrStatus, getOrderAttribution} from "../../controllers/adminOrder.controller.js";
 import { authenticateToken, authorizeRoles } from "../../middleware/authMiddleware.js";
 import { PrismaClient } from "@prisma/client";
 import upload from "../../middleware/upload.js";
@@ -42,6 +42,7 @@ router.delete("/orders/:id", authenticateToken, authorizeRoles("admin"), deleteO
 router.put("/orders/:id", authenticateToken, authorizeRoles("admin"), updateOrder);
 router.put("/orders/:id/billing", authenticateToken, authorizeRoles("admin"), updateBillingInfo);
 router.post("/orders/check-payment", authenticateToken, authorizeRoles("admin"), checkPaytrStatus);
+router.get("/orders/:id/attribution", authenticateToken, authorizeRoles("admin"), getOrderAttribution);
 
 
 //Koc yonetimi

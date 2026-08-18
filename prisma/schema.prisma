@@ -21,15 +21,14 @@ model Contact {
 
 model ConsultationSlot {
   id        Int      @id @default(autoincrement())
-  date      String   // "2026-03-20" formatında
-  timeSlot  String   // "09:00 - 09:20" formatında
+  date      String // "2026-03-20" formatında
+  timeSlot  String // "09:00 - 09:20" formatında
   isBlocked Boolean  @default(true)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
   @@unique([date, timeSlot])
 }
-
 
 model User {
   id                  Int                    @id @default(autoincrement())
@@ -60,6 +59,56 @@ model User {
   assignedCoach       Coach?                 @relation("AssignedCoach", fields: [assignedCoachId], references: [id])
   verificationCodes   VerificationCode[]
   subscriptions       Subscription[]
+  visitors            Visitor[]
+}
+
+// Anonim ziyaretçi kimliği — sd_visitor_id olarak client'ta (localStorage)
+// üretilip taşınır, satın almadan önceki tüm ziyaretleri tek kimlik altında
+// toplar. userId sadece bilinen bir hesaba bağlanırsa doldurulur (v1'de
+// otomatik eşleme mantığı YOK, alan ileride kullanılmak üzere bırakıldı).
+model Visitor {
+  id            String           @id @default(cuid())
+  firstSeenAt   DateTime         @default(now())
+  lastSeenAt    DateTime         @updatedAt
+  userId        Int?
+  user          User?            @relation(fields: [userId], references: [id])
+  sessions      VisitorSession[]
+  orders        Order[]
+  paymentMetas  PaymentMeta[]
+  subscriptions Subscription[]
+
+  @@index([userId])
+  @@index([lastSeenAt])
+}
+
+// Tek bir ziyaret/oturum — 30 dakika hareketsizlikten sonra yeni oturum
+// sayılır (GA4 varsayılanıyla aynı sınır). channel, deviceType, os, browser
+// sunucu tarafında (parseUserAgent.js / classifyChannel.js) hesaplanır.
+model VisitorSession {
+  id             String         @id @default(cuid())
+  visitorId      String
+  visitor        Visitor        @relation(fields: [visitorId], references: [id], onDelete: Cascade)
+  startedAt      DateTime       @default(now())
+  lastActivityAt DateTime       @updatedAt
+  referrer       String?
+  referrerDomain String?
+  landingPage    String?
+  utmSource      String?
+  utmMedium      String?
+  utmCampaign    String?
+  utmTerm        String?
+  utmContent     String?
+  channel        String?
+  deviceType     String?
+  os             String?
+  browser        String?
+  userAgent      String?
+  pageViewCount  Int            @default(1)
+  orders         Order[]
+  paymentMetas   PaymentMeta[]
+  subscriptions  Subscription[]
+
+  @@index([visitorId, startedAt])
 }
 
 model Coach {
@@ -74,55 +123,63 @@ model Coach {
 }
 
 model Order {
-  id              Int                    @id @default(autoincrement())
-  package         String
-  createdAt       DateTime               @default(now())
-  userId          Int?
-  billingInfoId   Int
-  endDate         DateTime
-  startDate       DateTime               @default(now())
-  updatedAt       DateTime               @updatedAt
-  status          String                 @default("pending_payment")
-  refundMessage   String?
-  refundReason    String?
-  merchantOid     String?                @unique
-  totalPrice      Float?
-  subscriptionId  Int?
-  billingInfo     BillingInfo            @relation("BillingToOrder", fields: [billingInfoId], references: [id])
-  user            User?                  @relation(fields: [userId], references: [id])
-  subscription    Subscription?          @relation(fields: [subscriptionId], references: [id])
-  orderItems      OrderItem[]
-  studentRequests StudentLessonRequest[] @relation("OrderStudentRequest")
+  id               Int                    @id @default(autoincrement())
+  package          String
+  createdAt        DateTime               @default(now())
+  userId           Int?
+  billingInfoId    Int
+  endDate          DateTime
+  startDate        DateTime               @default(now())
+  updatedAt        DateTime               @updatedAt
+  status           String                 @default("pending_payment")
+  refundMessage    String?
+  refundReason     String?
+  merchantOid      String?                @unique
+  totalPrice       Float?
+  subscriptionId   Int?
+  visitorId        String?
+  visitorSessionId String?
+  billingInfo      BillingInfo            @relation("BillingToOrder", fields: [billingInfoId], references: [id])
+  user             User?                  @relation(fields: [userId], references: [id])
+  subscription     Subscription?          @relation(fields: [subscriptionId], references: [id])
+  visitor          Visitor?               @relation(fields: [visitorId], references: [id], onDelete: SetNull)
+  visitorSession   VisitorSession?        @relation(fields: [visitorSessionId], references: [id], onDelete: SetNull)
+  orderItems       OrderItem[]
+  studentRequests  StudentLessonRequest[] @relation("OrderStudentRequest")
 }
 
 // Aylık otomatik ödeme (abonelik). PayTR'nin Direct API / Kart Saklama
 // sistemiyle çalışır — utoken/ctoken PayTR'nin kendi kart-saklama servisinden
 // dönen referans token'larıdır, ham kart bilgisi burada hiç tutulmaz.
 model Subscription {
-  id                Int       @id @default(autoincrement())
+  id                Int                  @id @default(autoincrement())
   userId            Int
   packageSlug       String
   planLabel         String
   amount            Int // kuruş/ay
-  status            String    @default("active") // "active" | "past_due" | "cancelled"
+  status            String               @default("active") // "active" | "past_due" | "cancelled"
   utoken            String
   ctoken            String
   cardLast4         String?
   cardBrand         String?
   currentPeriodEnd  DateTime
   nextBillingDate   DateTime
-  cancelAtPeriodEnd Boolean   @default(false)
+  cancelAtPeriodEnd Boolean              @default(false)
   cancelledAt       DateTime?
-  failedAttempts    Int       @default(0)
+  failedAttempts    Int                  @default(0)
   lastFailureReason String?
   // Chargeback/itiraz savunması için rıza kanıt izi: kayıt anındaki IP,
   // zaman damgası ve kullanıcının onayladığı tam metin.
   consentIp         String?
   consentAt         DateTime?
   consentText       String?
-  createdAt         DateTime  @default(now())
-  updatedAt         DateTime  @updatedAt
+  createdAt         DateTime             @default(now())
+  updatedAt         DateTime             @updatedAt
+  visitorId         String?
+  visitorSessionId  String?
   user              User                 @relation(fields: [userId], references: [id])
+  visitor           Visitor?             @relation(fields: [visitorId], references: [id], onDelete: SetNull)
+  visitorSession    VisitorSession?      @relation(fields: [visitorSessionId], references: [id], onDelete: SetNull)
   charges           SubscriptionCharge[]
   orders            Order[]
 
@@ -131,49 +188,49 @@ model Subscription {
 }
 
 model SubscriptionCharge {
-  id             Int      @id @default(autoincrement())
+  id             Int          @id @default(autoincrement())
   subscriptionId Int
-  merchantOid    String   @unique
+  merchantOid    String       @unique
   amount         Int
   status         String // "success" | "failed"
   failReason     String?
-  attemptNumber  Int      @default(1)
-  attemptedAt    DateTime @default(now())
+  attemptNumber  Int          @default(1)
+  attemptedAt    DateTime     @default(now())
   subscription   Subscription @relation(fields: [subscriptionId], references: [id])
 
   @@index([subscriptionId])
 }
 
 model Package {
-  id            Int      @id @default(autoincrement())
-  slug          String   @unique
-  name          String
-  description   String
-  price         Float
-  unitPrice     Int?
-  priceText     String?
-  oldPriceText  String?
-  subtitle      String?
-  type          String?
-  hidden        Boolean  @default(false)
-  displayOrder  Int      @default(0)
-  ctaLabel      String?
-  ctaHref       String?
-  features      Json     @default("[]")
-  note          String?
-  freeLessons   Int?
-  promoPrice        Float?
-  promoUnitPrice    Int?
-  promoEndDate      DateTime?
-  promoLabel        String?
-  examDate          DateTime?
-  examDiscountRate  Float?
-  plans             Json     @default("[]")
+  id               Int       @id @default(autoincrement())
+  slug             String    @unique
+  name             String
+  description      String
+  price            Float
+  unitPrice        Int?
+  priceText        String?
+  oldPriceText     String?
+  subtitle         String?
+  type             String?
+  hidden           Boolean   @default(false)
+  displayOrder     Int       @default(0)
+  ctaLabel         String?
+  ctaHref          String?
+  features         Json      @default("[]")
+  note             String?
+  freeLessons      Int?
+  promoPrice       Float?
+  promoUnitPrice   Int?
+  promoEndDate     DateTime?
+  promoLabel       String?
+  examDate         DateTime?
+  examDiscountRate Float?
+  plans            Json      @default("[]")
   // Sekmeli süre planı (plans[]) YOKSA paketin kendisinin tek seferlik mi
   // yoksa aylık abonelik mi olduğunu belirler — "once" | "monthly".
-  billingCycle  String   @default("once")
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
+  billingCycle     String    @default("once")
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
 }
 
 model Cart {
@@ -274,19 +331,23 @@ model PasswordResetToken {
 }
 
 model PaymentMeta {
-  id           Int      @id @default(autoincrement())
-  merchantOid  String   @unique
-  userId       Int?
-  cart         Json
-  billingInfo  Json
-  packageName  String
-  discountRate Int
-  couponCode   String?
-  totalPrice   Float
-  createdAt    DateTime @default(now())
-  requestId    String?  @db.VarChar(191)
-  packageSlug  String?
-  user         User?    @relation(fields: [userId], references: [id])
+  id               Int             @id @default(autoincrement())
+  merchantOid      String          @unique
+  userId           Int?
+  cart             Json
+  billingInfo      Json
+  packageName      String
+  discountRate     Int
+  couponCode       String?
+  totalPrice       Float
+  createdAt        DateTime        @default(now())
+  requestId        String?         @db.VarChar(191)
+  packageSlug      String?
+  visitorId        String?
+  visitorSessionId String?
+  user             User?           @relation(fields: [userId], references: [id])
+  visitor          Visitor?        @relation(fields: [visitorId], references: [id], onDelete: SetNull)
+  visitorSession   VisitorSession? @relation(fields: [visitorSessionId], references: [id], onDelete: SetNull)
 
   @@index([requestId])
 }
@@ -516,32 +577,33 @@ enum RequestStatus {
 }
 
 enum InstructorCategory {
-  PDR_GRADUATE      // PDR Mezunu
-  PDR_STUDENT       // PDR Öğrencisi
+  PDR_GRADUATE // PDR Mezunu
+  PDR_STUDENT // PDR Öğrencisi
   UNIVERSITY_STUDENT // Üniversite Öğrencisi
 }
 
 model InstructorApplication {
-  id          String              @id @default(cuid())
-  firstName   String
-  lastName    String
-  email       String
-  phone       String
-  birthDate   DateTime?
-  category    InstructorCategory
-  university  String?
-  department  String?
-  ranking     String?             // YKS Derecesi
-  message     String?             @db.Text
-  cvUrl       String?             // Cloudinary URL
-  status      String              @default("PENDING") // PENDING, REVIEWED, ACCEPTED, REJECTED
-  createdAt   DateTime            @default(now())
-  updatedAt   DateTime            @updatedAt
+  id         String             @id @default(cuid())
+  firstName  String
+  lastName   String
+  email      String
+  phone      String
+  birthDate  DateTime?
+  category   InstructorCategory
+  university String?
+  department String?
+  ranking    String? // YKS Derecesi
+  message    String?            @db.Text
+  cvUrl      String? // Cloudinary URL
+  status     String             @default("PENDING") // PENDING, REVIEWED, ACCEPTED, REJECTED
+  createdAt  DateTime           @default(now())
+  updatedAt  DateTime           @updatedAt
 
   @@index([email])
   @@index([status])
   @@index([createdAt])
 }
+
 model SiteSettings {
   id        Int      @id @default(autoincrement())
   key       String   @unique

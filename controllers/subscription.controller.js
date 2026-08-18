@@ -30,7 +30,7 @@ export const SUBSCRIPTION_CONSENT_TEXT =
 export const startSubscription = async (req, res) => {
   try {
     const userId = req.user.id;
-    const { slug, planIndex, billingInfo, consentAccepted } = req.body;
+    const { slug, planIndex, billingInfo, consentAccepted, visitorId, sessionId } = req.body;
 
     if (!slug || !billingInfo) {
       return res.status(400).json({ error: "Eksik veri: slug ve billingInfo zorunludur." });
@@ -71,6 +71,14 @@ export const startSubscription = async (req, res) => {
     const consentIp = getUserIp(req);
     const consentAt = new Date().toISOString();
 
+    // Oturum/ziyaretçi atfı: geçersiz/eski bir sessionId FK hatasıyla abonelik
+    // başlatmayı asla bozmamalı — var olduğu doğrulanamıyorsa null geçilir.
+    let validSessionId = null;
+    if (sessionId) {
+      const sessionExists = await prisma.visitorSession.findUnique({ where: { id: sessionId }, select: { id: true } });
+      if (sessionExists) validSessionId = sessionId;
+    }
+
     // Callback gelene kadar bekleyen kayıt — mevcut PaymentMeta tablosu
     // yeniden kullanılıyor, cart JSON'u içine abonelik işareti + rıza kanıt
     // izi (IP, zaman damgası, onaylanan tam metin) konuyor. Callback geldiğinde
@@ -95,6 +103,8 @@ export const startSubscription = async (req, res) => {
         packageSlug: slug,
         discountRate: 0,
         totalPrice: parseFloat(amountTL),
+        visitorId: validSessionId ? visitorId : null,
+        visitorSessionId: validSessionId,
       },
     });
 
@@ -171,6 +181,8 @@ export async function finalizeSubscriptionStart({ pm, merchantOid, status, utoke
         consentIp: meta?.consentIp || null,
         consentAt: meta?.consentAt ? new Date(meta.consentAt) : null,
         consentText: meta?.consentText || null,
+        visitorId: pm.visitorId,
+        visitorSessionId: pm.visitorSessionId,
       },
     });
 
@@ -185,6 +197,8 @@ export async function finalizeSubscriptionStart({ pm, merchantOid, status, utoke
         merchantOid,
         totalPrice: amount / 100,
         subscriptionId: subscription.id,
+        visitorId: pm.visitorId,
+        visitorSessionId: pm.visitorSessionId,
         orderItems: { create: [{ name: planLabel, price: amount / 100, quantity: 1 }] },
       },
     });
@@ -252,6 +266,8 @@ export async function resolveChargeSuccess({ subscriptionId, merchantOid }) {
         merchantOid,
         totalPrice: subscription.amount / 100,
         subscriptionId: subscription.id,
+        visitorId: subscription.visitorId,
+        visitorSessionId: subscription.visitorSessionId,
         orderItems: { create: [{ name: subscription.planLabel, price: subscription.amount / 100, quantity: 1 }] },
       },
       include: { billingInfo: true },

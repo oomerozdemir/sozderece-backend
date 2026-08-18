@@ -6,6 +6,7 @@ import path from "path";
 import allRoutes from "./routes/index.js";
 import "./cron/abondonedCart.js";
 import "./cron/subscriptionBilling.js";
+import "./cron/pruneVisitorSessions.js";
 
 dotenv.config();
 const app = express();

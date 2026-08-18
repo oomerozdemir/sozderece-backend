@@ -21,6 +21,7 @@ import campPageRoutes from "./public/campPage.routes.js";
 import lgsApplicationRoutes from "./public/lgsApplication.routes.js";
 import yksApplicationRoutes from "./public/yksApplication.routes.js";
 import subscriptionRoutes from "./public/subscription.routes.js";
+import trackingRoutes from "./public/tracking.routes.js";
 
 
 // 🔐 Admin routes
@@ -50,6 +51,7 @@ router.use("/", campPageRoutes);
 router.use("/", lgsApplicationRoutes);
 router.use("/", yksApplicationRoutes);
 router.use("/", subscriptionRoutes);
+router.use("/", trackingRoutes);
 
 
 

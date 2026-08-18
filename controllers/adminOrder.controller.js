@@ -3,6 +3,8 @@ import prisma from "../utils/prisma.js";
 import crypto from "crypto";
 import axios from "axios";
 import qs from "querystring";
+import { classifyChannel } from "../utils/classifyChannel.js";
+import { deviceTypeLabel } from "../utils/parseUserAgent.js";
 
 
 // Admin tüm siparişleri görür
@@ -219,5 +221,96 @@ export const checkPaytrStatus = async (req, res) => {
   } catch (error) {
     console.error("⚠️ PayTR Durum Sorgu Hatası:");
     return res.status(500).json({ error: "Durum sorgulanamadı"});
+  }
+};
+
+// Bir siparişin trafik kaynağını + o ziyaretçinin tüm oturum geçmişini döner.
+// Sipariş listesine gömülmüyor — admin bir siparişi genişlettiğinde tek tek çağrılır.
+export const getOrderAttribution = async (req, res) => {
+  try {
+    const id = parseInt(req.params.id);
+    const order = await prisma.order.findUnique({
+      where: { id },
+      select: { id: true, visitorId: true, visitorSessionId: true },
+    });
+    if (!order) return res.status(404).json({ success: false, message: "Sipariş bulunamadı." });
+
+    if (!order.visitorId) {
+      return res.json({ success: true, hasData: false });
+    }
+
+    const [convertingSession, allSessions] = await Promise.all([
+      order.visitorSessionId
+        ? prisma.visitorSession.findUnique({ where: { id: order.visitorSessionId } })
+        : null,
+      prisma.visitorSession.findMany({
+        where: { visitorId: order.visitorId },
+        orderBy: { startedAt: "asc" },
+        select: { id: true, startedAt: true, utmSource: true, utmMedium: true, referrerDomain: true },
+      }),
+    ]);
+
+    if (!convertingSession) {
+      // Sipariş bir ziyaretçiye bağlı ama o anki oturum kaydı bulunamadı
+      // (ör. veri temizleme cron'u tarafından süpürülmüş) — yine de ziyaretçinin
+      // genel geçmişini gösterebiliriz, sadece üst anlık-görüntü paneli boş kalır.
+      return res.json({
+        success: true,
+        hasData: true,
+        snapshot: null,
+        totalSessions: allSessions.length,
+      });
+    }
+
+    const snapshotChannel = classifyChannel({
+      utmSource: convertingSession.utmSource,
+      utmMedium: convertingSession.utmMedium,
+      referrerDomain: convertingSession.referrerDomain,
+    });
+    const durationSeconds = Math.max(
+      0,
+      Math.round((new Date(convertingSession.lastActivityAt).getTime() - new Date(convertingSession.startedAt).getTime()) / 1000)
+    );
+
+    const convertingIndex = allSessions.findIndex((s) => s.id === convertingSession.id);
+    const firstRaw = allSessions[0];
+    const firstChannel = firstRaw
+      ? classifyChannel({ utmSource: firstRaw.utmSource, utmMedium: firstRaw.utmMedium, referrerDomain: firstRaw.referrerDomain })
+      : null;
+    const middleSessionsCount = convertingIndex > 0 ? convertingIndex - 1 : 0;
+
+    return res.json({
+      success: true,
+      hasData: true,
+      snapshot: {
+        headline: snapshotChannel.headline,
+        icon: snapshotChannel.icon,
+        referrer: convertingSession.referrer,
+        referrerDomain: convertingSession.referrerDomain,
+        deviceType: convertingSession.deviceType,
+        deviceTypeLabel: deviceTypeLabel(convertingSession.deviceType),
+        os: convertingSession.os,
+        browser: convertingSession.browser,
+        durationSeconds,
+        landingPage: convertingSession.landingPage,
+        utm: {
+          source: convertingSession.utmSource,
+          medium: convertingSession.utmMedium,
+          campaign: convertingSession.utmCampaign,
+          term: convertingSession.utmTerm,
+          content: convertingSession.utmContent,
+        },
+        startedAt: convertingSession.startedAt,
+      },
+      totalSessions: allSessions.length,
+      firstSession: firstRaw
+        ? { id: firstRaw.id, startedAt: firstRaw.startedAt, headline: firstChannel.headline, icon: firstChannel.icon, isConverting: firstRaw.id === convertingSession.id }
+        : null,
+      convertingSession: { id: convertingSession.id, startedAt: convertingSession.startedAt, headline: snapshotChannel.headline, icon: snapshotChannel.icon },
+      middleSessionsCount,
+    });
+  } catch (err) {
+    console.error("getOrderAttribution error:", err);
+    return res.status(500).json({ success: false, message: "Sunucu hatası" });
   }
 };

@@ -58,6 +58,8 @@ export const prepareOrder = async (req, res) => {
       useServerCart,
       requestId,
       requestIds,
+      visitorId,
+      sessionId,
     } = req.body;
 
     const userId = req.user?.id;
@@ -147,6 +149,14 @@ export const prepareOrder = async (req, res) => {
       storeCard: "0",
     });
 
+    // 3b) Oturum/ziyaretçi atfı: geçersiz/eski bir sessionId FK hatasıyla
+    // ödemeyi asla bozmamalı — var olduğu doğrulanamıyorsa sessizce null geçilir.
+    let validSessionId = null;
+    if (sessionId) {
+      const sessionExists = await prisma.visitorSession.findUnique({ where: { id: sessionId }, select: { id: true } });
+      if (sessionExists) validSessionId = sessionId;
+    }
+
     // 4) PaymentMeta oluştur
     await prisma.paymentMeta.create({
       data: {
@@ -156,10 +166,12 @@ export const prepareOrder = async (req, res) => {
         billingInfo,
         packageName,
         packageSlug: req.body.packageSlug || cleanedCart?.[0]?.slug || null,
-        discountRate: discountRate ? parseInt(discountRate) : 0, 
+        discountRate: discountRate ? parseInt(discountRate) : 0,
         couponCode,
         totalPrice,
         requestId: requestId || null,
+        visitorId: validSessionId ? visitorId : null,
+        visitorSessionId: validSessionId,
       },
     });
 
@@ -270,6 +282,8 @@ export const handlePaytrCallback = async (req, res) => {
           status: "pending",
           package: pmForCreate.packageName,
           endDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
+          visitorId: pmForCreate.visitorId,
+          visitorSessionId: pmForCreate.visitorSessionId,
           billingInfo: { create: pmForCreate.billingInfo },
           orderItems: {
             create: (Array.isArray(pmForCreate.cart) ? pmForCreate.cart : []).map((item) => ({
