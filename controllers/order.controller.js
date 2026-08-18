@@ -276,14 +276,20 @@ export const handlePaytrCallback = async (req, res) => {
 
       order = await prisma.order.create({
         data: {
+          // NOT: user/visitor/visitorSession hepsi "connect" (ilişki) sözdizimiyle
+          // yazılmalı — Prisma aynı create() çağrısında bir modelin FK'lerini hem
+          // ham skaler (visitorId: "...") hem ilişki (user: {connect}) olarak
+          // karıştırmaya izin vermiyor ("Checked" vs "Unchecked" input tipleri
+          // birbirine karışamıyor), karıştırılırsa "Unknown argument" hatasıyla
+          // reddediyor.
           ...(pmForCreate.userId ? { user: { connect: { id: pmForCreate.userId } } } : {}),
+          ...(pmForCreate.visitorId ? { visitor: { connect: { id: pmForCreate.visitorId } } } : {}),
+          ...(pmForCreate.visitorSessionId ? { visitorSession: { connect: { id: pmForCreate.visitorSessionId } } } : {}),
           merchantOid: merchant_oid,
           totalPrice: pmForCreate.totalPrice,
           status: "pending",
           package: pmForCreate.packageName,
           endDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
-          visitorId: pmForCreate.visitorId,
-          visitorSessionId: pmForCreate.visitorSessionId,
           billingInfo: { create: pmForCreate.billingInfo },
           orderItems: {
             create: (Array.isArray(pmForCreate.cart) ? pmForCreate.cart : []).map((item) => ({
@@ -506,14 +512,18 @@ export const handlePaytrCallback = async (req, res) => {
       // 8) Kupon kullanımını işle
       try {
         const pm = await prisma.paymentMeta.findUnique({ where: { merchantOid: merchant_oid } });
-        if (pm?.couponCode) {
+        // pm.userId ödeme başlatılırken bilinen kullanıcı (misafirlerde null);
+        // order.userId ise 3. adımdaki otomatik misafir hesabı oluşturmasından
+        // sonraki güncel değer — kupon kullanımını her zaman gerçek sahibine yazmak
+        // için order.userId kullanılıyor.
+        if (pm?.couponCode && order.userId) {
           const alreadyUsed = await prisma.couponUsage.findFirst({
-            where: { userId: pm.userId, coupon: { code: pm.couponCode } },
+            where: { userId: order.userId, coupon: { code: pm.couponCode } },
           });
           if (!alreadyUsed) {
             await prisma.couponUsage.create({
               data: {
-                userId: pm.userId,
+                user: { connect: { id: order.userId } },
                 coupon: { connect: { code: pm.couponCode } },
               },
             });
