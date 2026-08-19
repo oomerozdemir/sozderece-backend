@@ -199,3 +199,46 @@ export const removeItem = async (req, res) => {
   }
 };
 
+
+// === (Admin) Terk edilmiş sepetleri listele ===
+// "Tamamlanmamış" (completed:false) tüm sepetleri, en yeniden eskiye döner.
+// Ürünsüz (boş) sepetler listeden hariç tutulur — bunlar genelde hiç ürün
+// eklenmemiş, gerçek bir "terk" sayılmayan yarım-kalmış kayıtlardır.
+export const getAbandonedCartsForAdmin = async (req, res) => {
+  try {
+    const carts = await prisma.cart.findMany({
+      where: { completed: false, items: { some: {} } },
+      include: { items: true, user: { select: { id: true, name: true, email: true } } },
+      orderBy: { createdAt: "desc" },
+    });
+
+    const formatted = carts.map((cart) => ({
+      id: cart.id,
+      createdAt: cart.createdAt,
+      updatedAt: cart.updatedAt,
+      reminderSent: cart.reminderStep > 0,
+      customerName: cart.user?.name || null,
+      customerEmail: cart.user?.email || cart.email || null,
+      items: cart.items.map((i) => ({ title: i.title, quantity: i.quantity, unitPrice: i.unitPrice })),
+      total: cart.items.reduce((sum, i) => sum + i.unitPrice * (i.quantity || 1), 0),
+    }));
+
+    return res.json({ success: true, carts: formatted, total: formatted.length });
+  } catch (err) {
+    console.error("getAbandonedCartsForAdmin error:", err);
+    return res.status(500).json({ success: false, message: "Sunucu hatası" });
+  }
+};
+
+// === (Admin) Terk edilmiş sepeti sil (temizlik) ===
+export const deleteAbandonedCart = async (req, res) => {
+  try {
+    const { id } = req.params;
+    await prisma.cartItem.deleteMany({ where: { cartId: id } });
+    await prisma.cart.delete({ where: { id } });
+    return res.json({ success: true });
+  } catch (err) {
+    console.error("deleteAbandonedCart error:", err);
+    return res.status(500).json({ success: false, message: "Sepet silinemedi." });
+  }
+};

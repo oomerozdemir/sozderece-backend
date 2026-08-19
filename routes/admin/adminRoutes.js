@@ -13,6 +13,7 @@ import { getAllPackages, createPackage, updatePackage, togglePackageVisibility, 
 import { getAdminConsultationSlots, toggleConsultationSlot, bulkUpdateConsultationSlots } from "../../controllers/consultationSlot.controller.js";
 import { getAllNavbarItems, createNavbarItem, updateNavbarItem, deleteNavbarItem, reorderNavbarItems } from "../../controllers/navbarItem.controller.js";
 import { getAllSubscriptionsForAdmin, adminCancelSubscription } from "../../controllers/subscription.controller.js";
+import { getAbandonedCartsForAdmin, deleteAbandonedCart } from "../../controllers/cart.controller.js";
 
 const prisma = new PrismaClient();
 
@@ -43,6 +44,10 @@ router.put("/orders/:id", authenticateToken, authorizeRoles("admin"), updateOrde
 router.put("/orders/:id/billing", authenticateToken, authorizeRoles("admin"), updateBillingInfo);
 router.post("/orders/check-payment", authenticateToken, authorizeRoles("admin"), checkPaytrStatus);
 router.get("/orders/:id/attribution", authenticateToken, authorizeRoles("admin"), getOrderAttribution);
+
+// Terk edilmiş sepetler
+router.get("/carts/abandoned", authenticateToken, authorizeRoles("admin"), getAbandonedCartsForAdmin);
+router.delete("/carts/:id", authenticateToken, authorizeRoles("admin"), deleteAbandonedCart);
 
 
 //Koc yonetimi
