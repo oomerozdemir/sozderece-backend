@@ -15,6 +15,7 @@ export const getAllOrdersForAdmin = async (req, res) => {
         user: true,
         billingInfo: true,
       },
+      orderBy: { createdAt: "desc" },
     });
 
     const merchantOids = orders.map((o) => o.merchantOid).filter(Boolean);
