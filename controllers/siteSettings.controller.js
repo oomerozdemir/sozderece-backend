@@ -7,8 +7,8 @@ const EARLY_REG_KEY = "earlyRegistration";
 const PRICING_VIDEO_KEY = "pricingVideo";
 
 const DEFAULT_PRICING_VIDEO = {
-  enabled: false,
-  videoUrl: "",
+  yks: { enabled: false, videoUrl: "" },
+  lgs: { enabled: false, videoUrl: "" },
 };
 
 const DEFAULT_EARLY_REG = {
@@ -159,7 +159,13 @@ export const getPricingVideo = async (req, res) => {
   try {
     const setting = await prisma.siteSettings.findUnique({ where: { key: PRICING_VIDEO_KEY } });
     if (!setting) return res.json(DEFAULT_PRICING_VIDEO);
-    return res.json(JSON.parse(setting.value));
+    const parsed = JSON.parse(setting.value);
+    // Eski tekil {enabled,videoUrl} şeklinden geliyorsa (YKS/LGS ayrımından önce)
+    // her iki sekme için de aynı videoyu göstererek geriye dönük uyumlu davran.
+    if (!parsed.yks && !parsed.lgs && "videoUrl" in parsed) {
+      return res.json({ yks: parsed, lgs: parsed });
+    }
+    return res.json({ ...DEFAULT_PRICING_VIDEO, ...parsed });
   } catch (err) {
     console.error("getPricingVideo error:", err);
     res.status(500).json({ message: "Video ayarları alınamadı." });
@@ -169,8 +175,11 @@ export const getPricingVideo = async (req, res) => {
 // PUT /api/admin/settings/pricing-video - Admin only
 export const updatePricingVideo = async (req, res) => {
   try {
-    const { enabled, videoUrl } = req.body;
-    const value = JSON.stringify({ enabled: !!enabled, videoUrl: videoUrl || "" });
+    const { yks, lgs } = req.body;
+    const value = JSON.stringify({
+      yks: { enabled: !!yks?.enabled, videoUrl: yks?.videoUrl || "" },
+      lgs: { enabled: !!lgs?.enabled, videoUrl: lgs?.videoUrl || "" },
+    });
     await prisma.siteSettings.upsert({
       where: { key: PRICING_VIDEO_KEY },
       update: { value },
