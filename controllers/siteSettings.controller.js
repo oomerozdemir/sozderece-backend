@@ -3,23 +3,11 @@ import prisma from "../utils/prisma.js";
 const COUNTDOWN_KEY = "countdown";
 const POPUP_KEY = "discountPopup";
 const PAYMENT_PAGE_KEY = "paymentPage";
-const EARLY_REG_KEY = "earlyRegistration";
 const PRICING_VIDEO_KEY = "pricingVideo";
 
 const DEFAULT_PRICING_VIDEO = {
   yks: { enabled: false, videoUrl: "" },
   lgs: { enabled: false, videoUrl: "" },
-};
-
-const DEFAULT_EARLY_REG = {
-  enabled: false,
-  badge: "🎉 Erken Kayıt Kampanyası",
-  title: "Erken Kayıt Fırsatını Kaçırma!",
-  subtitle: "Sınav öncesi başla, daha az öde. Bu fiyatlarla sınırlı süre.",
-  endDate: null,
-  discountText: "%20 İndirim",
-  ctaText: "Hemen Kaydol →",
-  note: "⚡ Sınırlı kontenjan",
 };
 
 const DEFAULT_PAYMENT_SETTINGS = {
@@ -122,35 +110,6 @@ export const updatePaymentPageSettings = async (req, res) => {
   } catch (err) {
     console.error("updatePaymentPageSettings error:", err);
     res.status(500).json({ message: "Ödeme sayfası ayarları kaydedilemedi." });
-  }
-};
-
-// GET /api/settings/early-registration - Herkese açık
-export const getEarlyRegistration = async (req, res) => {
-  try {
-    const setting = await prisma.siteSettings.findUnique({ where: { key: EARLY_REG_KEY } });
-    if (!setting) return res.json(DEFAULT_EARLY_REG);
-    return res.json(JSON.parse(setting.value));
-  } catch (err) {
-    console.error("getEarlyRegistration error:", err);
-    res.status(500).json({ message: "Erken kayıt ayarları alınamadı." });
-  }
-};
-
-// PUT /api/admin/settings/early-registration - Admin only
-export const updateEarlyRegistration = async (req, res) => {
-  try {
-    const { enabled, badge, title, subtitle, endDate, discountText, ctaText, note } = req.body;
-    const value = JSON.stringify({ enabled, badge, title, subtitle, endDate, discountText, ctaText, note });
-    await prisma.siteSettings.upsert({
-      where: { key: EARLY_REG_KEY },
-      update: { value },
-      create: { key: EARLY_REG_KEY, value },
-    });
-    res.json({ success: true });
-  } catch (err) {
-    console.error("updateEarlyRegistration error:", err);
-    res.status(500).json({ message: "Erken kayıt ayarları kaydedilemedi." });
   }
 };
 
