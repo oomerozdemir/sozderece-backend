@@ -2,3 +2,7 @@ node_modules/
 .env
 .prisma/
 dist/
+
+# Veritabanı dökümleri asla commit edilmemeli
+*.sql
+!prisma/migrations/**/*.sql
