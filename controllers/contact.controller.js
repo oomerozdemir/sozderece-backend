@@ -31,6 +31,11 @@ const escapeHtml = (str) => {
     .replace(/'/g, "&#039;");
 };
 
+// Mail HEADER'larına (subject vb.) giren değerlerden CR/LF temizler —
+// escapeHtml sadece HTML injection'a karşı korur, header injection'a karşı
+// değil (bir isim alanına \r\n ile ek header/Bcc enjekte edilmesi riski).
+const stripHeaderInjection = (str) => String(str || "").replace(/[\r\n]+/g, " ").trim();
+
 const VALID_USER_TYPES = ["Mezun", "12. Sınıf", "11. Sınıf", "8. Sınıf", "7. Sınıf", "Veli"];
 
 // Frontend ile senkron - sadece bu saatler kabul edilir
@@ -158,7 +163,7 @@ export const createContact = async (req, res) => {
     const mailOptions = {
       from: `"Sözderece Web" <${process.env.EMAIL_USER}>`,
       to: process.env.EMAIL_USER,
-      subject: `📅 Yeni Randevu Talebi: ${safe.name}`,
+      subject: `📅 Yeni Randevu Talebi: ${stripHeaderInjection(safe.name)}`,
       html: emailShell({
         eyebrow: "Ücretsiz Görüşme Formu",
         title: "Yeni bir görüşme talebiniz var!",

@@ -28,7 +28,6 @@
     "fns": "^1.0.0",
     "jsonwebtoken": "^9.0.2",
     "luxon": "^3.7.1",
-    "mongoose": "^8.14.3",
     "multer": "^2.0.1",
     "multer-storage-cloudinary": "^4.0.0",
     "node-cron": "^4.2.1",
@@ -36,7 +35,6 @@
     "pg": "^8.16.0",
     "pg-hstore": "^2.3.4",
     "resend": "^6.1.2",
-    "sequelize": "^6.37.7",
     "slugify": "^1.6.6",
     "uuid": "^11.1.0"
   },
