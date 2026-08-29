@@ -44,6 +44,17 @@ const otpSendLimiter = rateLimit({
   message: { success: false, message: "Çok fazla doğrulama kodu isteği. Lütfen 10 dakika sonra tekrar deneyin." },
 });
 
+// 10 dakikada IP başına max 8 OTP doğrulama denemesi (brute-force koruması —
+// bu endpoint başarılı olunca gerçek giriş yaptırıyor, kod 6 haneli ve
+// öncesinde limitsizdi)
+const otpVerifyLimiter = rateLimit({
+  windowMs: 10 * 60 * 1000,
+  max: 8,
+  standardHeaders: "draft-7",
+  legacyHeaders: false,
+  message: { success: false, message: "Çok fazla doğrulama denemesi. Lütfen 10 dakika sonra tekrar deneyin." },
+});
+
 // 1 saatte IP başına max 5 şifre sıfırlama isteği (mail bombing koruması)
 const forgotPasswordLimiter = rateLimit({
   windowMs: 60 * 60 * 1000,
@@ -57,7 +68,7 @@ const forgotPasswordLimiter = rateLimit({
 router.post("/register", registerLimiter, registerUser);
 router.post("/login", loginLimiter, loginUser);
 router.post("/otp/send", otpSendLimiter, sendOtp);
-router.post("/otp/verify", verifyOtpAndLogin);
+router.post("/otp/verify", otpVerifyLimiter, verifyOtpAndLogin);
 
 /* Remember cookie akışı */
 router.get("/silent-login", silentLogin);
@@ -69,6 +80,6 @@ router.put("/update-profile", authenticateToken, updateProfile);
 router.post("/verify-contact", authenticateToken, verifyContact);
 
 router.post("/forgot-password", forgotPasswordLimiter, forgotPassword);
-router.post("/reset-password", resetPassword);
+router.post("/reset-password", forgotPasswordLimiter, resetPassword);
 
 export default router;

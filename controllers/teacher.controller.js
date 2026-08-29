@@ -847,6 +847,11 @@ export const deleteMyTimeOff = async (req, res) => {
     const teacher = await prisma.teacherProfile.findUnique({ where: { userId } });
     if (!teacher) return res.status(404).json({ message: "Profil bulunamadı." });
 
+    const timeOff = await prisma.teacherTimeOff.findUnique({ where: { id } });
+    if (!timeOff || timeOff.teacherProfileId !== teacher.id) {
+      return res.status(404).json({ message: "Bulunamadı." });
+    }
+
     await prisma.teacherTimeOff.delete({ where: { id } });
     res.json({ success: true });
   } catch {
