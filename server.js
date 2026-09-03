@@ -5,7 +5,10 @@ import cookieParser from "cookie-parser";
 import path from "path";
 import allRoutes from "./routes/index.js";
 import "./cron/abondonedCart.js";
-import "./cron/subscriptionBilling.js";
+// Abonelik sistemi devre dışı (bkz. subscription.controller.js#SUBSCRIPTIONS_ENABLED) —
+// PayTR Non3D/tekrarlayan-ödeme yetkisi standart ödeme süresini 7 günden 15
+// güne çıkarmıştı. Cron'u da durdurduk ki hiçbir zamanlanmış çekim tetiklenmesin.
+// import "./cron/subscriptionBilling.js";
 import "./cron/pruneVisitorSessions.js";
 
 dotenv.config();

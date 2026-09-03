@@ -27,7 +27,16 @@ export const SUBSCRIPTION_CONSENT_TEXT =
  * Gerçek Subscription kaydı, PayTR'nin asenkron callback'i (aşağıda
  * handleCardRegistrationCallback) geldiğinde oluşturulur.
  */
+// PayTR'nin Non3D/tekrarlayan-ödeme yetkisi, hesabın standart 7 günlük
+// ödeme süresini 15 güne çıkarmasına yol açtı. Gerçek abone hiç olmadığı
+// için (bkz. commit mesajı) özellik burada devre dışı bırakıldı — yeniden
+// açmak istersen bu erken dönüşü kaldırman yeterli, kod/DB şeması duruyor.
+const SUBSCRIPTIONS_ENABLED = false;
+
 export const startSubscription = async (req, res) => {
+  if (!SUBSCRIPTIONS_ENABLED) {
+    return res.status(503).json({ error: "Abonelik sistemi şu anda kapalı." });
+  }
   try {
     const userId = req.user.id;
     const { slug, planIndex, billingInfo, consentAccepted, visitorId, sessionId } = req.body;
