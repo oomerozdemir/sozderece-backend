@@ -210,7 +210,14 @@ export const prepareOrder = async (req, res) => {
 ========================= */
 export const handlePaytrCallback = async (req, res) => {
   try {
-    const { merchant_oid, status, total_amount, hash, utoken, ctoken } = req.body;
+    const { merchant_oid, status, total_amount, hash, utoken, ctoken, failed_reason_code, failed_reason_msg } = req.body;
+
+    // Başarısız ödemelerin gerçek sebebini tespit edebilmek için (daha önce
+    // hiç loglanmıyordu, sadece status="failed" yazılıp geçiliyordu) tüm
+    // callback body'sini logluyoruz — kart verisi bu payload'da hiç yok.
+    if (status !== "success") {
+      console.warn(`⚠️ PayTR callback (status=${status}) OID=${merchant_oid}:`, JSON.stringify(req.body));
+    }
 
     // 0) Hash doğrulama
     const hashStr = `${merchant_oid}${process.env.PAYTR_MERCHANT_SALT}${status}${total_amount}`;
@@ -321,7 +328,10 @@ export const handlePaytrCallback = async (req, res) => {
           console.error(
             `❌ Ödeme tutarı uyuşmuyor! Beklenen: ${expectedAmountTL} TL | Gelen: ${paidAmountTL} TL | OID: ${merchant_oid}`
           );
-          await prisma.order.update({ where: { id: order.id }, data: { status: "failed" } });
+          await prisma.order.update({
+            where: { id: order.id },
+            data: { status: "failed", failReason: `Tutar uyuşmazlığı: beklenen ${expectedAmountTL} TL, gelen ${paidAmountTL} TL` },
+          });
           return res.send("OK"); // PayTR'e OK dön ama siparişi onaylama
         }
       }
@@ -574,9 +584,12 @@ export const handlePaytrCallback = async (req, res) => {
       // Ödeme başarısız
       await prisma.order.update({
         where: { id: order.id },
-        data: { status: "failed" },
+        data: {
+          status: "failed",
+          failReason: failed_reason_msg || failed_reason_code || null,
+        },
       });
-      console.log("⚠️ Ödeme başarısız");
+      console.log("⚠️ Ödeme başarısız:", failed_reason_msg || failed_reason_code || "(sebep belirtilmedi)");
     }
 
     res.send("OK");

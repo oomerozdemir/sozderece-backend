@@ -134,6 +134,7 @@ model Order {
   status           String                 @default("pending_payment")
   refundMessage    String?
   refundReason     String?
+  failReason       String?
   merchantOid      String?                @unique
   totalPrice       Float?
   subscriptionId   Int?

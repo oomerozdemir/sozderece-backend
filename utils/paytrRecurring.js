@@ -123,6 +123,12 @@ export function buildCardRegistrationFields({
     payment_type,
     payment_amount: amountTL,
     installment_count,
+    // PayTR bu alanı zorunlu tutuyor (05.09.2026 tarihli gerçek bir ödeme
+    // reddi ile teyit edildi: "Zorunlu alan değeri geçersiz veya
+    // gönderilmedi: no_installment"). "0" = taksit seçenekleri açık —
+    // sitede "12 taksite varan" diye reklamı yapılan özellik bununla
+    // kapatılmasın diye "1" DEĞİL "0" gönderiliyor.
+    no_installment: "0",
     currency,
     test_mode,
     non_3d,
@@ -182,6 +188,7 @@ export async function chargeRecurring({ merchantOid, email, amountTL, utoken, ct
     payment_type,
     payment_amount: amountTL,
     installment_count,
+    no_installment: "1", // arka planda otomatik çekim — taksit seçimi anlamsız
     currency,
     test_mode,
     non_3d,
