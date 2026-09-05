@@ -130,6 +130,8 @@ export function buildCardRegistrationFields({
     // DEĞİL "0" gönderiliyor. max_installment=12 aynı vaadi yansıtıyor.
     no_installment: "0",
     max_installment: "12",
+    lang: "tr",
+    client_lang: "tr", // resmi dokümanda "client_lang" adıyla geçiyor; canlıdaki hata mesajı "lang" diyordu — ikisi de gönderiliyor
     currency,
     test_mode,
     non_3d,
@@ -191,6 +193,8 @@ export async function chargeRecurring({ merchantOid, email, amountTL, utoken, ct
     installment_count,
     no_installment: "1", // arka planda otomatik çekim — taksit seçimi anlamsız
     max_installment: "1",
+    lang: "tr",
+    client_lang: "tr",
     currency,
     test_mode,
     non_3d,
