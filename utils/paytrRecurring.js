@@ -1,27 +1,25 @@
 // utils/paytrRecurring.js — PayTR Direkt API / Kart Saklama entegrasyonu.
 //
-// ÖNEMLİ — 05.09.2026 revizyonu: Bu dosyadaki önceki "teyitli" notların
-// çoğu, hesaptaki Non3D yetkisi PayTR tarafından kaldırıldıktan SONRA
-// geçersiz çıktı (canlı, gerçek bir müşteri ödemesinin art arda verdiği
-// hatalarla teker teker tespit edildi): önce no_installment ve
-// max_installment alanları eksikti, sonra payment_amount'ın ondalıklı TL
-// değil kuruş cinsinden tam sayı olması gerektiği ortaya çıktı, sonra da
-// paytr_token geçersiz çıktı. Son olarak hash formülünün de değiştiği
-// (ya da başından beri yanlış varsayıldığı) anlaşıldı — doğru formül
-// (topluca doğrulanan güncel kaynaklara göre):
-//   hash_str = merchant_id + user_ip + merchant_oid + email +
-//              payment_amount + user_basket + no_installment +
-//              max_installment + currency + test_mode
-//   paytr_token = base64(HMAC-SHA256(hash_str + merchant_salt, merchant_key))
-// Eski formül (payment_type + installment_count + non_3d içeren, user_basket/
-// no_installment/max_installment'ı hiç kapsamayan) YANLIŞ — kaldırıldı.
-//   - `payment_amount`: kuruş cinsinden tam sayı string'i ("10099"), ondalıklı
-//     TL DEĞİL.
-//   - `user_basket` düz JSON.stringify (base64 YOK), fiyatlar ondalıklı TL
-//     string'i ("50.00") — bu kısmın hâlâ doğru olduğu varsayılıyor, henüz
-//     canlıda aksi teyit edilmedi.
-//   - Kart-kaydı (yeni-kart-ekleme) callback'i `utoken` VE `ctoken`'ı birebir
-//     döndürüyor.
+// ÖNEMLİ — 05.09.2026 revizyonu (elle, doğrudan PayTR'ye atılan test
+// istekleriyle TEK TEK doğrulandı, spekülasyon değil):
+//   - Hash formülü GERÇEKTEN payment_type + installment_count + non_3d
+//     içeriyor (eski formül DOĞRU imiş — bir ara "user_basket/no_installment/
+//     max_installment içeren" başka bir formüle geçilmişti, o YANLIŞTI ve
+//     geri alındı).
+//   - no_installment, max_installment, lang alanları PayTR tarafından
+//     zorunlu tutuluyor (gerçek hatalarla teyitli) ama hash'e DAHİL DEĞİL —
+//     sadece düz POST alanı olarak gönderiliyorlar.
+//   - payment_amount ondalıklı TL string'i ("100.00") olduğunda hash
+//     GEÇERLİ oluyor ve bir sonraki hataya ilerliyor: "payment_amount
+//     degeri integer olmalidir". payment_amount tam sayıya (TL ya da
+//     kuruş, ikisi de denendi) çevrildiğinde ise hash HEMEN geçersiz
+//     oluyor ("paytr_token gonderilmedi veya gecersiz") — yani hash
+//     doğrulaması ondalıklı format bekliyor ama alan doğrulaması tam
+//     sayı istiyor; ikisini aynı anda memnun eden bir format
+//     bulunamadı. Bu noktada BİLEREK ondalıklı formata geri dönüldü
+//     (en azından hash geçiyor, tek ve net bir hata kalıyor) — PayTR
+//     destek ekibinden bu çelişkiyi netleştirmesi istenmeli, kör
+//     denemeyle çözülecek bir şey değil.
 
 import crypto from "crypto";
 import axios from "axios";
@@ -37,21 +35,19 @@ function getCreds() {
   };
 }
 
-// Doğru hash formülü (05.09.2026'da canlı hatalarla düzeltildi — bkz. dosya
-// başındaki not). payment_type/installment_count/non_3d hash'e DAHİL DEĞİL;
-// bunun yerine user_basket + no_installment + max_installment dahil.
-function computeDirectApiHash({ merchantId, userIp, merchantOid, email, paymentAmount, userBasket, noInstallment, maxInstallment, currency, testMode, merchantSalt, merchantKey }) {
+// Elle doğrulanan hash formülü — bkz. dosya başındaki not.
+function computeDirectApiHash({ merchantId, userIp, merchantOid, email, paymentAmount, paymentType, installmentCount, currency, testMode, non3d, merchantSalt, merchantKey }) {
   const hashStr =
     String(merchantId) +
     String(userIp) +
     String(merchantOid) +
     String(email) +
     String(paymentAmount) +
-    String(userBasket) +
-    String(noInstallment) +
-    String(maxInstallment) +
+    String(paymentType) +
+    String(installmentCount) +
     String(currency) +
-    String(testMode);
+    String(testMode) +
+    String(non3d);
 
   return crypto.createHmac("sha256", merchantKey).update(hashStr + merchantSalt).digest("base64");
 }
@@ -104,8 +100,10 @@ export function buildCardRegistrationFields({
   // yapılan özellik kapanmasın diye "1" DEĞİL "0" gönderiliyor.
   const no_installment = "0";
   const max_installment = "12";
-  // Kuruş cinsinden tam sayı (349.00 TL -> "34900") — ondalıklı TL değil.
-  const payment_amount = String(Math.round(parseFloat(amountTL) * 100));
+  // ONDALIKLI TL string'i olarak kalıyor ("349.00") — tam sayıya çevirmek
+  // hash'i geçersiz kılıyor (bkz. dosya başındaki not). PayTR'nin ayrıca
+  // "integer olmalı" demesiyle çelişiyor, netleştirilmesi lazım.
+  const payment_amount = Number(amountTL).toFixed(2);
   const user_basket = buildUserBasket(cart);
 
   const paytr_token = computeDirectApiHash({
@@ -114,11 +112,11 @@ export function buildCardRegistrationFields({
     merchantOid,
     email,
     paymentAmount: payment_amount,
-    userBasket: user_basket,
-    noInstallment: no_installment,
-    maxInstallment: max_installment,
+    paymentType: payment_type,
+    installmentCount: installment_count,
     currency,
     testMode: test_mode,
+    non3d: non_3d,
     merchantSalt: merchant_salt,
     merchantKey: merchant_key,
   });
@@ -172,8 +170,8 @@ export async function chargeRecurring({ merchantOid, email, amountTL, utoken, ct
   const non_3d = "1";
   const no_installment = "1"; // arka planda otomatik çekim — taksit seçimi anlamsız
   const max_installment = "1";
-  // bkz. buildCardRegistrationFields — PayTR artık integer (kuruş) bekliyor.
-  const payment_amount = String(Math.round(parseFloat(amountTL) * 100));
+  // bkz. buildCardRegistrationFields — ondalıklı TL kalıyor, tam sayı hash'i bozuyor.
+  const payment_amount = Number(amountTL).toFixed(2);
   const user_basket = buildUserBasket(cart);
 
   const paytr_token = computeDirectApiHash({
@@ -182,11 +180,11 @@ export async function chargeRecurring({ merchantOid, email, amountTL, utoken, ct
     merchantOid,
     email,
     paymentAmount: payment_amount,
-    userBasket: user_basket,
-    noInstallment: no_installment,
-    maxInstallment: max_installment,
+    paymentType: payment_type,
+    installmentCount: installment_count,
     currency,
     testMode: test_mode,
+    non3d: non_3d,
     merchantSalt: merchant_salt,
     merchantKey: merchant_key,
   });
