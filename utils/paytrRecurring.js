@@ -4,7 +4,11 @@
 // VE dev.paytr.com'daki (yeni-kart-ekleme, kayitli-karttan-odeme,
 // kayitli-kart-tekrarlayan-odeme) canlı sayfaları baz alınarak DOĞRULANDI:
 //   - Hash formülü tüm kaynaklarda birebir aynı (teyitli).
-//   - `payment_amount` ondalıklı TL string'i ("100.99") — teyitli.
+//   - `payment_amount`: BURADAKİ ÖNCEKİ NOT YANLIŞTI. "100.99" gibi ondalıklı
+//     TL string'i o tarihte çalışıyordu ama 05.09.2026'da canlı bir hata
+//     ("payment_amount degeri integer olmalidir") bunu geçersiz kıldı —
+//     hesap yeniden yapılandırıldıktan sonra PayTR artık kuruş cinsinden
+//     tam sayı istiyor (100.99 TL -> "10099"). Kod buna göre güncellendi.
 //   - `user_basket` düz JSON.stringify (base64 YOK), fiyatlar ondalıklı TL
 //     string'i ("50.00") — teyitli.
 //   - Kart-kaydı (yeni-kart-ekleme) callback'i `utoken` VE `ctoken`'ı birebir
@@ -82,7 +86,7 @@ export function buildCardRegistrationFields({
   merchantOid,
   userIp,
   email,
-  amountTL, // "349.00" gibi, ondalıklı string
+  amountTL, // "349.00" gibi, ondalıklı TL string (çağıranlarda değişmedi)
   userName,
   userAddress,
   userPhone,
@@ -98,13 +102,20 @@ export function buildCardRegistrationFields({
   const installment_count = "0";
   const currency = "TL";
   const non_3d = "0"; // Kart bilgisi girilirken müşteri ekranda — 3D Secure İLE yapılır (dolandırıcılık koruması)
+  // PayTR ondalıklı TL string'ini artık reddediyor: "payment_amount degeri
+  // integer olmalidir" (05.09.2026, canlı hata ile teyitli — önceki
+  // "ondalıklı TL string teyitli" notu artık geçersiz, hesap yeniden
+  // yapılandırıldıktan sonra format değişmiş). Kuruş cinsinden tam sayıya
+  // çevriliyor (349.00 TL -> 34900), tıpkı callback'te total_amount'ın
+  // zaten kuruş olarak okunduğu gibi (bkz. handlePaytrCallback).
+  const payment_amount = String(Math.round(parseFloat(amountTL) * 100));
 
   const paytr_token = computeDirectApiHash({
     merchantId: merchant_id,
     userIp,
     merchantOid,
     email,
-    paymentAmount: amountTL,
+    paymentAmount: payment_amount,
     paymentType: payment_type,
     installmentCount: installment_count,
     currency,
@@ -121,7 +132,7 @@ export function buildCardRegistrationFields({
     merchant_oid: merchantOid,
     email,
     payment_type,
-    payment_amount: amountTL,
+    payment_amount,
     installment_count,
     // PayTR bu iki alanı zorunlu tutuyor (05.09.2026 tarihli gerçek ödeme
     // reddiyle teyit edildi: önce "no_installment", sonra "max_installment"
@@ -166,13 +177,15 @@ export async function chargeRecurring({ merchantOid, email, amountTL, utoken, ct
   const installment_count = "0";
   const currency = "TL";
   const non_3d = "1";
+  // bkz. buildCardRegistrationFields — PayTR artık integer (kuruş) bekliyor.
+  const payment_amount = String(Math.round(parseFloat(amountTL) * 100));
 
   const paytr_token = computeDirectApiHash({
     merchantId: merchant_id,
     userIp,
     merchantOid,
     email,
-    paymentAmount: amountTL,
+    paymentAmount: payment_amount,
     paymentType: payment_type,
     installmentCount: installment_count,
     currency,
@@ -189,7 +202,7 @@ export async function chargeRecurring({ merchantOid, email, amountTL, utoken, ct
     merchant_oid: merchantOid,
     email,
     payment_type,
-    payment_amount: amountTL,
+    payment_amount,
     installment_count,
     no_installment: "1", // arka planda otomatik çekim — taksit seçimi anlamsız
     max_installment: "1",
