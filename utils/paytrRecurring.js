@@ -1,31 +1,94 @@
 // utils/paytrRecurring.js — PayTR Direkt API / Kart Saklama entegrasyonu.
 //
-// ÖNEMLİ — 05.09.2026 revizyonu (elle, doğrudan PayTR'ye atılan test
-// istekleriyle TEK TEK doğrulandı, spekülasyon değil):
-//   - Hash formülü GERÇEKTEN payment_type + installment_count + non_3d
-//     içeriyor (eski formül DOĞRU imiş — bir ara "user_basket/no_installment/
-//     max_installment içeren" başka bir formüle geçilmişti, o YANLIŞTI ve
-//     geri alındı).
-//   - no_installment, max_installment, lang alanları PayTR tarafından
-//     zorunlu tutuluyor (gerçek hatalarla teyitli) ama hash'e DAHİL DEĞİL —
-//     sadece düz POST alanı olarak gönderiliyorlar.
-//   - payment_amount ondalıklı TL string'i ("100.00") olduğunda hash
-//     GEÇERLİ oluyor ve bir sonraki hataya ilerliyor: "payment_amount
-//     degeri integer olmalidir". payment_amount tam sayıya (TL ya da
-//     kuruş, ikisi de denendi) çevrildiğinde ise hash HEMEN geçersiz
-//     oluyor ("paytr_token gonderilmedi veya gecersiz") — yani hash
-//     doğrulaması ondalıklı format bekliyor ama alan doğrulaması tam
-//     sayı istiyor; ikisini aynı anda memnun eden bir format
-//     bulunamadı. Bu noktada BİLEREK ondalıklı formata geri dönüldü
-//     (en azından hash geçiyor, tek ve net bir hata kalıyor) — PayTR
-//     destek ekibinden bu çelişkiyi netleştirmesi istenmeli, kör
-//     denemeyle çözülecek bir şey değil.
+// KÖK NEDEN BULUNDU (05.09.2026): Bu dosyadaki Direkt API (/odeme) yolu artık
+// bu hesap için ÇALIŞMIYOR — bütün gün süren "eksik alan/format" hatalarının
+// asıl sebebi, PayTR'nin Non3D yetkisini kaldırırken hesabı klasik iFrame
+// API'ye (/odeme/api/get-token) GERİ DÖNDÜRMÜŞ, Direkt API'yi KAPATMIŞ
+// olması. Doğrudan test edildi: /odeme/api/get-token, eski (Non3D öncesi)
+// kodun ürettiği aynı istekle anında "status":"success" + token döndü;
+// /odeme (Direkt API) ise hangi alan/format kombinasyonu denenirse
+// denensin hep reddetti. Yani Direkt API tarafındaki "payment_amount
+// ondalıklı/tam sayı çelişkisi" araştırması boşunaydı — sorun format değil,
+// yanlış endpoint'ti. Ödeme akışı bu yüzden klasik iFrame'e geri alınıyor
+// (bkz. getClassicIframeToken + order.controller.js#prepareOrder,
+// PaymentIframePage.jsx zaten hazır bekliyordu).
+//
+// Aşağıdaki Direkt API fonksiyonları (buildCardRegistrationFields,
+// chargeRecurring) artık AKTİF KULLANILMIYOR ama silinmedi — Non3D yetkisi
+// ileride tekrar açılırsa (abonelik sistemi geri gelirse) doğrudan
+// kullanılabilir; o zaman bu dosyanın en altındaki notlardan devam edin.
 
 import crypto from "crypto";
 import axios from "axios";
 import qs from "qs";
 
 const PAYTR_ENDPOINT = "https://www.paytr.com/odeme";
+const PAYTR_TOKEN_ENDPOINT = "https://www.paytr.com/odeme/api/get-token";
+
+/**
+ * Klasik iFrame API — kart bilgisi hiç bizim sunucumuza/sayfamıza uğramaz,
+ * PayTR'nin kendi barındırdığı (guvenli/{token}) sayfasında toplanır.
+ * 05.09.2026'da doğrudan test edilip doğrulandı (bkz. dosya başındaki not).
+ * @returns {Promise<{ok: true, token: string} | {ok: false, reason: string}>}
+ */
+export async function getClassicIframeToken({ merchantOid, userIp, email, totalPriceTL, cart, userName, userAddress, userPhone, testMode }) {
+  const { merchant_id, merchant_key, merchant_salt } = getCreds();
+  const test_mode = testMode ?? (process.env.PAYTR_TEST_MODE || "0");
+  const currency = "TL";
+  const no_installment = "0";
+  const max_installment = "0"; // "0" = sınır yok, PayTR mağaza ayarındaki azami taksiti uygular
+  const timeout_limit = "30";
+
+  const user_basket = Buffer.from(
+    JSON.stringify(
+      (cart || []).map((item) => [item.name, Math.round(Number(item.price) * 100), item.quantity || 1])
+    )
+  ).toString("base64");
+
+  const payment_amount = parseInt((parseFloat(totalPriceTL) * 100).toFixed(0));
+
+  const hash_str =
+    merchant_id + userIp + merchantOid + email + payment_amount + user_basket +
+    no_installment + max_installment + currency + test_mode;
+  const paytr_token = crypto.createHmac("sha256", merchant_key).update(hash_str + merchant_salt).digest("base64");
+
+  const payload = {
+    merchant_id,
+    user_ip: userIp,
+    merchant_oid: merchantOid,
+    email,
+    payment_amount,
+    paytr_token,
+    user_basket,
+    no_installment,
+    max_installment,
+    currency,
+    test_mode,
+    user_name: userName,
+    user_address: userAddress,
+    user_phone: userPhone,
+    merchant_ok_url: process.env.PAYTR_OK_URL,
+    merchant_fail_url: process.env.PAYTR_FAIL_URL,
+    timeout_limit,
+    debug_on: "1",
+    lang: "tr",
+  };
+
+  try {
+    const response = await axios.post(PAYTR_TOKEN_ENDPOINT, qs.stringify(payload), {
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      timeout: 20000,
+    });
+    if (!response.data?.token) {
+      console.error("🚨 PayTR token alınamadı:", JSON.stringify(response.data));
+      return { ok: false, reason: response.data?.reason || "TOKEN_ALINAMADI" };
+    }
+    return { ok: true, token: response.data.token };
+  } catch (err) {
+    console.error("❌ getClassicIframeToken isteği başarısız:", err?.response?.data || err?.message);
+    return { ok: false, reason: "REQUEST_FAILED" };
+  }
+}
 
 function getCreds() {
   return {

@@ -8,7 +8,7 @@ import { v4 as uuidv4 } from "uuid";
 import { cleanMerchantOid, cleanPrice, requireFields, getUserIp } from "../utils/helpers.js";
 import { getPackageConfig } from "../utils/packageCatalog.js";
 import { getAllValidUnitPrices } from "../utils/packagePricing.js";
-import { buildCardRegistrationFields } from "../utils/paytrRecurring.js";
+import { getClassicIframeToken } from "../utils/paytrRecurring.js";
 import { finalizeSubscriptionStart, resolveChargeSuccess, resolveChargeFailure } from "./subscription.controller.js";
 
 /* =========================
@@ -129,25 +129,25 @@ export const prepareOrder = async (req, res) => {
       return res.status(400).json({ error: "E-posta adresi eksik" });
     }
 
-    // 3) PayTR Direkt API ödeme formu alanlarını hazırla (storeCard="0" —
-    // tek seferlik ödeme, kart saklanmıyor). Mağazada Direkt API açıkken
-    // klasik iFrame API (/odeme/api/get-token) PayTR tarafında kapatıldığı
-    // için tek seferlik akış da abonelik başlatmayla aynı Direkt API yolunu
-    // kullanıyor — kart alanları tarayıcıda toplanıp doğrudan PayTR'ye POST
-    // edilecek, bkz. paytrRecurring.js#buildCardRegistrationFields.
-    const fields = buildCardRegistrationFields({
+    // 3) PayTR klasik iFrame API'den token al (05.09.2026: hesap Non3D
+    // yetkisi kaldırılınca Direkt API kapandı, iFrame API'ye geri döndü —
+    // bkz. paytrRecurring.js başındaki kök-neden notu). Kart bilgisi hiç
+    // bizim sunucumuza/sayfamıza uğramıyor, PayTR'nin barındırdığı
+    // guvenli/{token} sayfasında toplanıyor (bkz. PaymentIframePage.jsx).
+    const tokenResult = await getClassicIframeToken({
       merchantOid,
       userIp: getUserIp(req),
       email,
-      amountTL: Number(totalPrice).toFixed(2),
+      totalPriceTL: Number(totalPrice).toFixed(2),
+      cart: cleanedCart,
       userName: `${billingInfo.name} ${billingInfo.surname}`.trim(),
       userAddress: billingInfo.address,
       userPhone: billingInfo.phone,
-      cart: cleanedCart,
-      okUrl: process.env.PAYTR_OK_URL,
-      failUrl: process.env.PAYTR_FAIL_URL,
-      storeCard: "0",
     });
+
+    if (!tokenResult.ok) {
+      return res.status(502).json({ error: "Ödeme başlatılamadı", reason: tokenResult.reason });
+    }
 
     // 3b) Oturum/ziyaretçi atfı: geçersiz/eski bir sessionId FK hatasıyla
     // ödemeyi asla bozmamalı — var olduğu doğrulanamıyorsa sessizce null geçilir.
@@ -193,11 +193,9 @@ export const prepareOrder = async (req, res) => {
       }
     }
 
-    // 6) FE'ye Direkt API form alanlarını ve merchantOid dön — FE bunlarla
-    // kendi kart formunu (cc_owner/card_number/expiry_month/expiry_year/cvv)
-    // birleştirip doğrudan PayTR'ye POST edecek (bkz. SubscriptionStart.jsx
-    // ile aynı desen).
-    return res.json({ fields, paytrEndpoint: "https://www.paytr.com/odeme", merchantOid });
+    // 6) FE'ye token dön — FE /payment/iframe/{token}'a yönlendirecek
+    // (bkz. PaymentIframePage.jsx). Kart formu artık FE'de değil.
+    return res.json({ token: tokenResult.token, merchantOid });
   } catch (err) {
     console.error("❌ prepareOrder hatası:", err);
     return res.status(500).json({ error: "Sipariş hazırlanırken hata oluştu" });
