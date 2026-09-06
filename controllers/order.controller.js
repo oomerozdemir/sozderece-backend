@@ -325,14 +325,22 @@ export const handlePaytrCallback = async (req, res) => {
       if (pmCheck?.totalPrice) {
         const paidAmountTL = parseFloat(total_amount) / 100;
         const expectedAmountTL = parseFloat(pmCheck.totalPrice);
-        // 1 TL veya %1 tolerans (float hassasiyeti için)
-        if (Math.abs(paidAmountTL - expectedAmountTL) > Math.max(1, expectedAmountTL * 0.01)) {
+        // KRİTİK (06.09.2026 düzeltmesi): sadece EKSİK ödeme şüpheli — fazla
+        // ödeme taksit vade farkından kaynaklanır (banka faiz ekler, PayTR
+        // gerçek çekilen tutarı bildirir) ve MEŞRUDUR. Eski kod ±%1 sıkı
+        // bantla fazla ödemeyi de reddediyordu — gerçek bir müşteri
+        // (sipariş #200, 3000 TL yerine taksitle 3313.82 TL) kartından
+        // parası çekildiği HALDE siparişi "failed" olarak işaretlenmiş ve
+        // hizmet hiç teslim edilmemişti. 1 TL veya %1 tolerans, sadece
+        // EKSİK ödemede uygulanıyor artık.
+        const shortfall = expectedAmountTL - paidAmountTL;
+        if (shortfall > Math.max(1, expectedAmountTL * 0.01)) {
           console.error(
-            `❌ Ödeme tutarı uyuşmuyor! Beklenen: ${expectedAmountTL} TL | Gelen: ${paidAmountTL} TL | OID: ${merchant_oid}`
+            `❌ Ödeme tutarı eksik! Beklenen: ${expectedAmountTL} TL | Gelen: ${paidAmountTL} TL | OID: ${merchant_oid}`
           );
           await prisma.order.update({
             where: { id: order.id },
-            data: { status: "failed", failReason: `Tutar uyuşmazlığı: beklenen ${expectedAmountTL} TL, gelen ${paidAmountTL} TL` },
+            data: { status: "failed", failReason: `Tutar eksik: beklenen ${expectedAmountTL} TL, gelen ${paidAmountTL} TL` },
           });
           return res.send("OK"); // PayTR'e OK dön ama siparişi onaylama
         }
