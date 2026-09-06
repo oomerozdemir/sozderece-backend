@@ -24,8 +24,12 @@ export const getMyOrders = async (req, res) => {
     const orders = await prisma.order.findMany({
       where: {
         userId,
-        // "ödeme tamamlanmamış" siparişleri liste DIŞI bırak
-        status: { notIn: ["pending", "pending_payment"] },
+        // "ödeme tamamlanmamış" siparişleri liste DIŞI bırak. "failed" de
+        // dahil: çoğu zaman müşteri kart bile girmeden ödeme sayfasından
+        // ayrılmış oluyor (bkz. PayTR'nin kendi failReason mesajı), bunu
+        // kalıcı bir "Başarısız" rozetiyle göstermek kafa karıştırıcı —
+        // admin panelde (terk edilen sepet takibi için) hâlâ görünüyor.
+        status: { notIn: ["pending", "pending_payment", "failed"] },
       },
       orderBy: { createdAt: "desc" },
       include: {
