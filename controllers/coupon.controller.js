@@ -4,13 +4,17 @@ import prisma from "../utils/prisma.js";
 // ✅ Kupon kodu doğrulama ve detay döndürme
 export const validateCoupon = async (req, res) => {
   try {
-    const userId = req.user?.id;
-
-    if (!userId) {
-      return res.status(401).json({ error: "Kullanıcı doğrulanamadı." });
-    }
-
-    const { code } = req.body;
+    // Checkout misafir-öncelikli (bkz. /hemen-basla): giriş yapmış kullanıcı
+    // yoksa req.body.email ile aynı "daha önce kullandın mı / ilk siparişin
+    // mi" kontrollerini yapıyoruz — hesap, ödeme başarılı olduğunda zaten bu
+    // e-postadan otomatik oluşturuluyor (bkz. handlePaytrCallback), o yüzden
+    // e-posta burada güvenilir bir kimlik.
+    const userId = req.user?.id || null;
+    const { code, email } = req.body;
+    const guestUser = !userId && email
+      ? await prisma.user.findUnique({ where: { email: String(email).trim().toLowerCase() } })
+      : null;
+    const effectiveUserId = userId || guestUser?.id || null;
 
     if (!code) {
       return res.status(400).json({ error: "Kupon kodu gereklidir." });
@@ -31,10 +35,15 @@ export const validateCoupon = async (req, res) => {
       return res.status(400).json({ error: "Bu kuponun süresi dolmuş." });
     }
 
-    // 3. Kullanıcı daha önce kullandı mı? (Kupon bazlı kontrol)
-    const userUsed = coupon.usedBy.some((usage) => usage.userId === userId);
-    if (userUsed) {
-      return res.status(400).json({ error: "Bu kuponu zaten kullandınız." });
+    // 3. Kullanıcı daha önce kullandı mı? (Kupon bazlı kontrol — bilinen bir
+    // hesap yoksa, ör. gerçekten ilk kez gelen bir misafir, bu kontrol
+    // atlanır; gerçek kullanım kaydı ödeme başarılı olunca asıl userId ile
+    // yazılıyor, bkz. handlePaytrCallback#8.)
+    if (effectiveUserId) {
+      const userUsed = coupon.usedBy.some((usage) => usage.userId === effectiveUserId);
+      if (userUsed) {
+        return res.status(400).json({ error: "Bu kuponu zaten kullandınız." });
+      }
     }
 
     // 4. Genel kullanım limiti doldu mu?
@@ -45,12 +54,12 @@ export const validateCoupon = async (req, res) => {
     // ✅ 5. "İlk Sipariş" Kontrolü (DÜZELTİLEN KISIM)
     const isFirstOrderCoupon = code === "SOZDERECE200" || coupon.isFirstOrder === true;
 
-    if (isFirstOrderCoupon) {
+    if (isFirstOrderCoupon && effectiveUserId) {
       // Kullanıcının daha önce ödenmiş (paid) veya iade süreci başlamış siparişi var mı?
       // NOT: 'failed', 'pending' veya 'pending_payment' olanlar sayılmaz.
       const previousOrders = await prisma.order.count({
         where: {
-          userId: userId,
+          userId: effectiveUserId,
           status: {
             in: ["paid", "refund_requested", "refunded"] // ✅ 'success' yerine sisteminizdeki gerçek durumları yazdık.
           }
@@ -58,8 +67,8 @@ export const validateCoupon = async (req, res) => {
       });
 
       if (previousOrders > 0) {
-        return res.status(400).json({ 
-          error: "Bu fırsat sadece ilk siparişinize özeldir. Daha önce siparişiniz bulunmaktadır." 
+        return res.status(400).json({
+          error: "Bu fırsat sadece ilk siparişinize özeldir. Daha önce siparişiniz bulunmaktadır."
         });
       }
     }
