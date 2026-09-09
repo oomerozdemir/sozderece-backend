@@ -39,13 +39,40 @@ export async function getClassicIframeToken({ merchantOid, userIp, email, totalP
   const max_installment = "0"; // "0" = sınır yok, PayTR mağaza ayarındaki azami taksiti uygular
   const timeout_limit = "30";
 
-  const user_basket = Buffer.from(
-    JSON.stringify(
-      (cart || []).map((item) => [item.name, Math.round(Number(item.price) * 100), item.quantity || 1])
-    )
-  ).toString("base64");
-
   const payment_amount = parseInt((parseFloat(totalPriceTL) * 100).toFixed(0));
+
+  // KÖK NEDEN (09.09.2026): PayTR klasik iFrame API'de user_basket satır
+  // toplamı payment_amount'a EŞİT olmak zorunda. Eski kod sepet kalemlerini
+  // her zaman liste fiyatından yazıyordu; kupon/indirim uygulanınca
+  // payment_amount indirimli tutar oluyor, sepet toplamı ise indirimsiz
+  // kalıyordu. Bu uyuşmazlıkta PayTR guvenli sayfası kart bilgisi girilirken
+  // "ödeme sayfası geçersiz, tekrar deneyin" hatası veriyordu (WhatsApp
+  // şikayeti — kupon: ERKENKAYIT). Çözüm: kalem tutarlarını gerçek tahsil
+  // edilecek tutara orantılı ölçekle, yuvarlama farkını son kaleme yaz,
+  // her satırı adet=1 + satır-toplamı-fiyat olarak gönder ki PayTR'nin
+  // fiyat*adet toplamı payment_amount'a bire bir otursun.
+  const rawLines = (cart || []).map((item) => ({
+    name: item.name || "Ürün",
+    lineKurus: Math.max(0, Math.round(Number(item.price) * 100)) * (item.quantity || 1),
+  }));
+  const rawTotal = rawLines.reduce((s, l) => s + l.lineKurus, 0);
+
+  let basketLines;
+  if (rawTotal > 0 && rawLines.length > 0) {
+    let allocated = 0;
+    basketLines = rawLines.map((l, i) => {
+      const isLast = i === rawLines.length - 1;
+      const lineTotal = isLast
+        ? payment_amount - allocated
+        : Math.round((l.lineKurus / rawTotal) * payment_amount);
+      if (!isLast) allocated += lineTotal;
+      return [l.name, lineTotal, 1];
+    });
+  } else {
+    basketLines = [["Ödeme", payment_amount, 1]];
+  }
+
+  const user_basket = Buffer.from(JSON.stringify(basketLines)).toString("base64");
 
   const hash_str =
     merchant_id + userIp + merchantOid + email + payment_amount + user_basket +
