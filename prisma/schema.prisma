@@ -230,6 +230,12 @@ model Package {
   // Sekmeli süre planı (plans[]) YOKSA paketin kendisinin tek seferlik mi
   // yoksa aylık abonelik mi olduğunu belirler — "once" | "monthly".
   billingCycle     String    @default("once")
+  // Çoklu paket-kartı vitrininde (PricingSection) kartın üstünde gösterilen
+  // öne-çıkarma rozeti, ör. "👍 En Popüler". Boşsa rozet gösterilmez.
+  badge            String?
+  // Kart içine gömülen, pakete özel tanıtım videosu (YouTube). Boşsa
+  // kart üstünde video gösterilmez.
+  videoUrl         String?
   createdAt        DateTime  @default(now())
   updatedAt        DateTime  @updatedAt
 }
