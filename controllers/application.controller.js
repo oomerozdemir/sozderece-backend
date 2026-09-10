@@ -1,6 +1,14 @@
 import prisma from "../utils/prisma.js";
 import { sendEmail } from "../utils/sendEmail.js";
 
+// Cloudinary raw dosyasını "tıkla, orijinal formatında insin" haline getirir.
+// fl_attachment, Content-Disposition: attachment gönderir; public_id zaten
+// uzantıyla bittiği için dosya doğru isim/uzantıyla kaydedilir.
+export const toDownloadUrl = (url) =>
+  typeof url === "string" && url.includes("/upload/")
+    ? url.replace("/upload/", "/upload/fl_attachment/")
+    : url;
+
 // Mail template'inde HTML Injection'a karşı kullanıcı verilerini escape eder
 const escapeHtml = (str) => {
   if (!str) return "";
@@ -141,14 +149,14 @@ export const createInstructorApplication = async (req, res) => {
         ranking: escapeHtml(ranking || ""),
         experience: escapeHtml(experience || ""),
         message: escapeHtml(message || ""),
-        cvUrl: escapeHtml(cvUrl || ""),
+        cvUrl: escapeHtml(toDownloadUrl(cvUrl) || ""),
       };
 
       const sampleProgramsHtml = sampleProgramUrls.length
         ? sampleProgramUrls
             .map(
               (u, i) =>
-                `<a href="${escapeHtml(u)}" style="background:#100481;color:#fff;padding:6px 12px;border-radius:6px;text-decoration:none;display:inline-block;font-size:12px;margin:2px 4px 2px 0;">📄 Örnek Program ${i + 1}</a>`
+                `<a href="${escapeHtml(toDownloadUrl(u))}" style="background:#100481;color:#fff;padding:6px 12px;border-radius:6px;text-decoration:none;display:inline-block;font-size:12px;margin:2px 4px 2px 0;">📄 Örnek Program ${i + 1}</a>`
             )
             .join("")
         : "";
