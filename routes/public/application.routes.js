@@ -1,6 +1,6 @@
 import express from "express";
 import rateLimit from "express-rate-limit";
-import upload from "../../middleware/upload.js";
+import uploadDocs from "../../middleware/uploadDocs.js";
 import { authenticateToken, authorizeRoles } from "../../middleware/authMiddleware.js";
 import {
   createInstructorApplication,
@@ -22,9 +22,17 @@ const applicationLimiter = rateLimit({
 /**
  * POST /api/v1/applications/apply
  * Public route - anyone can apply
- * Accepts CV file upload (PDF/DOCX)
+ * CV (tek dosya) + örnek program dosyaları (en fazla 5) — PDF/Word/resim
  */
-router.post("/apply", applicationLimiter, upload.single("cv"), createInstructorApplication);
+router.post(
+  "/apply",
+  applicationLimiter,
+  uploadDocs.fields([
+    { name: "cv", maxCount: 1 },
+    { name: "samplePrograms", maxCount: 5 },
+  ]),
+  createInstructorApplication
+);
 
 /**
  * GET /api/v1/applications

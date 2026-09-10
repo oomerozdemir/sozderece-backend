@@ -600,6 +600,8 @@ model InstructorApplication {
   university String?
   department String?
   ranking    String? // YKS Derecesi
+  experience String?            @db.Text // Koçluk / öğrenci takibi deneyimi
+  samplePrograms String?        @db.Text // Yüklenen örnek program dosyalarının URL listesi (JSON dizi)
   message    String?            @db.Text
   cvUrl      String? // Cloudinary URL
   status     String             @default("PENDING") // PENDING, REVIEWED, ACCEPTED, REJECTED

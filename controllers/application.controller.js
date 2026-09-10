@@ -28,6 +28,7 @@ export const createInstructorApplication = async (req, res) => {
       university,
       department,
       ranking,
+      experience,
       message,
     } = req.body;
 
@@ -78,11 +79,15 @@ export const createInstructorApplication = async (req, res) => {
     }
 
     // === File Upload Handling ===
-    let cvUrl = null;
-    if (req.file) {
-      // Cloudinary URL (CloudinaryStorage middleware already uploaded it)
-      cvUrl = req.file.secure_url || req.file.path;
-    }
+    // uploadDocs.fields() -> req.files bir nesne: { cv: [file], samplePrograms: [file, ...] }
+    const fileUrl = (f) => f?.secure_url || f?.path || null;
+    const cvUrl = fileUrl(req.files?.cv?.[0]);
+    const sampleProgramUrls = (req.files?.samplePrograms || [])
+      .map(fileUrl)
+      .filter(Boolean);
+    const samplePrograms = sampleProgramUrls.length
+      ? JSON.stringify(sampleProgramUrls)
+      : null;
 
     // === Parse birthDate ===
     let parsedBirthDate = null;
@@ -108,6 +113,8 @@ export const createInstructorApplication = async (req, res) => {
         university: university?.trim() || null,
         department: department?.trim() || null,
         ranking: ranking?.trim() || null,
+        experience: experience?.trim() || null,
+        samplePrograms,
         message: message?.trim() || null,
         cvUrl,
         status: "PENDING",
@@ -132,9 +139,19 @@ export const createInstructorApplication = async (req, res) => {
         university: escapeHtml(university || ""),
         department: escapeHtml(department || ""),
         ranking: escapeHtml(ranking || ""),
+        experience: escapeHtml(experience || ""),
         message: escapeHtml(message || ""),
         cvUrl: escapeHtml(cvUrl || ""),
       };
+
+      const sampleProgramsHtml = sampleProgramUrls.length
+        ? sampleProgramUrls
+            .map(
+              (u, i) =>
+                `<a href="${escapeHtml(u)}" style="background:#100481;color:#fff;padding:6px 12px;border-radius:6px;text-decoration:none;display:inline-block;font-size:12px;margin:2px 4px 2px 0;">📄 Örnek Program ${i + 1}</a>`
+            )
+            .join("")
+        : "";
 
       const emailHtml = `
         <div style="font-family: Arial, sans-serif; background-color: #f8fafc; padding: 20px;">
@@ -234,7 +251,28 @@ export const createInstructorApplication = async (req, res) => {
                   `
                       : ""
                   }
+                  ${
+                    sampleProgramsHtml
+                      ? `
+                  <tr style="border-bottom: 1px solid #e2e8f0;">
+                    <td style="padding: 12px 8px; font-weight: 600; color: #475569;">Örnek Programlar:</td>
+                    <td style="padding: 12px 8px;">${sampleProgramsHtml}</td>
+                  </tr>
+                  `
+                      : ""
+                  }
                 </table>
+
+                ${
+                  safe.experience
+                    ? `
+                <div style="margin-top: 24px; background: #eff6ff; border: 1px solid #bfdbfe; padding: 16px; border-radius: 8px;">
+                  <h3 style="margin: 0 0 8px; color: #1e40af; font-size: 14px; font-weight: 600;">🧭 Deneyim:</h3>
+                  <p style="margin: 0; color: #1e3a8a; white-space: pre-wrap; font-size: 14px; line-height: 1.6;">${safe.experience}</p>
+                </div>
+                `
+                    : ""
+                }
 
                 ${
                   safe.message
