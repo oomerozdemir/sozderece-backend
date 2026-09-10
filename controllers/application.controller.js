@@ -1,13 +1,48 @@
 import prisma from "../utils/prisma.js";
 import { sendEmail } from "../utils/sendEmail.js";
+import { cloudinary } from "../middleware/upload.js";
 
-// Cloudinary raw dosyasını "tıkla, orijinal formatında insin" haline getirir.
-// fl_attachment, Content-Disposition: attachment gönderir; public_id zaten
-// uzantıyla bittiği için dosya doğru isim/uzantıyla kaydedilir.
-export const toDownloadUrl = (url) =>
-  typeof url === "string" && url.includes("/upload/")
-    ? url.replace("/upload/", "/upload/fl_attachment/")
-    : url;
+// Başvuru dosyaları Cloudinary'ye `type: "authenticated"` yükleniyor
+// (bkz. uploadDocs.js) ve DB'de yalnızca `public_id` saklanıyor. Erişim
+// için sunucu, zaman sınırlı bir imzalı download URL'i üretiyor —
+// api.cloudinary.com/.../download endpoint'i PDF/ZIP teslimat kısıtlamasından
+// etkilenmiyor ve dosyayı doğru Content-Type ile birebir gönderiyor.
+const DOWNLOAD_TTL_SEC = 60 * 60 * 24 * 60; // 60 gün
+
+// Saklanan değer ya bir public_id (yeni kayıtlar) ya da tam bir Cloudinary
+// raw URL'i (eski kayıtlar) olabilir — ikisinden de public_id'yi çıkarır.
+const toPublicId = (value) => {
+  if (!value) return null;
+  if (!/^https?:\/\//i.test(value)) return value;
+  const m = value.match(/\/raw\/(?:upload|authenticated)\/(.+)$/);
+  if (!m) return null;
+  return m[1].replace(/^v\d+\//, ""); // sürüm segmentini at
+};
+
+// PDF/ZIP teslimat kısıtlamasını aşan, zaman sınırlı imzalı download URL'i.
+export const signedFileUrl = (value) => {
+  const publicId = toPublicId(value);
+  if (!publicId) return null;
+  try {
+    return cloudinary.utils.private_download_url(publicId, "", {
+      resource_type: "raw",
+      type: "upload",
+      expires_at: Math.floor(Date.now() / 1000) + DOWNLOAD_TTL_SEC,
+    });
+  } catch {
+    return null;
+  }
+};
+
+const parseIdList = (raw) => {
+  if (!raw) return [];
+  try {
+    const arr = JSON.parse(raw);
+    return Array.isArray(arr) ? arr.filter(Boolean) : [];
+  } catch {
+    return [];
+  }
+};
 
 // Mail template'inde HTML Injection'a karşı kullanıcı verilerini escape eder
 const escapeHtml = (str) => {
@@ -88,13 +123,15 @@ export const createInstructorApplication = async (req, res) => {
 
     // === File Upload Handling ===
     // uploadDocs.fields() -> req.files bir nesne: { cv: [file], samplePrograms: [file, ...] }
-    const fileUrl = (f) => f?.secure_url || f?.path || null;
-    const cvUrl = fileUrl(req.files?.cv?.[0]);
-    const sampleProgramUrls = (req.files?.samplePrograms || [])
-      .map(fileUrl)
+    // DB'ye Cloudinary public_id yazıyoruz (URL değil) — erişimde imzalı
+    // download URL'i sunucu üretecek (bkz. signedFileUrl).
+    const filePublicId = (f) => f?.public_id || f?.filename || null;
+    const cvUrl = filePublicId(req.files?.cv?.[0]); // kolon adı "cvUrl" ama içerik public_id
+    const samplePublicIds = (req.files?.samplePrograms || [])
+      .map(filePublicId)
       .filter(Boolean);
-    const samplePrograms = sampleProgramUrls.length
-      ? JSON.stringify(sampleProgramUrls)
+    const samplePrograms = samplePublicIds.length
+      ? JSON.stringify(samplePublicIds)
       : null;
 
     // === Parse birthDate ===
@@ -149,14 +186,14 @@ export const createInstructorApplication = async (req, res) => {
         ranking: escapeHtml(ranking || ""),
         experience: escapeHtml(experience || ""),
         message: escapeHtml(message || ""),
-        cvUrl: escapeHtml(toDownloadUrl(cvUrl) || ""),
+        cvUrl: escapeHtml(signedFileUrl(cvUrl) || ""),
       };
 
-      const sampleProgramsHtml = sampleProgramUrls.length
-        ? sampleProgramUrls
+      const sampleProgramsHtml = samplePublicIds.length
+        ? samplePublicIds
             .map(
-              (u, i) =>
-                `<a href="${escapeHtml(toDownloadUrl(u))}" style="background:#100481;color:#fff;padding:6px 12px;border-radius:6px;text-decoration:none;display:inline-block;font-size:12px;margin:2px 4px 2px 0;">📄 Örnek Program ${i + 1}</a>`
+              (id, i) =>
+                `<a href="${escapeHtml(signedFileUrl(id))}" style="background:#100481;color:#fff;padding:6px 12px;border-radius:6px;text-decoration:none;display:inline-block;font-size:12px;margin:2px 4px 2px 0;">📄 Örnek Program ${i + 1}</a>`
             )
             .join("")
         : "";
@@ -364,9 +401,17 @@ export const getAllApplications = async (req, res) => {
       prisma.instructorApplication.count({ where }),
     ]);
 
+    // Saklanan Cloudinary public_id'lerini, admin panelde tıklanabilir taze
+    // imzalı download URL'lerine çevir (cvUrl kolonu public_id tutuyor).
+    const withUrls = applications.map((a) => ({
+      ...a,
+      cvUrl: signedFileUrl(a.cvUrl),
+      samplePrograms: JSON.stringify(parseIdList(a.samplePrograms).map(signedFileUrl).filter(Boolean)),
+    }));
+
     return res.json({
       success: true,
-      applications,
+      applications: withUrls,
       pagination: {
         total,
         page: parseInt(page),
