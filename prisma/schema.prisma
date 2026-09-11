@@ -236,6 +236,13 @@ model Package {
   // Kart içine gömülen, pakete özel tanıtım videosu (YouTube). Boşsa
   // kart üstünde video gösterilmez.
   videoUrl         String?
+  // Ödeme sayfasındaki (CoachingWizardOdeme) güvence kutusu için paket bazlı
+  // metin — boşsa sitedeki genel varsayılan metin (/api/settings/payment-page)
+  // kullanılır. noRefund true ise bu metin yeşil "güvence" kutusu yerine
+  // nötr bir "iade yok" bilgilendirmesi olarak gösterilir (ör. 14 Günlük
+  // Program gibi tek seferlik/dijital içerik paketlerinde).
+  guaranteeText    String?
+  noRefund         Boolean   @default(false)
   createdAt        DateTime  @default(now())
   updatedAt        DateTime  @updatedAt
 }
