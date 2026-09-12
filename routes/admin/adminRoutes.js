@@ -14,6 +14,7 @@ import { getAdminConsultationSlots, toggleConsultationSlot, bulkUpdateConsultati
 import { getAllNavbarItems, createNavbarItem, updateNavbarItem, deleteNavbarItem, reorderNavbarItems } from "../../controllers/navbarItem.controller.js";
 import { getAllSubscriptionsForAdmin, adminCancelSubscription } from "../../controllers/subscription.controller.js";
 import { getAbandonedCartsForAdmin, deleteAbandonedCart } from "../../controllers/cart.controller.js";
+import { getPageViewStats } from "../../controllers/tracking.controller.js";
 
 const prisma = new PrismaClient();
 
@@ -190,6 +191,9 @@ router.post("/navbar", authenticateToken, authorizeRoles("admin"), createNavbarI
 router.put("/navbar/reorder", authenticateToken, authorizeRoles("admin"), reorderNavbarItems);
 router.put("/navbar/:id", authenticateToken, authorizeRoles("admin"), updateNavbarItem);
 router.delete("/navbar/:id", authenticateToken, authorizeRoles("admin"), deleteNavbarItem);
+
+// Sayfa görüntülenme istatistikleri (ör. kampanya sayfaları)
+router.get("/pageviews", authenticateToken, authorizeRoles("admin"), getPageViewStats);
 
 // Görsel yükleme (Cloudinary → WebP)
 import uploadRoutes from "./upload.routes.js";

@@ -107,3 +107,61 @@ export const pingSession = async (req, res) => {
     return res.status(500).json({ success: false, message: "Sunucu hatası" });
   }
 };
+
+// POST /api/tracking/pageview
+// Belirli bir sayfa yüklendiğinde (ör. kampanya/teklif sayfaları) bir kayıt
+// düşer — admin panelde "bu sayfa kaç kez / kaç kişi tarafından görüntülendi"
+// sorusuna cevap vermek için. VisitorSession.pageViewCount ile karışmasın:
+// o oturum başına toplam sayfa sayısı, bu ise sayfa başına ayrı bir log.
+export const logPageView = async (req, res) => {
+  try {
+    const { path, visitorId, sessionId } = req.body || {};
+    if (!path || typeof path !== "string" || path.length > 300) {
+      return res.status(400).json({ success: false, message: "Geçersiz sayfa." });
+    }
+
+    await prisma.pageView.create({
+      data: {
+        path: path.slice(0, 300),
+        visitorId: typeof visitorId === "string" ? visitorId.slice(0, 100) : null,
+        sessionId: typeof sessionId === "string" ? sessionId.slice(0, 100) : null,
+      },
+    });
+
+    return res.status(201).json({ success: true });
+  } catch (err) {
+    console.error("logPageView error:", err);
+    return res.status(500).json({ success: false, message: "Sunucu hatası" });
+  }
+};
+
+// GET /api/admin/pageviews?path=/14-gunde-calisma-aliskanligi-kazan (Admin only)
+export const getPageViewStats = async (req, res) => {
+  try {
+    const { path } = req.query;
+    if (!path || typeof path !== "string") {
+      return res.status(400).json({ success: false, message: "path parametresi zorunludur." });
+    }
+
+    const [totalViews, distinctVisitors, lastView] = await Promise.all([
+      prisma.pageView.count({ where: { path } }),
+      prisma.pageView.findMany({
+        where: { path, visitorId: { not: null } },
+        distinct: ["visitorId"],
+        select: { visitorId: true },
+      }),
+      prisma.pageView.findFirst({ where: { path }, orderBy: { createdAt: "desc" }, select: { createdAt: true } }),
+    ]);
+
+    return res.json({
+      success: true,
+      path,
+      totalViews,
+      uniqueVisitors: distinctVisitors.length,
+      lastViewedAt: lastView?.createdAt || null,
+    });
+  } catch (err) {
+    console.error("getPageViewStats error:", err);
+    return res.status(500).json({ success: false, message: "Sunucu hatası" });
+  }
+};

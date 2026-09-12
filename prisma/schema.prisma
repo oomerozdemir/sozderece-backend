@@ -66,6 +66,22 @@ model User {
 // üretilip taşınır, satın almadan önceki tüm ziyaretleri tek kimlik altında
 // toplar. userId sadece bilinen bir hesaba bağlanırsa doldurulur (v1'de
 // otomatik eşleme mantığı YOK, alan ileride kullanılmak üzere bırakıldı).
+// Sayfa bazlı görüntülenme kaydı — ör. "/14-gunde-calisma-aliskanligi-kazan"
+// gibi kampanya sayfalarının kaç kez / kaç tekil ziyaretçi tarafından
+// görüntülendiğini admin panelde göstermek için. VisitorSession'daki
+// landingPage sadece oturumun İLK sayfasını tutuyor — buradaki amaç ise
+// belirli bir sayfanın toplam görüntülenmesini (oturum içinde nereden
+// girilmiş olursa olsun) saymak.
+model PageView {
+  id        String   @id @default(cuid())
+  path      String
+  visitorId String?
+  sessionId String?
+  createdAt DateTime @default(now())
+
+  @@index([path, createdAt])
+}
+
 model Visitor {
   id            String           @id @default(cuid())
   firstSeenAt   DateTime         @default(now())
