@@ -1,5 +1,5 @@
 import prisma from "../utils/prisma.js";
-import { parseUserAgent } from "../utils/parseUserAgent.js";
+import { parseUserAgent, deviceTypeLabel } from "../utils/parseUserAgent.js";
 import { classifyChannel } from "../utils/classifyChannel.js";
 
 // 30 dakika hareketsizlik sonrası oturum sonlanmış sayılır (GA4 varsayılanıyla aynı).
@@ -143,7 +143,7 @@ export const getPageViewStats = async (req, res) => {
       return res.status(400).json({ success: false, message: "path parametresi zorunludur." });
     }
 
-    const [totalViews, distinctVisitors, lastView] = await Promise.all([
+    const [totalViews, distinctVisitors, lastView, rows] = await Promise.all([
       prisma.pageView.count({ where: { path } }),
       prisma.pageView.findMany({
         where: { path, visitorId: { not: null } },
@@ -151,7 +151,49 @@ export const getPageViewStats = async (req, res) => {
         select: { visitorId: true },
       }),
       prisma.pageView.findFirst({ where: { path }, orderBy: { createdAt: "desc" }, select: { createdAt: true } }),
+      prisma.pageView.findMany({ where: { path }, select: { visitorId: true, sessionId: true } }),
     ]);
+
+    // Her pageview'ı, bağlı olduğu oturumun trafik kaynağına göre grupla —
+    // "bu sayfaya gelenler nereden geldi" sorusu için. Oturum başlarken
+    // sınıflandırılmış channel key'i saklamak yerine (etikette Türkçe
+    // görünmesi için) burada classifyChannel'ı taze veriyle yeniden
+    // çalıştırıyoruz, tek kaynaktan yönetilsin diye.
+    const sessionIds = [...new Set(rows.map((r) => r.sessionId).filter(Boolean))];
+    const sessions = sessionIds.length
+      ? await prisma.visitorSession.findMany({
+          where: { id: { in: sessionIds } },
+          select: { id: true, utmSource: true, utmMedium: true, referrerDomain: true, deviceType: true },
+        })
+      : [];
+    const sessionById = new Map(sessions.map((s) => [s.id, s]));
+
+    const bySource = new Map();
+    const byDevice = new Map();
+
+    for (const row of rows) {
+      const session = row.sessionId ? sessionById.get(row.sessionId) : null;
+      const { key, label, icon } = classifyChannel({
+        utmSource: session?.utmSource,
+        utmMedium: session?.utmMedium,
+        referrerDomain: session?.referrerDomain,
+      });
+      if (!bySource.has(key)) bySource.set(key, { key, label, icon, visits: 0, visitorIds: new Set() });
+      const entry = bySource.get(key);
+      entry.visits += 1;
+      if (row.visitorId) entry.visitorIds.add(row.visitorId);
+
+      const deviceLabel = session?.deviceType ? deviceTypeLabel(session.deviceType) : "Bilinmiyor";
+      byDevice.set(deviceLabel, (byDevice.get(deviceLabel) || 0) + 1);
+    }
+
+    const sources = [...bySource.values()]
+      .map(({ key, label, icon, visits, visitorIds }) => ({ key, label, icon, visits, uniqueVisitors: visitorIds.size }))
+      .sort((a, b) => b.visits - a.visits);
+
+    const devices = [...byDevice.entries()]
+      .map(([label, count]) => ({ label, count }))
+      .sort((a, b) => b.count - a.count);
 
     return res.json({
       success: true,
@@ -159,6 +201,8 @@ export const getPageViewStats = async (req, res) => {
       totalViews,
       uniqueVisitors: distinctVisitors.length,
       lastViewedAt: lastView?.createdAt || null,
+      sources,
+      devices,
     });
   } catch (err) {
     console.error("getPageViewStats error:", err);
