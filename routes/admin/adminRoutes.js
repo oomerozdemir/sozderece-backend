@@ -15,6 +15,10 @@ import { getAllNavbarItems, createNavbarItem, updateNavbarItem, deleteNavbarItem
 import { getAllSubscriptionsForAdmin, adminCancelSubscription } from "../../controllers/subscription.controller.js";
 import { getAbandonedCartsForAdmin, deleteAbandonedCart } from "../../controllers/cart.controller.js";
 import { getPageViewStats } from "../../controllers/tracking.controller.js";
+import {
+  getAllResources, createResource, updateResource, deleteResource,
+  getAllAnnouncements, createAnnouncement, updateAnnouncement, deleteAnnouncement,
+} from "../../controllers/adminContent.controller.js";
 
 const prisma = new PrismaClient();
 
@@ -184,6 +188,16 @@ router.post("/packages", authenticateToken, authorizeRoles("admin"), createPacka
 router.put("/packages/:id", authenticateToken, authorizeRoles("admin"), updatePackage);
 router.patch("/packages/:id/toggle-visibility", authenticateToken, authorizeRoles("admin"), togglePackageVisibility);
 router.delete("/packages/:id", authenticateToken, authorizeRoles("admin"), deletePackage);
+
+// Öğrenci Paneli (Faz 1) — Kaynak Kütüphanesi + Gündem
+router.get("/resources", authenticateToken, authorizeRoles("admin"), getAllResources);
+router.post("/resources", authenticateToken, authorizeRoles("admin"), createResource);
+router.put("/resources/:id", authenticateToken, authorizeRoles("admin"), updateResource);
+router.delete("/resources/:id", authenticateToken, authorizeRoles("admin"), deleteResource);
+router.get("/announcements", authenticateToken, authorizeRoles("admin"), getAllAnnouncements);
+router.post("/announcements", authenticateToken, authorizeRoles("admin"), createAnnouncement);
+router.put("/announcements/:id", authenticateToken, authorizeRoles("admin"), updateAnnouncement);
+router.delete("/announcements/:id", authenticateToken, authorizeRoles("admin"), deleteAnnouncement);
 
 // Navbar yönetimi
 router.get("/navbar", authenticateToken, authorizeRoles("admin"), getAllNavbarItems);

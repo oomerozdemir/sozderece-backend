@@ -34,7 +34,10 @@ export const getStudentProfile = async (req, res) => {
       return res.status(404).json({ message: "Kullanıcı bulunamadı." });
     }
 
-    res.json(user);
+    // Şifre hash'i client'a hiçbir zaman gitmemeli — select kullanılmadığı
+    // için Prisma tüm alanları döndürüyordu.
+    const { password, ...safeUser } = user;
+    res.json(safeUser);
   } catch (error) {
     console.error("Öğrenci bilgileri alınamadı:", error);
     res.status(500).json({ message: "Bir hata oluştu." });

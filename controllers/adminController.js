@@ -15,6 +15,7 @@ export const getAllUsers = async (req, res) => {
         phone: true,
         grade: true,
         track: true,
+        panelBetaAccess: true,
         createdAt: true,
         assignedCoach: {
           select: {
@@ -51,11 +52,17 @@ export const deleteUser = async (req, res) => {
 export const updateUser = async (req, res) => {
   try {
     const userId = parseInt(req.params.id);
-    const { name, email, role, phone } = req.body;
+    const { name, email, role, phone, panelBetaAccess } = req.body;
 
     const updatedUser = await prisma.user.update({
       where: { id: userId },
-      data: { name, email, role, phone },
+      data: {
+        name,
+        email,
+        role,
+        phone,
+        ...(panelBetaAccess !== undefined && { panelBetaAccess: panelBetaAccess === true || panelBetaAccess === "true" }),
+      },
       include: {
         assignedCoach: {
           select: {
@@ -67,7 +74,8 @@ export const updateUser = async (req, res) => {
       },
     });
 
-    res.json({ success: true, user: updatedUser });
+    const { password, ...safeUser } = updatedUser;
+    res.json({ success: true, user: safeUser });
   } catch (error) {
     console.error("Kullanıcı güncellenemedi:", error);
     res.status(500).json({ error: "Kullanıcı güncellenemedi." });

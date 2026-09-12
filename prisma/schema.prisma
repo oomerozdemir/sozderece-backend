@@ -30,6 +30,76 @@ model ConsultationSlot {
   @@unique([date, timeSlot])
 }
 
+// ── Öğrenci Paneli (Faz 1) ──────────────────────────────────────────────
+model StudyPlan {
+  id          Int             @id @default(autoincrement())
+  studentId   Int
+  student     User            @relation("StudentStudyPlans", fields: [studentId], references: [id])
+  weekStart   DateTime // o haftanın pazartesi tarihi (çapa)
+  title       String?
+  createdById Int? // planı hazırlayan koç/admin User.id
+  items       StudyPlanItem[]
+  createdAt   DateTime        @default(now())
+  updatedAt   DateTime        @updatedAt
+
+  @@index([studentId, weekStart])
+}
+
+model StudyPlanItem {
+  id          Int       @id @default(autoincrement())
+  studyPlanId Int
+  studyPlan   StudyPlan @relation(fields: [studyPlanId], references: [id], onDelete: Cascade)
+  dayOfWeek   Int // 0=Pazartesi ... 6=Pazar
+  subject     String
+  topic       String?
+  durationMin Int?
+  order       Int       @default(0)
+  completed   Boolean   @default(false)
+  completedAt DateTime?
+}
+
+model ExamResult {
+  id          Int      @id @default(autoincrement())
+  studentId   Int
+  student     User     @relation("StudentExamResults", fields: [studentId], references: [id])
+  examDate    DateTime
+  examName    String // "3D Yayınları TYT Deneme 4"
+  examType    String // "TYT" | "AYT" | "LGS"
+  subjectNets Json // [{subject:"Matematik", net:24.5, correct:28, wrong:7}, ...]
+  totalNet    Float?
+  ranking     Int?
+  notes       String?
+  enteredById Int? // girişi yapan koç/admin User.id
+  createdAt   DateTime @default(now())
+
+  @@index([studentId, examDate])
+}
+
+model Resource {
+  id           Int      @id @default(autoincrement())
+  title        String
+  description  String?
+  type         String // "video" | "pdf" | "link" | "document"
+  url          String
+  targetTrack  String? // "yks" | "lgs" | null=her ikisi
+  targetGrade  String? // "9".."12" | "Mezun" | null=hepsi
+  subject      String?
+  displayOrder Int      @default(0)
+  hidden       Boolean  @default(false)
+  createdAt    DateTime @default(now())
+}
+
+model Announcement {
+  id          Int       @id @default(autoincrement())
+  title       String
+  body        String    @db.Text
+  targetTrack String?
+  targetGrade String?
+  publishedAt DateTime  @default(now())
+  expiresAt   DateTime?
+  hidden      Boolean   @default(false)
+}
+
 model User {
   id                  Int                    @id @default(autoincrement())
   name                String?
@@ -44,6 +114,13 @@ model User {
   assignedCoachId     Int?
   grade               String?
   track               String?
+  // Yeni öğrenci paneli (StudyPlan/ExamResult/Resource/Announcement) hazır
+  // olana kadar bu bayrak açık olmayan hiçbir öğrenci yenisini göremez —
+  // /student/dashboard aynı kalır, StudentDashboard.jsx bu alana göre
+  // eski/yeni paneli seçer. Admin panelden aç/kapat edilebilir.
+  panelBetaAccess     Boolean                @default(false)
+  studyPlans          StudyPlan[]            @relation("StudentStudyPlans")
+  examResults         ExamResult[]           @relation("StudentExamResults")
   studentAppointments Appointment[]          @relation("StudentAppointments")
   carts               Cart[]
   coachProfile        Coach?                 @relation("CoachProfile")
