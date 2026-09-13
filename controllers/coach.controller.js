@@ -266,6 +266,53 @@ export const getStudentTodayForCoach = async (req, res) => {
 };
 
 /**
+ * GET /api/coach/sos-alerts
+ * Koçun öğrencilerinden gelen, henüz çözülmemiş SOS bildirimleri — en
+ * yeniden eskiye. Panel açılır açılmaz görünsün diye ayrı, hafif bir uç.
+ */
+export const getSosAlertsForCoach = async (req, res) => {
+  try {
+    const coach = await prisma.coach.findUnique({ where: { userId: req.user.id } });
+    if (!coach) return res.status(404).json({ success: false, message: "Koç profili bulunamadı." });
+
+    const alerts = await prisma.sosAlert.findMany({
+      where: { resolvedAt: null, student: { assignedCoachId: coach.id } },
+      include: { student: { select: { id: true, name: true, phone: true } } },
+      orderBy: { createdAt: "desc" },
+    });
+    res.json({ success: true, alerts });
+  } catch (error) {
+    console.error("getSosAlertsForCoach:", error);
+    res.status(500).json({ success: false, message: "SOS bildirimleri alınamadı." });
+  }
+};
+
+/**
+ * PATCH /api/coach/sos-alerts/:id/resolve
+ */
+export const resolveSosAlert = async (req, res) => {
+  try {
+    const coach = await prisma.coach.findUnique({ where: { userId: req.user.id } });
+    if (!coach) return res.status(404).json({ success: false, message: "Koç profili bulunamadı." });
+
+    const id = parseInt(req.params.id);
+    const alert = await prisma.sosAlert.findUnique({ where: { id }, include: { student: { select: { assignedCoachId: true } } } });
+    if (!alert || alert.student.assignedCoachId !== coach.id) {
+      return res.status(404).json({ success: false, message: "Bildirim bulunamadı." });
+    }
+
+    const updated = await prisma.sosAlert.update({
+      where: { id },
+      data: { resolvedAt: new Date(), resolvedById: req.user.id },
+    });
+    res.json({ success: true, alert: updated });
+  } catch (error) {
+    console.error("resolveSosAlert:", error);
+    res.status(500).json({ success: false, message: "Bildirim güncellenemedi." });
+  }
+};
+
+/**
  * GET /api/coach/students/:studentId/day-reports
  * Öğrencinin son günlük özet raporları ("Z-Raporu") — hangi gün kaç görev
  * bitmiş/yarıda kalmış/zorlanılmış, hızlıca geriye dönük görmek için.

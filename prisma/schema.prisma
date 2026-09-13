@@ -59,6 +59,7 @@ model StudyPlanItem {
   // işaretlenebilir bir durum sistemi.
   status      String    @default("pending")
   statusAt    DateTime?
+  pomodoroSessions PomodoroSession[]
 }
 
 // Bir öğrencinin bir gününün otomatik özeti ("Z-Raporu") — o günün tüm
@@ -66,18 +67,54 @@ model StudyPlanItem {
 // oluşur. Veliye otomatik gönderim YOK (henüz veli iletişim bilgisi
 // toplanmıyor) — şimdilik öğrenci panelinde ve koç panelinde görünür.
 model DayReport {
-  id           Int      @id @default(autoincrement())
-  studentId    Int
-  student      User     @relation("StudentDayReports", fields: [studentId], references: [id])
-  date         DateTime // o günün tarihi (saat 00:00'a normalize)
-  totalTasks   Int
-  doneTasks    Int
-  partialTasks Int
-  stuckTasks   Int
-  totalMinutes Int
-  generatedAt  DateTime @default(now())
+  id                 Int      @id @default(autoincrement())
+  studentId          Int
+  student            User     @relation("StudentDayReports", fields: [studentId], references: [id])
+  date               DateTime // o günün tarihi (saat 00:00'a normalize)
+  totalTasks         Int
+  doneTasks          Int
+  partialTasks       Int
+  stuckTasks         Int
+  totalMinutes       Int // planlanan süre ("done" görevlerin durationMin toplamı)
+  actualStudyMinutes Int      @default(0) // Pomodoro ile ölçülen GERÇEK çalışma süresi
+  generatedAt        DateTime @default(now())
 
   @@unique([studentId, date])
+}
+
+// Bir Pomodoro turu (varsayılan 25dk odak). Öğrenci bir göreve "Başlat"
+// dediğinde oluşur, durdurulunca/tamamlanınca kapanır. "Gerçek Çalışma
+// Süresi" bu tablodan (planlanan durationMin'den DEĞİL) hesaplanıyor —
+// öğrenci gerçekte ne kadar süre çalıştığını yansıtıyor.
+model PomodoroSession {
+  id              Int            @id @default(autoincrement())
+  studentId       Int
+  student         User           @relation("StudentPomodoroSessions", fields: [studentId], references: [id])
+  studyPlanItemId Int?
+  studyPlanItem   StudyPlanItem? @relation(fields: [studyPlanItemId], references: [id], onDelete: SetNull)
+  startedAt       DateTime       @default(now())
+  endedAt         DateTime?
+  plannedSeconds  Int            @default(1500) // 25 dk
+  actualSeconds   Int? // durdurulunca hesaplanır
+  completed       Boolean        @default(false) // tam 25dk'yı doldurdu mu, erken mi durdu
+
+  @@index([studentId, startedAt])
+}
+
+// "SOS" — öğrenci kriz anında tek tuşla koçuna anlık bildirim düşürür.
+// WhatsApp'a paralel olarak burada da görünür kılınıyor ki koç uygulamayı
+// açtığında (mesajı kaçırmış olsa bile) hemen görsün.
+model SosAlert {
+  id           Int       @id @default(autoincrement())
+  studentId    Int
+  student      User      @relation("StudentSosAlerts", fields: [studentId], references: [id])
+  message      String?
+  createdAt    DateTime  @default(now())
+  resolvedAt   DateTime?
+  resolvedById Int? // çözüldü işaretleyen koç/admin User.id
+
+  @@index([studentId, createdAt])
+  @@index([resolvedAt])
 }
 
 model ExamResult {
@@ -144,6 +181,8 @@ model User {
   studyPlans          StudyPlan[]            @relation("StudentStudyPlans")
   examResults         ExamResult[]           @relation("StudentExamResults")
   dayReports          DayReport[]            @relation("StudentDayReports")
+  pomodoroSessions    PomodoroSession[]      @relation("StudentPomodoroSessions")
+  sosAlerts           SosAlert[]             @relation("StudentSosAlerts")
   studentAppointments Appointment[]          @relation("StudentAppointments")
   carts               Cart[]
   coachProfile        Coach?                 @relation("CoachProfile")

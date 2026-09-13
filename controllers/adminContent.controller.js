@@ -142,3 +142,36 @@ export const deleteAnnouncement = async (req, res) => {
     res.status(500).json({ success: false, message: "Duyuru silinemedi." });
   }
 };
+
+// SOS bildirimleri: koç kaçırırsa diye admin'e de görünsün — "7/24 kesintisiz
+// takip" vaadinin bir güvenlik ağı. Çözülmemiş TÜM öğrencilerin bildirimleri
+// (koç ayrımı yok, admin genel bakış istiyor).
+export const getAllSosAlertsForAdmin = async (req, res) => {
+  try {
+    const alerts = await prisma.sosAlert.findMany({
+      where: { resolvedAt: null },
+      include: {
+        student: { select: { id: true, name: true, phone: true, assignedCoach: { select: { name: true } } } },
+      },
+      orderBy: { createdAt: "desc" },
+    });
+    res.json({ success: true, alerts });
+  } catch (err) {
+    console.error("getAllSosAlertsForAdmin:", err);
+    res.status(500).json({ success: false, message: "SOS bildirimleri alınamadı." });
+  }
+};
+
+export const resolveSosAlertAsAdmin = async (req, res) => {
+  try {
+    const id = parseInt(req.params.id);
+    const alert = await prisma.sosAlert.update({
+      where: { id },
+      data: { resolvedAt: new Date(), resolvedById: req.user.id },
+    });
+    res.json({ success: true, alert });
+  } catch (err) {
+    console.error("resolveSosAlertAsAdmin:", err);
+    res.status(500).json({ success: false, message: "Bildirim güncellenemedi." });
+  }
+};

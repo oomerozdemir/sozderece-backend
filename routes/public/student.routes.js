@@ -16,6 +16,9 @@ import {
   getMyResources,
   getMyAnnouncements,
   getMySummary,
+  startPomodoro,
+  stopPomodoro,
+  createSosAlert,
 } from "../../controllers/studentPanel.controller.js";
 
 const router = express.Router();
@@ -54,6 +57,9 @@ router.get("/me/exam-results", authenticateToken, getMyExamResults);
 router.get("/me/resources", authenticateToken, getMyResources);
 router.get("/me/announcements", authenticateToken, getMyAnnouncements);
 router.get("/me/summary", authenticateToken, getMySummary);
+router.post("/me/pomodoro/start", authenticateToken, startPomodoro);
+router.patch("/me/pomodoro/:id/stop", authenticateToken, stopPomodoro);
+router.post("/me/sos", authenticateToken, createSosAlert);
 
 
 

@@ -71,12 +71,38 @@ async function maybeGenerateDayReport(studentId, weekStart, dayOfWeek) {
   const partialTasks = dayItems.filter((i) => i.status === "partial").length;
   const stuckTasks = dayItems.filter((i) => i.status === "stuck").length;
   const totalMinutes = dayItems.reduce((sum, i) => (i.status === "done" ? sum + (i.durationMin || 0) : sum), 0);
+  const actualStudyMinutes = await sumActualStudyMinutes(studentId, date);
 
   await prisma.dayReport.upsert({
     where: { studentId_date: { studentId, date } },
-    update: { totalTasks: dayItems.length, doneTasks, partialTasks, stuckTasks, totalMinutes },
-    create: { studentId, date, totalTasks: dayItems.length, doneTasks, partialTasks, stuckTasks, totalMinutes },
+    update: { totalTasks: dayItems.length, doneTasks, partialTasks, stuckTasks, totalMinutes, actualStudyMinutes },
+    create: { studentId, date, totalTasks: dayItems.length, doneTasks, partialTasks, stuckTasks, totalMinutes, actualStudyMinutes },
   });
+}
+
+// O İstanbul takvim gününde (date = o günün 00:00'ı) tamamlanan Pomodoro
+// turlarının GERÇEK süresini (saniye->dakika) toplar. Planlanan durationMin
+// değil, öğrencinin fiilen kronometreyle çalıştığı süre.
+async function sumActualStudyMinutes(studentId, date) {
+  const dayEnd = new Date(date);
+  dayEnd.setUTCDate(dayEnd.getUTCDate() + 1);
+  const sessions = await prisma.pomodoroSession.findMany({
+    where: { studentId, startedAt: { gte: date, lt: dayEnd }, actualSeconds: { not: null } },
+    select: { actualSeconds: true },
+  });
+  const totalSeconds = sessions.reduce((sum, s) => sum + (s.actualSeconds || 0), 0);
+  return Math.round(totalSeconds / 60);
+}
+
+// Pomodoro turu durdurulduğunda, o gün için Z-Raporu ZATEN oluşmuşsa (tüm
+// görevler sonuçlanmışsa) gerçek çalışma süresini tazeler — rapor
+// oluşmadıysa hiçbir şey yapmaz (erken oluşturmuyoruz, görev tamamlanma
+// koşulu maybeGenerateDayReport'ta zaten var).
+async function syncDayReportActualMinutes(studentId, date) {
+  const existing = await prisma.dayReport.findUnique({ where: { studentId_date: { studentId, date } } });
+  if (!existing) return;
+  const actualStudyMinutes = await sumActualStudyMinutes(studentId, date);
+  await prisma.dayReport.update({ where: { id: existing.id }, data: { actualStudyMinutes } });
 }
 
 /**
@@ -157,11 +183,91 @@ export const getMyToday = async (req, res) => {
       ? await prisma.studyPlanItem.findMany({ where: { studyPlanId: plan.id, dayOfWeek }, orderBy: { order: "asc" } })
       : [];
     const report = await prisma.dayReport.findUnique({ where: { studentId_date: { studentId, date } } }).catch(() => null);
+    const activePomodoro = await prisma.pomodoroSession.findFirst({ where: { studentId, endedAt: null } });
+    const actualStudyMinutesToday = await sumActualStudyMinutes(studentId, date);
 
-    res.json({ success: true, date, items, report });
+    res.json({ success: true, date, items, report, activePomodoro, actualStudyMinutesToday });
   } catch (err) {
     console.error("getMyToday:", err);
     res.status(500).json({ success: false, message: "Bugünün programı alınamadı." });
+  }
+};
+
+/**
+ * POST /api/v1/ogrenci/me/pomodoro/start
+ * Body: { studyPlanItemId?: number }
+ * Yeni bir Pomodoro turu (25dk) başlatır. Zaten aktif bir tur varsa (sayfa
+ * yenilenmiş olabilir) onu döner — aynı anda tek tur olur.
+ */
+export const startPomodoro = async (req, res) => {
+  try {
+    const studentId = req.user.id;
+    const existing = await prisma.pomodoroSession.findFirst({ where: { studentId, endedAt: null } });
+    if (existing) return res.json({ success: true, session: existing });
+
+    const studyPlanItemId = req.body?.studyPlanItemId ? parseInt(req.body.studyPlanItemId) : null;
+    const session = await prisma.pomodoroSession.create({
+      data: { studentId, studyPlanItemId, plannedSeconds: 1500 },
+    });
+    res.status(201).json({ success: true, session });
+  } catch (err) {
+    console.error("startPomodoro:", err);
+    res.status(500).json({ success: false, message: "Pomodoro başlatılamadı." });
+  }
+};
+
+/**
+ * PATCH /api/v1/ogrenci/me/pomodoro/:id/stop
+ * Body: { completed?: boolean } — 25dk'yı doldurup mu durdu yoksa erken mi
+ * bırakıldı. Gerçek süre sunucuda (startedAt->şimdi) hesaplanır; istemcinin
+ * gönderdiği süreye güvenilmez.
+ */
+export const stopPomodoro = async (req, res) => {
+  try {
+    const studentId = req.user.id;
+    const id = parseInt(req.params.id);
+    const session = await prisma.pomodoroSession.findUnique({ where: { id } });
+    if (!session || session.studentId !== studentId) {
+      return res.status(404).json({ success: false, message: "Tur bulunamadı." });
+    }
+    if (session.endedAt) {
+      return res.json({ success: true, session }); // zaten durmuş, idempotent
+    }
+
+    const now = new Date();
+    const actualSeconds = Math.max(0, Math.round((now - session.startedAt) / 1000));
+    const completed = !!req.body?.completed || actualSeconds >= session.plannedSeconds;
+
+    const updated = await prisma.pomodoroSession.update({
+      where: { id },
+      data: { endedAt: now, actualSeconds, completed },
+    });
+
+    await syncDayReportActualMinutes(studentId, toDayStart(session.startedAt));
+
+    res.json({ success: true, session: updated });
+  } catch (err) {
+    console.error("stopPomodoro:", err);
+    res.status(500).json({ success: false, message: "Pomodoro durdurulamadı." });
+  }
+};
+
+/**
+ * POST /api/v1/ogrenci/me/sos
+ * Body: { message?: string }
+ * Öğrenci kriz anında tek tuşla bir SosAlert oluşturur — koç panelinde
+ * anında görünür. WhatsApp'a gitmek istemci tarafında ayrıca yapılır (bu
+ * endpoint sadece panel-içi görünürlüğü sağlar).
+ */
+export const createSosAlert = async (req, res) => {
+  try {
+    const studentId = req.user.id;
+    const message = (req.body?.message || "").trim().slice(0, 500) || null;
+    const alert = await prisma.sosAlert.create({ data: { studentId, message } });
+    res.status(201).json({ success: true, alert });
+  } catch (err) {
+    console.error("createSosAlert:", err);
+    res.status(500).json({ success: false, message: "SOS gönderilemedi." });
   }
 };
 
@@ -289,8 +395,7 @@ export const getMySummary = async (req, res) => {
     const weeklyTaskTotal = currentPlan?.items?.length || 0;
     const weeklyTaskDone = currentPlan?.items?.filter((i) => i.status === "done").length || 0;
 
-    // JS getDay(): 0=Pazar..6=Cumartesi -> Pazartesi=0 tabanına çevir
-    const todayDow = (new Date().getDay() + 6) % 7;
+    const todayDow = todayDayOfWeek();
     const todayFocus = (currentPlan?.items || [])
       .filter((i) => i.dayOfWeek === todayDow && i.status === "pending")
       .sort((a, b) => a.order - b.order);
