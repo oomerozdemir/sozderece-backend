@@ -51,11 +51,33 @@ model StudyPlanItem {
   studyPlan   StudyPlan @relation(fields: [studyPlanId], references: [id], onDelete: Cascade)
   dayOfWeek   Int // 0=Pazartesi ... 6=Pazar
   subject     String
-  topic       String?
+  topic       String? // nokta atışı görev detayı, ör. "3D Yayınları, Sayfa 45-52, 4 Test"
   durationMin Int?
   order       Int       @default(0)
-  completed   Boolean   @default(false)
-  completedAt DateTime?
+  // "pending" | "done" | "partial" (Yarıda Kaldı) | "stuck" (Zorlandım) —
+  // koça anlık geri bildirim vermek için tek tuşla "bitti" dışında da
+  // işaretlenebilir bir durum sistemi.
+  status      String    @default("pending")
+  statusAt    DateTime?
+}
+
+// Bir öğrencinin bir gününün otomatik özeti ("Z-Raporu") — o günün tüm
+// görevleri bir sonuca bağlandığında (pending kalmadığında) otomatik
+// oluşur. Veliye otomatik gönderim YOK (henüz veli iletişim bilgisi
+// toplanmıyor) — şimdilik öğrenci panelinde ve koç panelinde görünür.
+model DayReport {
+  id           Int      @id @default(autoincrement())
+  studentId    Int
+  student      User     @relation("StudentDayReports", fields: [studentId], references: [id])
+  date         DateTime // o günün tarihi (saat 00:00'a normalize)
+  totalTasks   Int
+  doneTasks    Int
+  partialTasks Int
+  stuckTasks   Int
+  totalMinutes Int
+  generatedAt  DateTime @default(now())
+
+  @@unique([studentId, date])
 }
 
 model ExamResult {
@@ -121,6 +143,7 @@ model User {
   panelBetaAccess     Boolean                @default(false)
   studyPlans          StudyPlan[]            @relation("StudentStudyPlans")
   examResults         ExamResult[]           @relation("StudentExamResults")
+  dayReports          DayReport[]            @relation("StudentDayReports")
   studentAppointments Appointment[]          @relation("StudentAppointments")
   carts               Cart[]
   coachProfile        Coach?                 @relation("CoachProfile")

@@ -4,6 +4,7 @@ import {
   getAssignedStudents, getAllPublicCoaches,
   getStudentStudyPlanForCoach, upsertStudentStudyPlan,
   getStudentExamResultsForCoach, addStudentExamResult,
+  getStudentTodayForCoach, getStudentDayReports,
 } from "../../controllers/coach.controller.js";
 import { authenticateToken, authorizeRoles } from "../../middleware/authMiddleware.js";
 
@@ -19,6 +20,8 @@ router.get("/students/:studentId/study-plan", authenticateToken, authorizeRoles(
 router.post("/students/:studentId/study-plan", authenticateToken, authorizeRoles("coach"), upsertStudentStudyPlan);
 router.get("/students/:studentId/exam-results", authenticateToken, authorizeRoles("coach"), getStudentExamResultsForCoach);
 router.post("/students/:studentId/exam-results", authenticateToken, authorizeRoles("coach"), addStudentExamResult);
+router.get("/students/:studentId/today", authenticateToken, authorizeRoles("coach"), getStudentTodayForCoach);
+router.get("/students/:studentId/day-reports", authenticateToken, authorizeRoles("coach"), getStudentDayReports);
 
 
 export default router;

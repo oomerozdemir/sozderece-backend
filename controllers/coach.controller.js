@@ -1,5 +1,5 @@
 import prisma from "../utils/prisma.js";
-import { toMondayStart } from "./studentPanel.controller.js";
+import { toMondayStart, todayDayOfWeek } from "./studentPanel.controller.js";
 
 
 export const getAssignedStudents = async (req, res) => {
@@ -45,7 +45,32 @@ export const getAssignedStudents = async (req, res) => {
       },
     });
 
-    res.status(200).json({ students });
+    // "Anlık görür": bugün "Zorlandım"/"Yarıda Kaldı" işaretleyen öğrencileri
+    // tek ek sorguyla bulup listeye rozet olarak ekliyoruz — koç, kartı
+    // açmadan kimin dikkat istediğini görsün.
+    const studentIds = students.map((s) => s.id);
+    const weekStart = toMondayStart(new Date());
+    const dayOfWeek = todayDayOfWeek();
+    const flaggedToday = studentIds.length
+      ? await prisma.studyPlanItem.findMany({
+          where: {
+            status: { in: ["stuck", "partial"] },
+            dayOfWeek,
+            studyPlan: { studentId: { in: studentIds }, weekStart },
+          },
+          select: { status: true, studyPlan: { select: { studentId: true } } },
+        })
+      : [];
+    const stuckSet = new Set(flaggedToday.filter((i) => i.status === "stuck").map((i) => i.studyPlan.studentId));
+    const partialSet = new Set(flaggedToday.filter((i) => i.status === "partial").map((i) => i.studyPlan.studentId));
+
+    const withFlags = students.map((s) => ({
+      ...s,
+      strugglingToday: stuckSet.has(s.id),
+      partialToday: partialSet.has(s.id),
+    }));
+
+    res.status(200).json({ students: withFlags });
   } catch (error) {
     console.error("Koç öğrencileri getirme hatası:", error);
     res.status(500).json({ message: "Öğrenciler getirilemedi." });
@@ -212,6 +237,55 @@ export const addStudentExamResult = async (req, res) => {
   } catch (error) {
     console.error("addStudentExamResult:", error);
     res.status(500).json({ success: false, message: "Deneme sonucu eklenemedi." });
+  }
+};
+
+/**
+ * GET /api/coach/students/:studentId/today
+ * Koç, öğrencinin bugünkü görevlerini ve durumlarını (Bitti/Yarıda Kaldı/
+ * Zorlandım/Bekliyor) anlık görür — "nerede takıldığını" anlamak için.
+ */
+export const getStudentTodayForCoach = async (req, res) => {
+  try {
+    const studentId = parseInt(req.params.studentId);
+    const coach = await assertOwnStudent(req.user.id, studentId);
+    if (!coach) return res.status(403).json({ success: false, message: "Bu öğrenci size atanmamış." });
+
+    const weekStart = toMondayStart(new Date());
+    const dayOfWeek = todayDayOfWeek();
+    const plan = await prisma.studyPlan.findFirst({ where: { studentId, weekStart } });
+    const items = plan
+      ? await prisma.studyPlanItem.findMany({ where: { studyPlanId: plan.id, dayOfWeek }, orderBy: { order: "asc" } })
+      : [];
+
+    res.json({ success: true, items });
+  } catch (error) {
+    console.error("getStudentTodayForCoach:", error);
+    res.status(500).json({ success: false, message: "Bugünün durumu alınamadı." });
+  }
+};
+
+/**
+ * GET /api/coach/students/:studentId/day-reports
+ * Öğrencinin son günlük özet raporları ("Z-Raporu") — hangi gün kaç görev
+ * bitmiş/yarıda kalmış/zorlanılmış, hızlıca geriye dönük görmek için.
+ */
+export const getStudentDayReports = async (req, res) => {
+  try {
+    const studentId = parseInt(req.params.studentId);
+    const coach = await assertOwnStudent(req.user.id, studentId);
+    if (!coach) return res.status(403).json({ success: false, message: "Bu öğrenci size atanmamış." });
+
+    const reports = await prisma.dayReport.findMany({
+      where: { studentId },
+      orderBy: { date: "desc" },
+      take: 14,
+    });
+
+    res.json({ success: true, reports });
+  } catch (error) {
+    console.error("getStudentDayReports:", error);
+    res.status(500).json({ success: false, message: "Raporlar alınamadı." });
   }
 };
 

@@ -16,6 +16,43 @@ export const toMondayStart = (dateInput) => {
   return monday;
 };
 
+const toDayStart = (dateInput) => {
+  const d = new Date(dateInput);
+  d.setHours(0, 0, 0, 0);
+  return d;
+};
+
+// JS getDay(): 0=Pazar..6=Cumartesi -> StudyPlanItem.dayOfWeek'in
+// kullandığı Pazartesi=0 tabanına çevirir.
+export const todayDayOfWeek = () => (new Date().getDay() + 6) % 7;
+
+// Bir günün (plan + dayOfWeek) TÜM görevleri bir sonuca bağlandığında
+// ("pending" kalmadığında) otomatik bir DayReport ("Z-Raporu") üretir/
+// günceller. Veliye otomatik gönderim yok — sadece öğrenci/koç panelinde
+// görünür (bkz. getConsentStats gibi diğer "iç görü" endpoint'leriyle
+// aynı felsefe: önce görünür kıl, dağıtımı ayrı bir karar).
+async function maybeGenerateDayReport(studentId, weekStart, dayOfWeek) {
+  const plan = await prisma.studyPlan.findFirst({ where: { studentId, weekStart } });
+  if (!plan) return;
+
+  const dayItems = await prisma.studyPlanItem.findMany({ where: { studyPlanId: plan.id, dayOfWeek } });
+  if (dayItems.length === 0 || dayItems.some((i) => i.status === "pending")) return;
+
+  const date = new Date(weekStart);
+  date.setDate(date.getDate() + dayOfWeek);
+
+  const doneTasks = dayItems.filter((i) => i.status === "done").length;
+  const partialTasks = dayItems.filter((i) => i.status === "partial").length;
+  const stuckTasks = dayItems.filter((i) => i.status === "stuck").length;
+  const totalMinutes = dayItems.reduce((sum, i) => (i.status === "done" ? sum + (i.durationMin || 0) : sum), 0);
+
+  await prisma.dayReport.upsert({
+    where: { studentId_date: { studentId, date } },
+    update: { totalTasks: dayItems.length, doneTasks, partialTasks, stuckTasks, totalMinutes },
+    create: { studentId, date, totalTasks: dayItems.length, doneTasks, partialTasks, stuckTasks, totalMinutes },
+  });
+}
+
 /**
  * GET /api/v1/ogrenci/me/study-plan?weekStart=YYYY-MM-DD
  * Belirtilmezse bu haftanın programı döner.
@@ -37,34 +74,68 @@ export const getMyStudyPlan = async (req, res) => {
   }
 };
 
+const VALID_STATUSES = ["pending", "done", "partial", "stuck"];
+
 /**
- * PATCH /api/v1/ogrenci/me/study-plan/items/:id/complete
- * Öğrenci kendi görev kutucuğunu işaretler/kaldırır.
+ * PATCH /api/v1/ogrenci/me/study-plan/items/:id/status
+ * Öğrenci görevini işaretler: "done" (Bitti), "partial" (Yarıda Kaldı),
+ * "stuck" (Zorlandım) ya da "pending"e geri alır. Günün tüm görevleri bir
+ * sonuca bağlanınca otomatik Z-Raporu üretir.
  */
-export const toggleStudyPlanItem = async (req, res) => {
+export const setStudyPlanItemStatus = async (req, res) => {
   try {
     const studentId = req.user.id;
     const itemId = parseInt(req.params.id);
-    const { completed } = req.body;
+    const { status } = req.body;
+    if (!VALID_STATUSES.includes(status)) {
+      return res.status(400).json({ success: false, message: "Geçersiz durum." });
+    }
 
     const item = await prisma.studyPlanItem.findUnique({
       where: { id: itemId },
-      include: { studyPlan: { select: { studentId: true } } },
+      include: { studyPlan: { select: { studentId: true, weekStart: true } } },
     });
     if (!item || item.studyPlan.studentId !== studentId) {
       return res.status(404).json({ success: false, message: "Görev bulunamadı." });
     }
 
-    const isCompleted = completed === true || completed === "true";
     const updated = await prisma.studyPlanItem.update({
       where: { id: itemId },
-      data: { completed: isCompleted, completedAt: isCompleted ? new Date() : null },
+      data: { status, statusAt: status === "pending" ? null : new Date() },
     });
+
+    await maybeGenerateDayReport(studentId, item.studyPlan.weekStart, item.dayOfWeek);
 
     res.json({ success: true, item: updated });
   } catch (err) {
-    console.error("toggleStudyPlanItem:", err);
+    console.error("setStudyPlanItemStatus:", err);
     res.status(500).json({ success: false, message: "Görev güncellenemedi." });
+  }
+};
+
+/**
+ * GET /api/v1/ogrenci/me/today
+ * Panelin varsayılan karşılama ekranı için: SADECE bugünün görevleri +
+ * varsa bugüne ait Z-Raporu. Bilerek haftanın tamamını döndürmüyor —
+ * öğrenci girer girmez devasa bir listeyle karşılaşıp strese girmesin.
+ */
+export const getMyToday = async (req, res) => {
+  try {
+    const studentId = req.user.id;
+    const weekStart = toMondayStart(new Date());
+    const dayOfWeek = todayDayOfWeek();
+    const date = toDayStart(new Date());
+
+    const plan = await prisma.studyPlan.findFirst({ where: { studentId, weekStart } });
+    const items = plan
+      ? await prisma.studyPlanItem.findMany({ where: { studyPlanId: plan.id, dayOfWeek }, orderBy: { order: "asc" } })
+      : [];
+    const report = await prisma.dayReport.findUnique({ where: { studentId_date: { studentId, date } } }).catch(() => null);
+
+    res.json({ success: true, date, items, report });
+  } catch (err) {
+    console.error("getMyToday:", err);
+    res.status(500).json({ success: false, message: "Bugünün programı alınamadı." });
   }
 };
 
@@ -168,16 +239,19 @@ export const getMySummary = async (req, res) => {
     let weeklyMinutesCompleted = 0;
     const activity = [];
 
+    let weeklyStuckCount = 0;
     for (const plan of allPlans) {
       const isCurrentWeek = plan.weekStart.getTime() === currentWeekStart.getTime();
       for (const item of plan.items) {
-        if (item.completed) {
+        if (item.status === "done") {
           const mins = item.durationMin || 0;
           totalMinutesCompleted += mins;
           if (isCurrentWeek) weeklyMinutesCompleted += mins;
-          if (item.completedAt) {
-            activity.push({ type: "task", label: `${item.subject}${item.topic ? ` — ${item.topic}` : ""}`, at: item.completedAt });
+          if (item.statusAt) {
+            activity.push({ type: "task", label: `${item.subject}${item.topic ? ` — ${item.topic}` : ""}`, at: item.statusAt });
           }
+        } else if (isCurrentWeek && item.status === "stuck") {
+          weeklyStuckCount += 1;
         }
       }
     }
@@ -187,12 +261,12 @@ export const getMySummary = async (req, res) => {
     activity.sort((a, b) => new Date(b.at) - new Date(a.at));
 
     const weeklyTaskTotal = currentPlan?.items?.length || 0;
-    const weeklyTaskDone = currentPlan?.items?.filter((i) => i.completed).length || 0;
+    const weeklyTaskDone = currentPlan?.items?.filter((i) => i.status === "done").length || 0;
 
     // JS getDay(): 0=Pazar..6=Cumartesi -> Pazartesi=0 tabanına çevir
     const todayDow = (new Date().getDay() + 6) % 7;
     const todayFocus = (currentPlan?.items || [])
-      .filter((i) => i.dayOfWeek === todayDow && !i.completed)
+      .filter((i) => i.dayOfWeek === todayDow && i.status === "pending")
       .sort((a, b) => a.order - b.order);
 
     const latestExam = examResults[0] || null;
@@ -218,6 +292,7 @@ export const getMySummary = async (req, res) => {
       latestExam,
       netTrendDelta,
       todayFocus,
+      weeklyStuckCount,
       recentActivity: activity.slice(0, 8),
       quality: {
         profile: profileScore,

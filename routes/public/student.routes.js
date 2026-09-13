@@ -10,7 +10,8 @@ import {
 } from "../../controllers/studentController.js";
 import {
   getMyStudyPlan,
-  toggleStudyPlanItem,
+  setStudyPlanItemStatus,
+  getMyToday,
   getMyExamResults,
   getMyResources,
   getMyAnnouncements,
@@ -46,8 +47,9 @@ router.post(
 router.get("/free-rights", authenticateToken, getFreeRights);
 
 /* Öğrenci Paneli (Faz 1) */
+router.get("/me/today", authenticateToken, getMyToday);
 router.get("/me/study-plan", authenticateToken, getMyStudyPlan);
-router.patch("/me/study-plan/items/:id/complete", authenticateToken, toggleStudyPlanItem);
+router.patch("/me/study-plan/items/:id/status", authenticateToken, setStudyPlanItemStatus);
 router.get("/me/exam-results", authenticateToken, getMyExamResults);
 router.get("/me/resources", authenticateToken, getMyResources);
 router.get("/me/announcements", authenticateToken, getMyAnnouncements);
