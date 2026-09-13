@@ -6,3 +6,4 @@ dist/
 # Veritabanı dökümleri asla commit edilmemeli
 *.sql
 !prisma/migrations/**/*.sql
+_tmp_*.mjs
