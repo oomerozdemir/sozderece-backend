@@ -1,7 +1,7 @@
 import express from "express";
 import rateLimit from "express-rate-limit";
 import { optionalAuth } from "../../middleware/authMiddleware.js";
-import { startSession, pingSession, logPageView } from "../../controllers/tracking.controller.js";
+import { startSession, pingSession, logPageView, logConsent } from "../../controllers/tracking.controller.js";
 
 const router = express.Router();
 
@@ -33,5 +33,6 @@ const pageviewLimiter = rateLimit({
 router.post("/tracking/session/start", startLimiter, optionalAuth, startSession);
 router.post("/tracking/session/ping", pingLimiter, optionalAuth, pingSession);
 router.post("/tracking/pageview", pageviewLimiter, optionalAuth, logPageView);
+router.post("/tracking/consent", pageviewLimiter, optionalAuth, logConsent);
 
 export default router;

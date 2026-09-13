@@ -14,7 +14,7 @@ import { getAdminConsultationSlots, toggleConsultationSlot, bulkUpdateConsultati
 import { getAllNavbarItems, createNavbarItem, updateNavbarItem, deleteNavbarItem, reorderNavbarItems } from "../../controllers/navbarItem.controller.js";
 import { getAllSubscriptionsForAdmin, adminCancelSubscription } from "../../controllers/subscription.controller.js";
 import { getAbandonedCartsForAdmin, deleteAbandonedCart } from "../../controllers/cart.controller.js";
-import { getPageViewStats } from "../../controllers/tracking.controller.js";
+import { getPageViewStats, getConsentStats } from "../../controllers/tracking.controller.js";
 import {
   getAllResources, createResource, updateResource, deleteResource,
   getAllAnnouncements, createAnnouncement, updateAnnouncement, deleteAnnouncement,
@@ -208,6 +208,7 @@ router.delete("/navbar/:id", authenticateToken, authorizeRoles("admin"), deleteN
 
 // Sayfa görüntülenme istatistikleri (ör. kampanya sayfaları)
 router.get("/pageviews", authenticateToken, authorizeRoles("admin"), getPageViewStats);
+router.get("/consent-stats", authenticateToken, authorizeRoles("admin"), getConsentStats);
 
 // Görsel yükleme (Cloudinary → WebP)
 import uploadRoutes from "./upload.routes.js";

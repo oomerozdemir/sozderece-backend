@@ -159,6 +159,21 @@ model PageView {
   @@index([path, createdAt])
 }
 
+// Çerez banner'ında verilen kararın kaydı — KVKK için kimin ne zaman ne
+// seçtiğinin izini tutar (sadece localStorage'da kalması yeterli değil,
+// bizim tarafımızda da görünür/denetlenebilir olması için).
+model ConsentLog {
+  id         String   @id @default(cuid())
+  visitorId  String?
+  sessionId  String?
+  necessary  Boolean  @default(true)
+  analytics  Boolean  @default(false)
+  marketing  Boolean  @default(false)
+  createdAt  DateTime @default(now())
+
+  @@index([createdAt])
+}
+
 model Visitor {
   id            String           @id @default(cuid())
   firstSeenAt   DateTime         @default(now())

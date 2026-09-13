@@ -209,3 +209,50 @@ export const getPageViewStats = async (req, res) => {
     return res.status(500).json({ success: false, message: "Sunucu hatası" });
   }
 };
+
+// POST /api/tracking/consent
+// Çerez banner'ında bir karar verildiğinde (Kabul Et / Reddet / Tercihleri
+// Kaydet) çağrılır — kullanıcının kararı kendi localStorage'ında kalıcı
+// olsa da, bizim tarafımızda da görünür/denetlenebilir olsun diye.
+export const logConsent = async (req, res) => {
+  try {
+    const { visitorId, sessionId, necessary, analytics, marketing } = req.body || {};
+    await prisma.consentLog.create({
+      data: {
+        visitorId: typeof visitorId === "string" ? visitorId.slice(0, 100) : null,
+        sessionId: typeof sessionId === "string" ? sessionId.slice(0, 100) : null,
+        necessary: necessary !== false,
+        analytics: analytics === true,
+        marketing: marketing === true,
+      },
+    });
+    return res.status(201).json({ success: true });
+  } catch (err) {
+    console.error("logConsent error:", err);
+    return res.status(500).json({ success: false, message: "Sunucu hatası" });
+  }
+};
+
+// GET /api/admin/consent-stats (Admin only)
+export const getConsentStats = async (req, res) => {
+  try {
+    const [total, acceptedAll, rejectedAll, lastDecision] = await Promise.all([
+      prisma.consentLog.count(),
+      prisma.consentLog.count({ where: { analytics: true, marketing: true } }),
+      prisma.consentLog.count({ where: { analytics: false, marketing: false } }),
+      prisma.consentLog.findFirst({ orderBy: { createdAt: "desc" }, select: { createdAt: true } }),
+    ]);
+    const partial = total - acceptedAll - rejectedAll;
+    return res.json({
+      success: true,
+      total,
+      acceptedAll,
+      rejectedAll,
+      partial,
+      lastDecisionAt: lastDecision?.createdAt || null,
+    });
+  } catch (err) {
+    console.error("getConsentStats error:", err);
+    return res.status(500).json({ success: false, message: "Sunucu hatası" });
+  }
+};
