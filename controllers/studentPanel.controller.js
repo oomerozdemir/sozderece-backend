@@ -140,3 +140,95 @@ export const getMyAnnouncements = async (req, res) => {
     res.status(500).json({ success: false, message: "Duyurular alınamadı." });
   }
 };
+
+/**
+ * GET /api/v1/ogrenci/me/summary
+ * "Genel Bakış" sekmesi için tek istekte tüm özet veri: toplam/haftalık
+ * çalışma süresi, bugünün odağı, son aktiviteler (tamamlanan görev +
+ * eklenen deneme, birleşik zaman çizelgesi) ve bir "koçun seni ne kadar
+ * tanıyor" göstergesi (profil + program + deneme geçmişi doluluğu).
+ */
+export const getMySummary = async (req, res) => {
+  try {
+    const studentId = req.user.id;
+    const student = await prisma.user.findUnique({
+      where: { id: studentId },
+      select: { grade: true, track: true, assignedCoachId: true },
+    });
+
+    const [allPlans, examResults] = await Promise.all([
+      prisma.studyPlan.findMany({ where: { studentId }, include: { items: true } }),
+      prisma.examResult.findMany({ where: { studentId }, orderBy: { examDate: "desc" } }),
+    ]);
+
+    const currentWeekStart = toMondayStart(new Date());
+    const currentPlan = allPlans.find((p) => p.weekStart.getTime() === currentWeekStart.getTime());
+
+    let totalMinutesCompleted = 0;
+    let weeklyMinutesCompleted = 0;
+    const activity = [];
+
+    for (const plan of allPlans) {
+      const isCurrentWeek = plan.weekStart.getTime() === currentWeekStart.getTime();
+      for (const item of plan.items) {
+        if (item.completed) {
+          const mins = item.durationMin || 0;
+          totalMinutesCompleted += mins;
+          if (isCurrentWeek) weeklyMinutesCompleted += mins;
+          if (item.completedAt) {
+            activity.push({ type: "task", label: `${item.subject}${item.topic ? ` — ${item.topic}` : ""}`, at: item.completedAt });
+          }
+        }
+      }
+    }
+    for (const r of examResults) {
+      activity.push({ type: "exam", label: `${r.examName}${r.totalNet != null ? ` (${r.totalNet} net)` : ""}`, at: r.createdAt });
+    }
+    activity.sort((a, b) => new Date(b.at) - new Date(a.at));
+
+    const weeklyTaskTotal = currentPlan?.items?.length || 0;
+    const weeklyTaskDone = currentPlan?.items?.filter((i) => i.completed).length || 0;
+
+    // JS getDay(): 0=Pazar..6=Cumartesi -> Pazartesi=0 tabanına çevir
+    const todayDow = (new Date().getDay() + 6) % 7;
+    const todayFocus = (currentPlan?.items || [])
+      .filter((i) => i.dayOfWeek === todayDow && !i.completed)
+      .sort((a, b) => a.order - b.order);
+
+    const latestExam = examResults[0] || null;
+    const prevExam = examResults[1] || null;
+    const netTrendDelta =
+      latestExam?.totalNet != null && prevExam?.totalNet != null
+        ? Number((latestExam.totalNet - prevExam.totalNet).toFixed(2))
+        : null;
+
+    // Koçun seni ne kadar tanıyor göstergesi — 3 basit doluluk sinyali.
+    const profileScore = student?.assignedCoachId ? (student?.grade ? 100 : 70) : 20;
+    const programScore = weeklyTaskTotal > 0 ? Math.round((weeklyTaskDone / weeklyTaskTotal) * 100) : 0;
+    const denemeScore = Math.min(100, Math.round((examResults.length / 5) * 100));
+    const overallScore = Math.round((profileScore + programScore + denemeScore) / 3);
+
+    res.json({
+      success: true,
+      totalMinutesCompleted,
+      weeklyMinutesCompleted,
+      weeklyTaskDone,
+      weeklyTaskTotal,
+      examCount: examResults.length,
+      latestExam,
+      netTrendDelta,
+      todayFocus,
+      recentActivity: activity.slice(0, 8),
+      quality: {
+        profile: profileScore,
+        program: programScore,
+        deneme: denemeScore,
+        overall: overallScore,
+        stars: Math.max(1, Math.round(overallScore / 20)),
+      },
+    });
+  } catch (err) {
+    console.error("getMySummary:", err);
+    res.status(500).json({ success: false, message: "Özet alınamadı." });
+  }
+};

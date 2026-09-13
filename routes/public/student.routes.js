@@ -14,6 +14,7 @@ import {
   getMyExamResults,
   getMyResources,
   getMyAnnouncements,
+  getMySummary,
 } from "../../controllers/studentPanel.controller.js";
 
 const router = express.Router();
@@ -50,6 +51,7 @@ router.patch("/me/study-plan/items/:id/complete", authenticateToken, toggleStudy
 router.get("/me/exam-results", authenticateToken, getMyExamResults);
 router.get("/me/resources", authenticateToken, getMyResources);
 router.get("/me/announcements", authenticateToken, getMyAnnouncements);
+router.get("/me/summary", authenticateToken, getMySummary);
 
 
 
