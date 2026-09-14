@@ -105,6 +105,44 @@ async function syncDayReportActualMinutes(studentId, date) {
   await prisma.dayReport.update({ where: { id: existing.id }, data: { actualStudyMinutes } });
 }
 
+// "Ateş Serisi" — bir gün, o günün Z-Raporu'nda görevlerin %90'ı ve üzeri
+// "done" ise sayılır. Bugünün raporu henüz yoksa (gün bitmedi) bu, seriyi
+// BOZMAZ — dünden geriye doğru saymaya devam eder (Duolingo'daki gibi,
+// gün bitene kadar seri "donuk" kalır).
+export async function computeStreak(studentId) {
+  const reports = await prisma.dayReport.findMany({ where: { studentId }, orderBy: { date: "desc" } });
+  if (reports.length === 0) return { current: 0, longest: 0 };
+
+  const qualifies = (r) => r.totalTasks > 0 && r.doneTasks / r.totalTasks >= 0.9;
+  const byTime = new Map(reports.map((r) => [r.date.getTime(), r]));
+
+  const cursor = toDayStart(new Date());
+  if (!byTime.has(cursor.getTime())) cursor.setUTCDate(cursor.getUTCDate() - 1);
+
+  let current = 0;
+  while (true) {
+    const r = byTime.get(cursor.getTime());
+    if (r && qualifies(r)) {
+      current += 1;
+      cursor.setUTCDate(cursor.getUTCDate() - 1);
+    } else break;
+  }
+
+  const sortedAsc = [...reports].sort((a, b) => a.date - b.date);
+  let longest = 0, run = 0, prevTime = null;
+  for (const r of sortedAsc) {
+    if (qualifies(r)) {
+      run = prevTime !== null && r.date.getTime() - prevTime === 86400000 ? run + 1 : 1;
+      longest = Math.max(longest, run);
+    } else {
+      run = 0;
+    }
+    prevTime = r.date.getTime();
+  }
+
+  return { current, longest: Math.max(longest, current) };
+}
+
 /**
  * GET /api/v1/ogrenci/me/study-plan?weekStart=YYYY-MM-DD
  * Belirtilmezse bu haftanın programı döner.
@@ -185,8 +223,9 @@ export const getMyToday = async (req, res) => {
     const report = await prisma.dayReport.findUnique({ where: { studentId_date: { studentId, date } } }).catch(() => null);
     const activePomodoro = await prisma.pomodoroSession.findFirst({ where: { studentId, endedAt: null } });
     const actualStudyMinutesToday = await sumActualStudyMinutes(studentId, date);
+    const streak = await computeStreak(studentId);
 
-    res.json({ success: true, date, items, report, activePomodoro, actualStudyMinutesToday });
+    res.json({ success: true, date, items, report, activePomodoro, actualStudyMinutesToday, streak });
   } catch (err) {
     console.error("getMyToday:", err);
     res.status(500).json({ success: false, message: "Bugünün programı alınamadı." });
@@ -413,10 +452,19 @@ export const getMySummary = async (req, res) => {
     const denemeScore = Math.min(100, Math.round((examResults.length / 5) * 100));
     const overallScore = Math.round((profileScore + programScore + denemeScore) / 3);
 
+    const streak = await computeStreak(studentId);
+    // "Dijital koç" avatarının ifadesi için — son aktiviteden bu yana kaç
+    // gün geçti (0 = bugün aktif oldu).
+    const daysSinceLastActivity = activity[0]
+      ? Math.floor((toDayStart(new Date()) - toDayStart(activity[0].at)) / 86400000)
+      : null;
+
     res.json({
       success: true,
       totalMinutesCompleted,
       weeklyMinutesCompleted,
+      streak,
+      daysSinceLastActivity,
       weeklyTaskDone,
       weeklyTaskTotal,
       examCount: examResults.length,
@@ -562,5 +610,41 @@ export const getMyInsights = async (req, res) => {
   } catch (err) {
     console.error("getMyInsights:", err);
     res.status(500).json({ success: false, message: "İçgörüler alınamadı." });
+  }
+};
+
+/**
+ * GET /api/v1/ogrenci/me/notes/latest
+ * Koçun bıraktığı en güncel yazılı/sesli not — panelin en üstünde sabit
+ * gösterilecek "günlük çapa". isToday: bugün mü bırakıldı, yoksa eski mi.
+ */
+export const getMyLatestNote = async (req, res) => {
+  try {
+    const studentId = req.user.id;
+    const note = await prisma.coachNote.findFirst({
+      where: { studentId },
+      orderBy: { createdAt: "desc" },
+      include: { student: { select: { assignedCoach: { select: { name: true } } } } },
+    });
+    if (!note) return res.json({ success: true, note: null });
+
+    const todayStart = toDayStart(new Date());
+    const isToday = toDayStart(note.createdAt).getTime() === todayStart.getTime();
+
+    res.json({
+      success: true,
+      note: {
+        id: note.id,
+        type: note.type,
+        text: note.text,
+        audioUrl: note.audioUrl,
+        createdAt: note.createdAt,
+        coachName: note.student?.assignedCoach?.name || "Koçun",
+        isToday,
+      },
+    });
+  } catch (err) {
+    console.error("getMyLatestNote:", err);
+    res.status(500).json({ success: false, message: "Not alınamadı." });
   }
 };

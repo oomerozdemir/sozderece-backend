@@ -147,6 +147,22 @@ model TopicMastery {
   @@unique([studentId, topicId])
 }
 
+// Koçun öğrenciye bıraktığı günlük yazılı/sesli not — panelin en üstünde,
+// her sekmede sabit görünür (psikolojik çapa: "abla/abim bugün de bana özel
+// bir şey yazdı"). Tarihçe tutulur, öğrenciye en güncel olan gösterilir.
+model CoachNote {
+  id        Int      @id @default(autoincrement())
+  studentId Int
+  student   User     @relation("StudentCoachNotes", fields: [studentId], references: [id])
+  coachId   Int // yazan koç/admin User.id
+  type      String // "text" | "audio"
+  text      String?  @db.Text
+  audioUrl  String?
+  createdAt DateTime @default(now())
+
+  @@index([studentId, createdAt])
+}
+
 model ExamResult {
   id          Int      @id @default(autoincrement())
   studentId   Int
@@ -216,6 +232,7 @@ model User {
   pomodoroSessions    PomodoroSession[]      @relation("StudentPomodoroSessions")
   sosAlerts           SosAlert[]             @relation("StudentSosAlerts")
   topicMasteries      TopicMastery[]         @relation("StudentTopicMastery")
+  coachNotes          CoachNote[]            @relation("StudentCoachNotes")
   studentAppointments Appointment[]          @relation("StudentAppointments")
   carts               Cart[]
   coachProfile        Coach?                 @relation("CoachProfile")

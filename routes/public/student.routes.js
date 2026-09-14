@@ -22,6 +22,7 @@ import {
   getMyTopics,
   setTopicMastery,
   getMyInsights,
+  getMyLatestNote,
 } from "../../controllers/studentPanel.controller.js";
 
 const router = express.Router();
@@ -66,6 +67,7 @@ router.post("/me/sos", authenticateToken, createSosAlert);
 router.get("/me/topics", authenticateToken, getMyTopics);
 router.patch("/me/topics/:topicId/mastery", authenticateToken, setTopicMastery);
 router.get("/me/insights", authenticateToken, getMyInsights);
+router.get("/me/notes/latest", authenticateToken, getMyLatestNote);
 
 
 

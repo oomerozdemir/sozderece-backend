@@ -1,5 +1,5 @@
 import prisma from "../utils/prisma.js";
-import { toMondayStart, todayDayOfWeek, detectRecurringWeaknesses, effectiveTrackFromGrade } from "./studentPanel.controller.js";
+import { toMondayStart, todayDayOfWeek, detectRecurringWeaknesses, effectiveTrackFromGrade, computeStreak } from "./studentPanel.controller.js";
 
 
 export const getAssignedStudents = async (req, res) => {
@@ -64,10 +64,16 @@ export const getAssignedStudents = async (req, res) => {
     const stuckSet = new Set(flaggedToday.filter((i) => i.status === "stuck").map((i) => i.studyPlan.studentId));
     const partialSet = new Set(flaggedToday.filter((i) => i.status === "partial").map((i) => i.studyPlan.studentId));
 
+    // Ateş serisi — küçük roster için öğrenci başına ayrı sorgu kabul
+    // edilebilir (sınıf büyüklüğünde N, N+1 sorgu maliyeti düşük).
+    const streaks = await Promise.all(studentIds.map((id) => computeStreak(id)));
+    const streakById = new Map(studentIds.map((id, i) => [id, streaks[i]]));
+
     const withFlags = students.map((s) => ({
       ...s,
       strugglingToday: stuckSet.has(s.id),
       partialToday: partialSet.has(s.id),
+      streak: streakById.get(s.id) || { current: 0, longest: 0 },
     }));
 
     res.status(200).json({ students: withFlags });
@@ -421,6 +427,69 @@ export const getStudentDayReports = async (req, res) => {
   } catch (error) {
     console.error("getStudentDayReports:", error);
     res.status(500).json({ success: false, message: "Raporlar alınamadı." });
+  }
+};
+
+/**
+ * GET /api/coach/students/:studentId/notes
+ * Öğrenciye bırakılan son notlar (tarihçe) — koç ne yazdığını görsün.
+ */
+export const getNotesForCoach = async (req, res) => {
+  try {
+    const studentId = parseInt(req.params.studentId);
+    const coach = await assertOwnStudent(req.user.id, studentId);
+    if (!coach) return res.status(403).json({ success: false, message: "Bu öğrenci size atanmamış." });
+
+    const notes = await prisma.coachNote.findMany({ where: { studentId }, orderBy: { createdAt: "desc" }, take: 10 });
+    res.json({ success: true, notes });
+  } catch (error) {
+    console.error("getNotesForCoach:", error);
+    res.status(500).json({ success: false, message: "Notlar alınamadı." });
+  }
+};
+
+/**
+ * POST /api/coach/students/:studentId/notes/text
+ * Body: { text }
+ */
+export const createTextNote = async (req, res) => {
+  try {
+    const studentId = parseInt(req.params.studentId);
+    const coach = await assertOwnStudent(req.user.id, studentId);
+    if (!coach) return res.status(403).json({ success: false, message: "Bu öğrenci size atanmamış." });
+
+    const text = (req.body?.text || "").trim();
+    if (!text) return res.status(400).json({ success: false, message: "Not metni boş olamaz." });
+
+    const note = await prisma.coachNote.create({
+      data: { studentId, coachId: req.user.id, type: "text", text: text.slice(0, 1000) },
+    });
+    res.status(201).json({ success: true, note });
+  } catch (error) {
+    console.error("createTextNote:", error);
+    res.status(500).json({ success: false, message: "Not kaydedilemedi." });
+  }
+};
+
+/**
+ * POST /api/coach/students/:studentId/notes/audio
+ * multipart/form-data, alan adı "audio" — uploadAudio middleware'i (route'ta) işliyor.
+ */
+export const createAudioNote = async (req, res) => {
+  try {
+    const studentId = parseInt(req.params.studentId);
+    const coach = await assertOwnStudent(req.user.id, studentId);
+    if (!coach) return res.status(403).json({ success: false, message: "Bu öğrenci size atanmamış." });
+
+    if (!req.file?.path) return res.status(400).json({ success: false, message: "Ses dosyası alınamadı." });
+
+    const note = await prisma.coachNote.create({
+      data: { studentId, coachId: req.user.id, type: "audio", audioUrl: req.file.path },
+    });
+    res.status(201).json({ success: true, note });
+  } catch (error) {
+    console.error("createAudioNote:", error);
+    res.status(500).json({ success: false, message: "Ses notu kaydedilemedi." });
   }
 };
 

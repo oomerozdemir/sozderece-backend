@@ -7,8 +7,10 @@ import {
   getStudentTodayForCoach, getStudentDayReports,
   getSosAlertsForCoach, resolveSosAlert,
   getInsightsForCoach, addInsightTopicToPlan, getTopicsForCoach,
+  getNotesForCoach, createTextNote, createAudioNote,
 } from "../../controllers/coach.controller.js";
 import { authenticateToken, authorizeRoles } from "../../middleware/authMiddleware.js";
+import { uploadAudio } from "../../middleware/upload.js";
 
 const prisma = new PrismaClient();
 const router = express.Router();
@@ -29,6 +31,9 @@ router.patch("/sos-alerts/:id/resolve", authenticateToken, authorizeRoles("coach
 router.get("/students/:studentId/topics", authenticateToken, authorizeRoles("coach"), getTopicsForCoach);
 router.get("/students/:studentId/insights", authenticateToken, authorizeRoles("coach"), getInsightsForCoach);
 router.post("/students/:studentId/insights/:topicId/add-to-plan", authenticateToken, authorizeRoles("coach"), addInsightTopicToPlan);
+router.get("/students/:studentId/notes", authenticateToken, authorizeRoles("coach"), getNotesForCoach);
+router.post("/students/:studentId/notes/text", authenticateToken, authorizeRoles("coach"), createTextNote);
+router.post("/students/:studentId/notes/audio", authenticateToken, authorizeRoles("coach"), uploadAudio.single("audio"), createAudioNote);
 
 
 export default router;
