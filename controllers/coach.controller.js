@@ -1,5 +1,5 @@
 import prisma from "../utils/prisma.js";
-import { toMondayStart, todayDayOfWeek, detectRecurringWeaknesses } from "./studentPanel.controller.js";
+import { toMondayStart, todayDayOfWeek, detectRecurringWeaknesses, effectiveTrackFromGrade } from "./studentPanel.controller.js";
 
 
 export const getAssignedStudents = async (req, res) => {
@@ -309,6 +309,33 @@ export const resolveSosAlert = async (req, res) => {
   } catch (error) {
     console.error("resolveSosAlert:", error);
     res.status(500).json({ success: false, message: "Bildirim güncellenemedi." });
+  }
+};
+
+/**
+ * GET /api/coach/students/:studentId/topics
+ * Deneme sonucu girerken "yanlış yapılan konular"ı seçebilmek için —
+ * öğrencinin track'ine (yks/lgs) uygun konu listesi, ustalık bilgisi yok
+ * (koç için gerekli değil, sadece isim/id/ders/sınav türü).
+ */
+export const getTopicsForCoach = async (req, res) => {
+  try {
+    const studentId = parseInt(req.params.studentId);
+    const coach = await assertOwnStudent(req.user.id, studentId);
+    if (!coach) return res.status(403).json({ success: false, message: "Bu öğrenci size atanmamış." });
+
+    const student = await prisma.user.findUnique({ where: { id: studentId }, select: { grade: true } });
+    const track = effectiveTrackFromGrade(student?.grade);
+    const topics = await prisma.topic.findMany({
+      where: { track, hidden: false },
+      orderBy: [{ examType: "asc" }, { subject: "asc" }, { order: "asc" }],
+      select: { id: true, subject: true, name: true, examType: true },
+    });
+
+    res.json({ success: true, track, topics });
+  } catch (error) {
+    console.error("getTopicsForCoach:", error);
+    res.status(500).json({ success: false, message: "Konular alınamadı." });
   }
 };
 
