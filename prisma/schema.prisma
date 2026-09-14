@@ -194,6 +194,10 @@ model Resource {
   displayOrder Int      @default(0)
   hidden       Boolean  @default(false)
   createdAt    DateTime @default(now())
+  // "Kilit Açma" dinamiği — 0 ise herkese açık; >0 ise öğrenci en az bu
+  // kadar günlük ateş serisine ulaşana kadar kilitli (gri + kilit ikonu)
+  // gösterilir. Oyunlaştırma çapası: seriyi bozmamak için bir sebep daha.
+  requiredStreak Int    @default(0)
 }
 
 model Announcement {

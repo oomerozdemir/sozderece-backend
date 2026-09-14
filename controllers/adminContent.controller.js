@@ -17,7 +17,7 @@ export const getAllResources = async (req, res) => {
 
 export const createResource = async (req, res) => {
   try {
-    const { title, description, type, url, targetTrack, targetGrade, subject, displayOrder, hidden } = req.body;
+    const { title, description, type, url, targetTrack, targetGrade, subject, displayOrder, hidden, requiredStreak } = req.body;
     if (!title || !type || !url) {
       return res.status(400).json({ success: false, message: "Başlık, tür ve link zorunludur." });
     }
@@ -32,6 +32,7 @@ export const createResource = async (req, res) => {
         subject: subject || null,
         displayOrder: parseInt(displayOrder) || 0,
         hidden: hidden === true || hidden === "true",
+        requiredStreak: parseInt(requiredStreak) || 0,
       },
     });
     res.status(201).json({ success: true, resource });
@@ -44,7 +45,7 @@ export const createResource = async (req, res) => {
 export const updateResource = async (req, res) => {
   try {
     const id = parseInt(req.params.id);
-    const { title, description, type, url, targetTrack, targetGrade, subject, displayOrder, hidden } = req.body;
+    const { title, description, type, url, targetTrack, targetGrade, subject, displayOrder, hidden, requiredStreak } = req.body;
     const resource = await prisma.resource.update({
       where: { id },
       data: {
@@ -57,6 +58,7 @@ export const updateResource = async (req, res) => {
         ...(subject !== undefined && { subject: subject || null }),
         ...(displayOrder !== undefined && { displayOrder: parseInt(displayOrder) || 0 }),
         ...(hidden !== undefined && { hidden: hidden === true || hidden === "true" }),
+        ...(requiredStreak !== undefined && { requiredStreak: parseInt(requiredStreak) || 0 }),
       },
     });
     res.json({ success: true, resource });

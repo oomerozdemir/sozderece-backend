@@ -346,8 +346,9 @@ export const getMyResources = async (req, res) => {
       },
       orderBy: [{ displayOrder: "asc" }, { createdAt: "desc" }],
     });
+    const streak = await computeStreak(req.user.id);
 
-    res.json({ success: true, resources });
+    res.json({ success: true, resources, streak });
   } catch (err) {
     console.error("getMyResources:", err);
     res.status(500).json({ success: false, message: "Kaynaklar alınamadı." });

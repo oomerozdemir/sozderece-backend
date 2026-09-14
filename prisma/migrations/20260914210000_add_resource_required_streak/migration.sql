@@ -1,0 +1,1 @@
+ALTER TABLE "Resource" ADD COLUMN "requiredStreak" INTEGER NOT NULL DEFAULT 0;
