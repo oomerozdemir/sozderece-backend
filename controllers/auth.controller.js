@@ -386,7 +386,7 @@ export const verifyOtpAndLogin = async (req, res) => {
     });
   } catch (err) {
     console.error("verifyOtpAndLogin error:", err);
-    return res.status(400).json({ success: false, message: "Kod geçersiz veya süresi dolmuş." });
+    return res.status(400).json({ success: false, message: "Kapı burada, ama kodun ya yanlış ya da vakti geçmiş — bir tane daha iste, seni bekliyoruz." });
   }
 };
 
