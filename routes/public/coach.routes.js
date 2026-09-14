@@ -6,6 +6,7 @@ import {
   getStudentExamResultsForCoach, addStudentExamResult,
   getStudentTodayForCoach, getStudentDayReports,
   getSosAlertsForCoach, resolveSosAlert,
+  getInsightsForCoach, addInsightTopicToPlan,
 } from "../../controllers/coach.controller.js";
 import { authenticateToken, authorizeRoles } from "../../middleware/authMiddleware.js";
 
@@ -25,6 +26,8 @@ router.get("/students/:studentId/today", authenticateToken, authorizeRoles("coac
 router.get("/students/:studentId/day-reports", authenticateToken, authorizeRoles("coach"), getStudentDayReports);
 router.get("/sos-alerts", authenticateToken, authorizeRoles("coach"), getSosAlertsForCoach);
 router.patch("/sos-alerts/:id/resolve", authenticateToken, authorizeRoles("coach"), resolveSosAlert);
+router.get("/students/:studentId/insights", authenticateToken, authorizeRoles("coach"), getInsightsForCoach);
+router.post("/students/:studentId/insights/:topicId/add-to-plan", authenticateToken, authorizeRoles("coach"), addInsightTopicToPlan);
 
 
 export default router;

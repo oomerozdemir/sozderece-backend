@@ -117,6 +117,36 @@ model SosAlert {
   @@index([resolvedAt])
 }
 
+// "Konu Takip Ağacı" müfredat kataloğu — TYT/AYT/LGS konu başlıkları.
+// Admin panelden düzenlenebilir; ilk seed standart müfredattan.
+model Topic {
+  id        Int              @id @default(autoincrement())
+  subject   String // "Matematik", "Fizik", ...
+  name      String // "Üslü Sayılar"
+  track     String // "yks" | "lgs"
+  examType  String? // "TYT" | "AYT" | null (LGS'de kullanılmaz)
+  order     Int              @default(0)
+  hidden    Boolean          @default(false)
+  masteries TopicMastery[]
+
+  @@index([track, subject])
+}
+
+// Bir öğrencinin bir konudaki ustalık seviyesi — "none" | "studied"
+// (Çalıştım) | "practiced" (Test Çözdüm) | "mastered" (Branş Denemesinde
+// Full). Öğrenci konuya tıkladıkça sırayla ilerler.
+model TopicMastery {
+  id        Int      @id @default(autoincrement())
+  studentId Int
+  student   User     @relation("StudentTopicMastery", fields: [studentId], references: [id])
+  topicId   Int
+  topic     Topic    @relation(fields: [topicId], references: [id], onDelete: Cascade)
+  stage     String   @default("none")
+  updatedAt DateTime @updatedAt
+
+  @@unique([studentId, topicId])
+}
+
 model ExamResult {
   id          Int      @id @default(autoincrement())
   studentId   Int
@@ -124,7 +154,9 @@ model ExamResult {
   examDate    DateTime
   examName    String // "3D Yayınları TYT Deneme 4"
   examType    String // "TYT" | "AYT" | "LGS"
-  subjectNets Json // [{subject:"Matematik", net:24.5, correct:28, wrong:7}, ...]
+  subjectNets Json // [{subject:"Matematik", net:24.5, correct:28, wrong:7, wrongTopicIds:[12,45]}, ...]
+  // wrongTopicIds opsiyonel — "Akıllı Deneme Analizi" tekrar eden konu
+  // hatalarını tespit edebilsin diye (bkz. detectRecurringWeaknesses).
   totalNet    Float?
   ranking     Int?
   notes       String?
@@ -183,6 +215,7 @@ model User {
   dayReports          DayReport[]            @relation("StudentDayReports")
   pomodoroSessions    PomodoroSession[]      @relation("StudentPomodoroSessions")
   sosAlerts           SosAlert[]             @relation("StudentSosAlerts")
+  topicMasteries      TopicMastery[]         @relation("StudentTopicMastery")
   studentAppointments Appointment[]          @relation("StudentAppointments")
   carts               Cart[]
   coachProfile        Coach?                 @relation("CoachProfile")

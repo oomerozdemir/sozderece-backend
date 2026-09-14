@@ -1,5 +1,5 @@
 import prisma from "../utils/prisma.js";
-import { toMondayStart, todayDayOfWeek } from "./studentPanel.controller.js";
+import { toMondayStart, todayDayOfWeek, detectRecurringWeaknesses } from "./studentPanel.controller.js";
 
 
 export const getAssignedStudents = async (req, res) => {
@@ -309,6 +309,67 @@ export const resolveSosAlert = async (req, res) => {
   } catch (error) {
     console.error("resolveSosAlert:", error);
     res.status(500).json({ success: false, message: "Bildirim güncellenemedi." });
+  }
+};
+
+/**
+ * GET /api/coach/students/:studentId/insights
+ * "Akıllı Deneme Analizi" — son 3 denemede tekrar eden konu hataları.
+ */
+export const getInsightsForCoach = async (req, res) => {
+  try {
+    const studentId = parseInt(req.params.studentId);
+    const coach = await assertOwnStudent(req.user.id, studentId);
+    if (!coach) return res.status(403).json({ success: false, message: "Bu öğrenci size atanmamış." });
+
+    const insights = await detectRecurringWeaknesses(studentId);
+    res.json({ success: true, insights });
+  } catch (error) {
+    console.error("getInsightsForCoach:", error);
+    res.status(500).json({ success: false, message: "İçgörüler alınamadı." });
+  }
+};
+
+/**
+ * POST /api/coach/students/:studentId/insights/:topicId/add-to-plan
+ * Tekrar eden hata tespit edilen konuyu, koçun tek tıkla bu haftaki
+ * programa (bugünün gününe) eklemesi — program yine koçun kontrolünde,
+ * sistem sadece işaret ediyor, otomatik yazmıyor.
+ */
+export const addInsightTopicToPlan = async (req, res) => {
+  try {
+    const studentId = parseInt(req.params.studentId);
+    const coach = await assertOwnStudent(req.user.id, studentId);
+    if (!coach) return res.status(403).json({ success: false, message: "Bu öğrenci size atanmamış." });
+
+    const topicId = parseInt(req.params.topicId);
+    const topic = await prisma.topic.findUnique({ where: { id: topicId } });
+    if (!topic) return res.status(404).json({ success: false, message: "Konu bulunamadı." });
+
+    const weekStart = toMondayStart(new Date());
+    const dayOfWeek = todayDayOfWeek();
+
+    let plan = await prisma.studyPlan.findFirst({ where: { studentId, weekStart } });
+    if (!plan) {
+      plan = await prisma.studyPlan.create({ data: { studentId, weekStart, createdById: req.user.id } });
+    }
+    const lastOrder = await prisma.studyPlanItem.count({ where: { studyPlanId: plan.id, dayOfWeek } });
+
+    const item = await prisma.studyPlanItem.create({
+      data: {
+        studyPlanId: plan.id,
+        dayOfWeek,
+        subject: topic.subject,
+        topic: `${topic.name} (tekrar eden hata — sistem önerisi)`,
+        durationMin: 30,
+        order: lastOrder,
+      },
+    });
+
+    res.status(201).json({ success: true, item });
+  } catch (error) {
+    console.error("addInsightTopicToPlan:", error);
+    res.status(500).json({ success: false, message: "Programa eklenemedi." });
   }
 };
 

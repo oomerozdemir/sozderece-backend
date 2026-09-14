@@ -175,3 +175,63 @@ export const resolveSosAlertAsAdmin = async (req, res) => {
     res.status(500).json({ success: false, message: "Bildirim güncellenemedi." });
   }
 };
+
+/* ── Konu Takip Ağacı müfredatı (Topic) ── */
+
+export const getAllTopics = async (req, res) => {
+  try {
+    const topics = await prisma.topic.findMany({ orderBy: [{ track: "asc" }, { examType: "asc" }, { subject: "asc" }, { order: "asc" }] });
+    res.json({ success: true, topics });
+  } catch (err) {
+    console.error("Konular alınamadı:", err);
+    res.status(500).json({ success: false, message: "Konular alınamadı." });
+  }
+};
+
+export const createTopic = async (req, res) => {
+  try {
+    const { subject, name, track, examType, order, hidden } = req.body;
+    if (!subject || !name || !track) {
+      return res.status(400).json({ success: false, message: "Ders, konu adı ve track (yks/lgs) zorunludur." });
+    }
+    const topic = await prisma.topic.create({
+      data: { subject, name, track, examType: examType || null, order: order ?? 0, hidden: hidden === true || hidden === "true" },
+    });
+    res.status(201).json({ success: true, topic });
+  } catch (err) {
+    console.error("Konu oluşturulamadı:", err);
+    res.status(500).json({ success: false, message: "Konu oluşturulamadı." });
+  }
+};
+
+export const updateTopic = async (req, res) => {
+  try {
+    const id = parseInt(req.params.id);
+    const { subject, name, track, examType, order, hidden } = req.body;
+    const topic = await prisma.topic.update({
+      where: { id },
+      data: {
+        ...(subject !== undefined && { subject }),
+        ...(name !== undefined && { name }),
+        ...(track !== undefined && { track }),
+        ...(examType !== undefined && { examType: examType || null }),
+        ...(order !== undefined && { order }),
+        ...(hidden !== undefined && { hidden: hidden === true || hidden === "true" }),
+      },
+    });
+    res.json({ success: true, topic });
+  } catch (err) {
+    console.error("Konu güncellenemedi:", err);
+    res.status(500).json({ success: false, message: "Konu güncellenemedi." });
+  }
+};
+
+export const deleteTopic = async (req, res) => {
+  try {
+    await prisma.topic.delete({ where: { id: parseInt(req.params.id) } });
+    res.json({ success: true, message: "Konu silindi." });
+  } catch (err) {
+    console.error("Konu silinemedi:", err);
+    res.status(500).json({ success: false, message: "Konu silinemedi." });
+  }
+};

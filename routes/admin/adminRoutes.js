@@ -19,6 +19,7 @@ import {
   getAllResources, createResource, updateResource, deleteResource,
   getAllAnnouncements, createAnnouncement, updateAnnouncement, deleteAnnouncement,
   getAllSosAlertsForAdmin, resolveSosAlertAsAdmin,
+  getAllTopics, createTopic, updateTopic, deleteTopic,
 } from "../../controllers/adminContent.controller.js";
 
 const prisma = new PrismaClient();
@@ -210,6 +211,11 @@ router.delete("/navbar/:id", authenticateToken, authorizeRoles("admin"), deleteN
 // Sayfa görüntülenme istatistikleri (ör. kampanya sayfaları)
 router.get("/sos-alerts", authenticateToken, authorizeRoles("admin"), getAllSosAlertsForAdmin);
 router.put("/sos-alerts/:id/resolve", authenticateToken, authorizeRoles("admin"), resolveSosAlertAsAdmin);
+
+router.get("/topics", authenticateToken, authorizeRoles("admin"), getAllTopics);
+router.post("/topics", authenticateToken, authorizeRoles("admin"), createTopic);
+router.put("/topics/:id", authenticateToken, authorizeRoles("admin"), updateTopic);
+router.delete("/topics/:id", authenticateToken, authorizeRoles("admin"), deleteTopic);
 
 router.get("/pageviews", authenticateToken, authorizeRoles("admin"), getPageViewStats);
 router.get("/consent-stats", authenticateToken, authorizeRoles("admin"), getConsentStats);

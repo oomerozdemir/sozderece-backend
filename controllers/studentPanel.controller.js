@@ -438,3 +438,129 @@ export const getMySummary = async (req, res) => {
     res.status(500).json({ success: false, message: "Özet alınamadı." });
   }
 };
+
+/* ────────────────────────── Konu Takip Ağacı ────────────────────────── */
+
+const MASTERY_STAGES = ["none", "studied", "practiced", "mastered"];
+const nextMasteryStage = (current) => {
+  const i = MASTERY_STAGES.indexOf(current);
+  return MASTERY_STAGES[(i + 1) % MASTERY_STAGES.length];
+};
+
+/**
+ * GET /api/v1/ogrenci/me/topics
+ * Öğrencinin track'ine (yks/lgs) uygun tüm konular + bu öğrencinin her
+ * konudaki ustalık seviyesi ("none" varsayılan, hiç işaretlenmemişse).
+ */
+export const getMyTopics = async (req, res) => {
+  try {
+    const studentId = req.user.id;
+    const user = await prisma.user.findUnique({ where: { id: studentId }, select: { grade: true } });
+    const track = effectiveTrackFromGrade(user?.grade);
+
+    const [topics, masteries] = await Promise.all([
+      prisma.topic.findMany({ where: { track, hidden: false }, orderBy: [{ examType: "asc" }, { subject: "asc" }, { order: "asc" }] }),
+      prisma.topicMastery.findMany({ where: { studentId } }),
+    ]);
+
+    const stageByTopicId = new Map(masteries.map((m) => [m.topicId, m.stage]));
+    const withStage = topics.map((t) => ({ ...t, stage: stageByTopicId.get(t.id) || "none" }));
+
+    res.json({ success: true, track, topics: withStage });
+  } catch (err) {
+    console.error("getMyTopics:", err);
+    res.status(500).json({ success: false, message: "Konular alınamadı." });
+  }
+};
+
+/**
+ * PATCH /api/v1/ogrenci/me/topics/:topicId/mastery
+ * Body: { stage? } — verilirse doğrudan o seviyeye ayarlar, verilmezse bir
+ * sonraki seviyeye ilerletir (none->studied->practiced->mastered->none).
+ */
+export const setTopicMastery = async (req, res) => {
+  try {
+    const studentId = req.user.id;
+    const topicId = parseInt(req.params.topicId);
+    const topic = await prisma.topic.findUnique({ where: { id: topicId } });
+    if (!topic) return res.status(404).json({ success: false, message: "Konu bulunamadı." });
+
+    let stage = req.body?.stage;
+    if (stage && !MASTERY_STAGES.includes(stage)) {
+      return res.status(400).json({ success: false, message: "Geçersiz seviye." });
+    }
+    if (!stage) {
+      const existing = await prisma.topicMastery.findUnique({ where: { studentId_topicId: { studentId, topicId } } });
+      stage = nextMasteryStage(existing?.stage || "none");
+    }
+
+    const mastery = await prisma.topicMastery.upsert({
+      where: { studentId_topicId: { studentId, topicId } },
+      update: { stage },
+      create: { studentId, topicId, stage },
+    });
+
+    res.json({ success: true, mastery });
+  } catch (err) {
+    console.error("setTopicMastery:", err);
+    res.status(500).json({ success: false, message: "Konu güncellenemedi." });
+  }
+};
+
+/* ────────────────────────── Akıllı Deneme Analizi ────────────────────────── */
+
+// Son 3 deneme arasında en az 2 kez yanlış işaretlenen konuları bulur —
+// "tekrar eden hata" tespiti. wrongTopicIds hiç girilmemiş (eski) sınavlar
+// sessizce atlanır. Zaten "mastered" işaretlenmiş konular hariç tutulur.
+export async function detectRecurringWeaknesses(studentId) {
+  const recentExams = await prisma.examResult.findMany({
+    where: { studentId },
+    orderBy: { examDate: "desc" },
+    take: 3,
+  });
+
+  const countByTopicId = new Map();
+  let checkedExams = 0;
+  for (const exam of recentExams) {
+    const subjectNets = Array.isArray(exam.subjectNets) ? exam.subjectNets : [];
+    const hasTopicData = subjectNets.some((s) => Array.isArray(s.wrongTopicIds) && s.wrongTopicIds.length > 0);
+    if (!hasTopicData) continue;
+    checkedExams += 1;
+    const seenInThisExam = new Set();
+    for (const s of subjectNets) {
+      for (const id of s.wrongTopicIds || []) {
+        if (seenInThisExam.has(id)) continue; // aynı sınavda bir konu bir kez sayılsın
+        seenInThisExam.add(id);
+        countByTopicId.set(id, (countByTopicId.get(id) || 0) + 1);
+      }
+    }
+  }
+
+  const candidateIds = [...countByTopicId.entries()].filter(([, count]) => count >= 2).map(([id]) => id);
+  if (candidateIds.length === 0) return [];
+
+  const [topics, masteries] = await Promise.all([
+    prisma.topic.findMany({ where: { id: { in: candidateIds } } }),
+    prisma.topicMastery.findMany({ where: { studentId, topicId: { in: candidateIds }, stage: "mastered" } }),
+  ]);
+  const masteredIds = new Set(masteries.map((m) => m.topicId));
+
+  return topics
+    .filter((t) => !masteredIds.has(t.id))
+    .map((t) => ({ topicId: t.id, topicName: t.name, subject: t.subject, count: countByTopicId.get(t.id), checkedExams }))
+    .sort((a, b) => b.count - a.count);
+}
+
+/**
+ * GET /api/v1/ogrenci/me/insights
+ * "Son N denemede tekrar eden hata" uyarıları — öğrenci görünümü.
+ */
+export const getMyInsights = async (req, res) => {
+  try {
+    const insights = await detectRecurringWeaknesses(req.user.id);
+    res.json({ success: true, insights });
+  } catch (err) {
+    console.error("getMyInsights:", err);
+    res.status(500).json({ success: false, message: "İçgörüler alınamadı." });
+  }
+};

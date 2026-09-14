@@ -19,6 +19,9 @@ import {
   startPomodoro,
   stopPomodoro,
   createSosAlert,
+  getMyTopics,
+  setTopicMastery,
+  getMyInsights,
 } from "../../controllers/studentPanel.controller.js";
 
 const router = express.Router();
@@ -60,6 +63,9 @@ router.get("/me/summary", authenticateToken, getMySummary);
 router.post("/me/pomodoro/start", authenticateToken, startPomodoro);
 router.patch("/me/pomodoro/:id/stop", authenticateToken, stopPomodoro);
 router.post("/me/sos", authenticateToken, createSosAlert);
+router.get("/me/topics", authenticateToken, getMyTopics);
+router.patch("/me/topics/:topicId/mastery", authenticateToken, setTopicMastery);
+router.get("/me/insights", authenticateToken, getMyInsights);
 
 
 
