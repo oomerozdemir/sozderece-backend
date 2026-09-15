@@ -74,8 +74,29 @@ export const updateUser = async (req, res) => {
       },
     });
 
+    // Kullanıcı "koç" rolüne getirildiyse ama henüz bir Coach profili yoksa
+    // (ör. "Kullanıcılar" sekmesinden rolü koç yapılan biri — daha önce sadece
+    // özel "Koç Ekle" formundan geçenler Coach satırı alıyordu), otomatik
+    // oluştur — böylece Koçlar listesinde anında görünür. Ders/açıklama/foto
+    // boş bırakılıyor, admin "Koçlar" sayfasından sonradan doldurabilir.
+    let newCoachProfile = null;
+    if (updatedUser.role === "coach") {
+      const existingCoach = await prisma.coach.findUnique({ where: { userId: updatedUser.id } });
+      if (!existingCoach) {
+        newCoachProfile = await prisma.coach.create({
+          data: {
+            name: updatedUser.name || "İsimsiz Koç",
+            subject: "Belirtilmedi",
+            description: "",
+            image: "",
+            userId: updatedUser.id,
+          },
+        });
+      }
+    }
+
     const { password, ...safeUser } = updatedUser;
-    res.json({ success: true, user: safeUser });
+    res.json({ success: true, user: safeUser, newCoachProfile });
   } catch (error) {
     console.error("Kullanıcı güncellenemedi:", error);
     res.status(500).json({ error: "Kullanıcı güncellenemedi." });
@@ -131,6 +152,14 @@ if (existingUser) {
         emailVerified: true,
       },
     });
+
+    // Aynı otomatik-Coach-profili mantığı burada da geçerli — bkz. updateUser.
+    if (role === "coach") {
+      await prisma.coach.create({
+        data: { name, subject: "Belirtilmedi", description: "", image: "", userId: user.id },
+      });
+    }
+
     res.status(201).json(user);
   } catch (error) {
     console.error("Koç (user) oluşturulamadı:", error);
