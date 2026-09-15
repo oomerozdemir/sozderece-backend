@@ -1,5 +1,5 @@
 import prisma from "../utils/prisma.js";
-import { toMondayStart, todayDayOfWeek, detectRecurringWeaknesses, effectiveTrackFromGrade, computeStreak } from "./studentPanel.controller.js";
+import { toMondayStart, todayDayOfWeek, toDayStart, detectRecurringWeaknesses, effectiveTrackFromGrade, computeStreak, sumActualStudyMinutes } from "./studentPanel.controller.js";
 
 
 export const getAssignedStudents = async (req, res) => {
@@ -45,35 +45,65 @@ export const getAssignedStudents = async (req, res) => {
       },
     });
 
-    // "Anlık görür": bugün "Zorlandım"/"Yarıda Kaldı" işaretleyen öğrencileri
-    // tek ek sorguyla bulup listeye rozet olarak ekliyoruz — koç, kartı
-    // açmadan kimin dikkat istediğini görsün.
+    // "Anlık görür" + "Kolay takip": roster kartında modalı açmadan görünecek
+    // her şeyi burada, mümkün olduğunca az ek sorguyla topluyoruz — koç
+    // 10-20 öğrencisine tek bakışta göz gezdirip kimin peşine düşeceğini
+    // anlasın.
     const studentIds = students.map((s) => s.id);
     const weekStart = toMondayStart(new Date());
     const dayOfWeek = todayDayOfWeek();
-    const flaggedToday = studentIds.length
+    const todayDate = toDayStart(new Date());
+    const tomorrowDate = new Date(todayDate);
+    tomorrowDate.setUTCDate(tomorrowDate.getUTCDate() + 1);
+
+    // Bugünün TÜM görevleri (durum farketmeksizin) — hem stuck/partial
+    // rozetlerini hem de "3/5 tamamlandı" ilerleme oranını aynı sorgudan
+    // türetiyoruz.
+    const todayItemsAll = studentIds.length
       ? await prisma.studyPlanItem.findMany({
-          where: {
-            status: { in: ["stuck", "partial"] },
-            dayOfWeek,
-            studyPlan: { studentId: { in: studentIds }, weekStart },
-          },
+          where: { dayOfWeek, studyPlan: { studentId: { in: studentIds }, weekStart } },
           select: { status: true, studyPlan: { select: { studentId: true } } },
         })
       : [];
-    const stuckSet = new Set(flaggedToday.filter((i) => i.status === "stuck").map((i) => i.studyPlan.studentId));
-    const partialSet = new Set(flaggedToday.filter((i) => i.status === "partial").map((i) => i.studyPlan.studentId));
+    const stuckSet = new Set(todayItemsAll.filter((i) => i.status === "stuck").map((i) => i.studyPlan.studentId));
+    const partialSet = new Set(todayItemsAll.filter((i) => i.status === "partial").map((i) => i.studyPlan.studentId));
+    const todayProgressById = new Map();
+    for (const item of todayItemsAll) {
+      const sid = item.studyPlan.studentId;
+      const cur = todayProgressById.get(sid) || { done: 0, total: 0 };
+      cur.total += 1;
+      if (item.status === "done") cur.done += 1;
+      todayProgressById.set(sid, cur);
+    }
 
-    // Ateş serisi — küçük roster için öğrenci başına ayrı sorgu kabul
-    // edilebilir (sınıf büyüklüğünde N, N+1 sorgu maliyeti düşük).
-    const streaks = await Promise.all(studentIds.map((id) => computeStreak(id)));
+    // Bugünün gerçek çalışma süresi (Pomodoro) — tek gruplu sorgu.
+    const pomodoroToday = studentIds.length
+      ? await prisma.pomodoroSession.groupBy({
+          by: ["studentId"],
+          where: { studentId: { in: studentIds }, startedAt: { gte: todayDate, lt: tomorrowDate }, actualSeconds: { not: null } },
+          _sum: { actualSeconds: true },
+        })
+      : [];
+    const actualMinutesById = new Map(pomodoroToday.map((p) => [p.studentId, Math.round((p._sum.actualSeconds || 0) / 60)]));
+
+    // Ateş serisi + tekrar eden hata sayısı — küçük roster için öğrenci
+    // başına ayrı sorgu kabul edilebilir (sınıf büyüklüğünde N, N+1 sorgu
+    // maliyeti düşük).
+    const [streaks, weaknesses] = await Promise.all([
+      Promise.all(studentIds.map((id) => computeStreak(id))),
+      Promise.all(studentIds.map((id) => detectRecurringWeaknesses(id))),
+    ]);
     const streakById = new Map(studentIds.map((id, i) => [id, streaks[i]]));
+    const weaknessCountById = new Map(studentIds.map((id, i) => [id, weaknesses[i].length]));
 
     const withFlags = students.map((s) => ({
       ...s,
       strugglingToday: stuckSet.has(s.id),
       partialToday: partialSet.has(s.id),
       streak: streakById.get(s.id) || { current: 0, longest: 0 },
+      todayProgress: todayProgressById.get(s.id) || { done: 0, total: 0 },
+      actualStudyMinutesToday: actualMinutesById.get(s.id) || 0,
+      recurringWeaknessCount: weaknessCountById.get(s.id) || 0,
     }));
 
     res.status(200).json({ students: withFlags });
@@ -263,8 +293,9 @@ export const getStudentTodayForCoach = async (req, res) => {
     const items = plan
       ? await prisma.studyPlanItem.findMany({ where: { studyPlanId: plan.id, dayOfWeek }, orderBy: { order: "asc" } })
       : [];
+    const actualStudyMinutesToday = await sumActualStudyMinutes(studentId, toDayStart(new Date()));
 
-    res.json({ success: true, items });
+    res.json({ success: true, items, actualStudyMinutesToday });
   } catch (error) {
     console.error("getStudentTodayForCoach:", error);
     res.status(500).json({ success: false, message: "Bugünün durumu alınamadı." });
@@ -342,6 +373,34 @@ export const getTopicsForCoach = async (req, res) => {
   } catch (error) {
     console.error("getTopicsForCoach:", error);
     res.status(500).json({ success: false, message: "Konular alınamadı." });
+  }
+};
+
+/**
+ * GET /api/coach/students/:studentId/mastery
+ * Öğrencinin Konu Ağacı'nı (her konudaki ustalık seviyesiyle) koça
+ * salt-okunur gösterir — ders planı hazırlarken zayıf konuları görsün.
+ */
+export const getMasteryForCoach = async (req, res) => {
+  try {
+    const studentId = parseInt(req.params.studentId);
+    const coach = await assertOwnStudent(req.user.id, studentId);
+    if (!coach) return res.status(403).json({ success: false, message: "Bu öğrenci size atanmamış." });
+
+    const student = await prisma.user.findUnique({ where: { id: studentId }, select: { grade: true } });
+    const track = effectiveTrackFromGrade(student?.grade);
+
+    const [topics, masteries] = await Promise.all([
+      prisma.topic.findMany({ where: { track, hidden: false }, orderBy: [{ examType: "asc" }, { subject: "asc" }, { order: "asc" }] }),
+      prisma.topicMastery.findMany({ where: { studentId } }),
+    ]);
+    const stageByTopicId = new Map(masteries.map((m) => [m.topicId, m.stage]));
+    const topicsWithStage = topics.map((t) => ({ ...t, stage: stageByTopicId.get(t.id) || "none" }));
+
+    res.json({ success: true, track, topics: topicsWithStage });
+  } catch (error) {
+    console.error("getMasteryForCoach:", error);
+    res.status(500).json({ success: false, message: "Konu ağacı alınamadı." });
   }
 };
 

@@ -42,7 +42,7 @@ export const toMondayStart = (dateInput) => {
   return istanbulMidnightUTC({ year: noonUTC.getUTCFullYear(), month: noonUTC.getUTCMonth() + 1, day: noonUTC.getUTCDate() });
 };
 
-const toDayStart = (dateInput) => istanbulMidnightUTC(istanbulYMD(dateInput));
+export const toDayStart = (dateInput) => istanbulMidnightUTC(istanbulYMD(dateInput));
 
 // JS getDay(): 0=Pazar..6=Cumartesi -> StudyPlanItem.dayOfWeek'in
 // kullandığı Pazartesi=0 tabanına çevirir. İstanbul takvim gününe göre.
@@ -83,7 +83,7 @@ async function maybeGenerateDayReport(studentId, weekStart, dayOfWeek) {
 // O İstanbul takvim gününde (date = o günün 00:00'ı) tamamlanan Pomodoro
 // turlarının GERÇEK süresini (saniye->dakika) toplar. Planlanan durationMin
 // değil, öğrencinin fiilen kronometreyle çalıştığı süre.
-async function sumActualStudyMinutes(studentId, date) {
+export async function sumActualStudyMinutes(studentId, date) {
   const dayEnd = new Date(date);
   dayEnd.setUTCDate(dayEnd.getUTCDate() + 1);
   const sessions = await prisma.pomodoroSession.findMany({
