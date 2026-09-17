@@ -1,5 +1,6 @@
 import express from "express";
 import { getAllUsers, deleteUser, updateUser, createUserAsAdmin, getAllContacts, deleteContact } from "../../controllers/adminController.js";
+import { getAllWaitlistEntries, deleteWaitlistEntry } from "../../controllers/waitlist.controller.js";
 import {deleteOrder, getAllOrdersForAdmin, getRefundRequests, approveRefundRequest,
   rejectRefund, updateOrder, updateBillingInfo, checkPaytrStatus, getOrderAttribution} from "../../controllers/adminOrder.controller.js";
 import { authenticateToken, authorizeRoles } from "../../middleware/authMiddleware.js";
@@ -38,6 +39,10 @@ router.post("/users", authenticateToken, authorizeRoles("admin"), createUserAsAd
 // Ücretsiz görüşme randevusu (Contact) talepleri
 router.get("/contacts", authenticateToken, authorizeRoles("admin"), getAllContacts);
 router.delete("/contacts/:id", authenticateToken, authorizeRoles("admin"), deleteContact);
+
+// Kayıtları kapanmış atölye/teklif sayfalarındaki bekleme listesi kayıtları
+router.get("/waitlist", authenticateToken, authorizeRoles("admin"), getAllWaitlistEntries);
+router.delete("/waitlist/:id", authenticateToken, authorizeRoles("admin"), deleteWaitlistEntry);
 
 // Iade islemleri
 router.get("/orders/refund-requests", authenticateToken, authorizeRoles("admin"), getRefundRequests);

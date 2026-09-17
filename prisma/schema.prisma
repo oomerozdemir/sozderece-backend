@@ -19,6 +19,22 @@ model Contact {
   userType    String?
 }
 
+// Kayıtları kapanmış bir atölye/program teklifi (ör. "14 Günde Çalışma
+// Alışkanlığı Kazan") sayfasında, ziyaretçinin bir sonraki dönem için
+// önceden haber almak üzere bıraktığı bekleme listesi kaydı. `source`
+// hangi teklif sayfasından geldiğini tutuyor — ileride başka atölyeler için
+// de aynı model/endpoint yeniden kullanılabilsin diye.
+model WorkshopWaitlist {
+  id        Int      @id @default(autoincrement())
+  name      String
+  email     String
+  phone     String?
+  source    String   @default("14-gunde-calisma-aliskanligi-kazan")
+  createdAt DateTime @default(now())
+
+  @@index([source, createdAt])
+}
+
 model ConsultationSlot {
   id        Int      @id @default(autoincrement())
   date      String // "2026-03-20" formatında
