@@ -447,6 +447,25 @@ export const getMySummary = async (req, res) => {
         ? Number((latestExam.totalNet - prevExam.totalNet).toFixed(2))
         : null;
 
+    // Panelin "Son Denemem" kartı için — en son iki deneme arasında ders
+    // bazında net değişimi (Matematik +3.25 gibi). İki deneme de aynı dersi
+    // içermiyorsa o ders atlanır.
+    const subjectNetDeltas = (() => {
+      const latestSubjects = Array.isArray(latestExam?.subjectNets) ? latestExam.subjectNets : [];
+      const prevSubjects = Array.isArray(prevExam?.subjectNets) ? prevExam.subjectNets : [];
+      if (!latestSubjects.length || !prevSubjects.length) return [];
+      const prevBySubject = new Map(prevSubjects.map((s) => [s.subject, s.net]));
+      return latestSubjects
+        .filter((s) => prevBySubject.has(s.subject) && s.net != null)
+        .map((s) => ({ subject: s.subject, delta: Number((s.net - prevBySubject.get(s.subject)).toFixed(2)) }));
+    })();
+
+    // "Bu Hafta" kartındaki "Tamamlanan Konu" metriği — bu hafta "mastered"
+    // seviyesine geçirilen konu sayısı.
+    const topicsMasteredThisWeek = await prisma.topicMastery.count({
+      where: { studentId, stage: "mastered", updatedAt: { gte: currentWeekStart } },
+    });
+
     // Koçun seni ne kadar tanıyor göstergesi — 3 basit doluluk sinyali.
     const profileScore = student?.assignedCoachId ? (student?.grade ? 100 : 70) : 20;
     const programScore = weeklyTaskTotal > 0 ? Math.round((weeklyTaskDone / weeklyTaskTotal) * 100) : 0;
@@ -471,6 +490,8 @@ export const getMySummary = async (req, res) => {
       examCount: examResults.length,
       latestExam,
       netTrendDelta,
+      subjectNetDeltas,
+      topicsMasteredThisWeek,
       todayFocus,
       weeklyStuckCount,
       recentActivity: activity.slice(0, 8),
