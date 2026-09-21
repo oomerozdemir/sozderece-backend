@@ -242,9 +242,20 @@ export const getMyToday = async (req, res) => {
     const date = toDayStart(new Date());
 
     const plan = await prisma.studyPlan.findFirst({ where: { studentId, weekStart } });
-    const items = plan
-      ? await prisma.studyPlanItem.findMany({ where: { studyPlanId: plan.id, dayOfWeek }, orderBy: { order: "asc" } })
+    const rawItems = plan
+      ? await prisma.studyPlanItem.findMany({
+          where: { studyPlanId: plan.id, dayOfWeek },
+          orderBy: { order: "asc" },
+          include: { pomodoroSessions: { where: { actualSeconds: { not: null } }, select: { actualSeconds: true } } },
+        })
       : [];
+    // Görev kartında "gerçekte kaç dakika çalışıldı" göstermek için — kronometre
+    // dahilinde geçen bütün turların toplamı (item.durationMin planlanan süre,
+    // bu ise fiilen kronometreyle ölçülen süre).
+    const items = rawItems.map(({ pomodoroSessions, ...it }) => ({
+      ...it,
+      actualMinutes: Math.round(pomodoroSessions.reduce((sum, s) => sum + (s.actualSeconds || 0), 0) / 60),
+    }));
     const report = await prisma.dayReport.findUnique({ where: { studentId_date: { studentId, date } } }).catch(() => null);
     const activePomodoro = await prisma.pomodoroSession.findFirst({ where: { studentId, endedAt: null } });
     const actualStudyMinutesToday = await sumActualStudyMinutes(studentId, date);
