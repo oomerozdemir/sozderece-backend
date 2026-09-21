@@ -7,16 +7,30 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+// "Ücretsiz Ön Görüşme" formu — Sözderece Rota Sistemi'nin ilk temas noktası.
+// email artık opsiyonel (iletişim asıl telefon/WhatsApp üzerinden); userType
+// eski (tek dropdown) alan, geriye dönük uyumluluk için korunuyor — yeni
+// form role/examType/gradeStatus'u ayrı sorular olarak topluyor.
 model Contact {
-  id          Int      @id @default(autoincrement())
-  name        String
-  phone       String
-  email       String
-  message     String?
-  createdAt   DateTime @default(now())
-  meetingDate String?
-  meetingTime String?
-  userType    String?
+  id                Int      @id @default(autoincrement())
+  name              String
+  phone             String
+  email             String?
+  message           String?
+  createdAt         DateTime @default(now())
+  meetingDate       String?
+  meetingTime       String?
+  userType          String?
+  role              String?
+  examType          String?
+  gradeStatus       String?
+  challenges        String[] @default([])
+  challengesOther   String?
+  studyRoutine      String?
+  lastExamResult    String?
+  goal              String?
+  supportAreas      String[] @default([])
+  supportAreasOther String?
 }
 
 // Kayıtları kapanmış bir atölye/program teklifi (ör. "14 Günde Çalışma

@@ -36,7 +36,39 @@ const escapeHtml = (str) => {
 // değil (bir isim alanına \r\n ile ek header/Bcc enjekte edilmesi riski).
 const stripHeaderInjection = (str) => String(str || "").replace(/[\r\n]+/g, " ").trim();
 
-const VALID_USER_TYPES = ["Mezun", "12. Sınıf", "11. Sınıf", "8. Sınıf", "7. Sınıf", "Veli"];
+// "Ücretsiz Ön Görüşme" formunun yeni (Rota Sistemi) alanları — frontend'deki
+// seçenek listeleriyle birebir aynı olmalı.
+const VALID_ROLES = ["Öğrenci", "Veli"];
+const VALID_EXAM_TYPES = ["YKS", "LGS"];
+const VALID_GRADE_STATUSES = ["9. Sınıf", "10. Sınıf", "11. Sınıf", "12. Sınıf", "Mezun", "5. Sınıf", "6. Sınıf", "7. Sınıf", "8. Sınıf"];
+const VALID_CHALLENGES = [
+  "Nereden başlayacağımı bilmiyorum.",
+  "Program yapıyorum ama sürdüremiyorum.",
+  "Günümü düzenleyemiyorum.",
+  "Eksiklerimi nasıl kapatacağımı bilmiyorum.",
+  "Deneme sonuçlarımı nasıl değerlendireceğimi bilmiyorum.",
+  "Düzenli çalışmakta zorlanıyorum.",
+  "Ne kadar çalışsam da doğru ilerlediğimden emin değilim.",
+  "Diğer",
+];
+const VALID_STUDY_ROUTINES = ["Düzenli", "Bazen düzenli", "Dağınık", "Henüz bir düzenim yok"];
+const VALID_SUPPORT_AREAS = [
+  "Bana uygun çalışma planı",
+  "Düzenli takip",
+  "Deneme analizi",
+  "Eksiklerin belirlenmesi",
+  "Çalışma disiplini",
+  "Zaman yönetimi",
+  "Süreci biriyle birlikte yönetmek",
+  "Diğer",
+];
+
+// Çoklu seçim alanlarını (challenges/supportAreas) doğrular: dizi olmalı,
+// her öğe whitelist'te olmalı, makul bir üst sınırı aşmamalı.
+const sanitizeMultiSelect = (value, whitelist, max = 8) => {
+  if (!Array.isArray(value)) return [];
+  return value.filter((v) => typeof v === "string" && whitelist.includes(v)).slice(0, max);
+};
 
 // Frontend ile senkron - sadece bu saatler kabul edilir
 const VALID_TIME_SLOTS = new Set([
@@ -56,10 +88,14 @@ const VALID_TIME_SLOTS = new Set([
 
 export const createContact = async (req, res) => {
   try {
-    const { name, phone, email, userType, meetingDate, meetingTime, message } = req.body;
+    const {
+      name, phone, email, meetingDate, meetingTime, message,
+      role, examType, gradeStatus, challenges, challengesOther,
+      studyRoutine, lastExamResult, goal, supportAreas, supportAreasOther,
+    } = req.body;
 
-    // --- Zorunlu alan kontrolü ---
-    if (!name || !phone || !email || !userType || !meetingDate || !meetingTime) {
+    // --- Zorunlu alan kontrolü (email artık opsiyonel) ---
+    if (!name || !phone || !role || !examType || !gradeStatus || !meetingDate || !meetingTime) {
       return res.status(400).json({ success: false, message: "Tüm zorunlu alanlar doldurulmalıdır." });
     }
 
@@ -72,10 +108,13 @@ export const createContact = async (req, res) => {
       return res.status(400).json({ success: false, message: "Ad Soyad sadece harf içerebilir." });
     }
 
-    // --- email: format + max 254 karakter ---
-    const trimmedEmail = String(email).toLowerCase().trim();
-    if (trimmedEmail.length > 254 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmedEmail)) {
-      return res.status(400).json({ success: false, message: "Geçersiz e-posta adresi." });
+    // --- email: opsiyonel, verilmişse format + max 254 karakter ---
+    let trimmedEmail = null;
+    if (email) {
+      trimmedEmail = String(email).toLowerCase().trim();
+      if (trimmedEmail.length > 254 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmedEmail)) {
+        return res.status(400).json({ success: false, message: "Geçersiz e-posta adresi." });
+      }
     }
 
     // --- phone: Türkiye formatı (05XX XXX XX XX veya +90 ile başlayan) ---
@@ -84,10 +123,29 @@ export const createContact = async (req, res) => {
       return res.status(400).json({ success: false, message: "Geçersiz telefon numarası. (05XX XXX XX XX formatında giriniz)" });
     }
 
-    // --- userType: whitelist ---
-    if (!VALID_USER_TYPES.includes(userType)) {
-      return res.status(400).json({ success: false, message: "Geçersiz kullanıcı tipi." });
+    // --- role / examType / gradeStatus: whitelist ---
+    if (!VALID_ROLES.includes(role)) {
+      return res.status(400).json({ success: false, message: "Geçersiz durum seçimi." });
     }
+    if (!VALID_EXAM_TYPES.includes(examType)) {
+      return res.status(400).json({ success: false, message: "Geçersiz sınav türü." });
+    }
+    if (!VALID_GRADE_STATUSES.includes(gradeStatus)) {
+      return res.status(400).json({ success: false, message: "Geçersiz sınıf/mezuniyet durumu." });
+    }
+
+    // --- diğer profil alanları (hepsi opsiyonel) ---
+    const safeChallenges = sanitizeMultiSelect(challenges, VALID_CHALLENGES);
+    const safeChallengesOther = safeChallenges.includes("Diğer") && challengesOther
+      ? String(challengesOther).trim().slice(0, 300)
+      : null;
+    const safeStudyRoutine = VALID_STUDY_ROUTINES.includes(studyRoutine) ? studyRoutine : null;
+    const safeLastExamResult = lastExamResult ? String(lastExamResult).trim().slice(0, 200) : null;
+    const safeGoal = goal ? String(goal).trim().slice(0, 500) : null;
+    const safeSupportAreas = sanitizeMultiSelect(supportAreas, VALID_SUPPORT_AREAS);
+    const safeSupportAreasOther = safeSupportAreas.includes("Diğer") && supportAreasOther
+      ? String(supportAreasOther).trim().slice(0, 300)
+      : null;
 
     // --- meetingDate: YYYY-MM-DD format, bugün veya sonrası, max 2 ay ---
     if (!/^\d{4}-\d{2}-\d{2}$/.test(String(meetingDate))) {
@@ -142,7 +200,16 @@ export const createContact = async (req, res) => {
         name: trimmedName,
         phone: cleanPhone,
         email: trimmedEmail,
-        userType,
+        role,
+        examType,
+        gradeStatus,
+        challenges: safeChallenges,
+        challengesOther: safeChallengesOther,
+        studyRoutine: safeStudyRoutine,
+        lastExamResult: safeLastExamResult,
+        goal: safeGoal,
+        supportAreas: safeSupportAreas,
+        supportAreasOther: safeSupportAreasOther,
         meetingDate,
         meetingTime,
         message: trimmedMessage,
@@ -152,11 +219,18 @@ export const createContact = async (req, res) => {
     // --- Mail Gönder (tüm veriler HTML escape edilmiş) ---
     const safe = {
       name: escapeHtml(trimmedName),
-      userType: escapeHtml(userType),
+      role: escapeHtml(role),
+      examType: escapeHtml(examType),
+      gradeStatus: escapeHtml(gradeStatus),
       phone: escapeHtml(cleanPhone),
-      email: escapeHtml(trimmedEmail),
+      email: trimmedEmail ? escapeHtml(trimmedEmail) : null,
       meetingDate: escapeHtml(meetingDate),
       meetingTime: escapeHtml(meetingTime),
+      challenges: safeChallenges.map((c) => escapeHtml(c === "Diğer" && safeChallengesOther ? `Diğer: ${safeChallengesOther}` : c)),
+      studyRoutine: safeStudyRoutine ? escapeHtml(safeStudyRoutine) : null,
+      lastExamResult: safeLastExamResult ? escapeHtml(safeLastExamResult) : null,
+      goal: safeGoal ? escapeHtml(safeGoal) : null,
+      supportAreas: safeSupportAreas.map((s) => escapeHtml(s === "Diğer" && safeSupportAreasOther ? `Diğer: ${safeSupportAreasOther}` : s)),
       message: escapeHtml(trimmedMessage),
     };
 
@@ -171,9 +245,9 @@ export const createContact = async (req, res) => {
         bodyHtml: `
           ${infoCard([
             ["Ad Soyad", safe.name],
-            ["Durumu", safe.userType],
+            ["Durumu", `${safe.role} · ${safe.examType} · ${safe.gradeStatus}`],
             ["Telefon", `<a href="tel:${safe.phone}" style="color:#1e1b3a;">${safe.phone}</a>`],
-            ["E-posta", safe.email],
+            ["E-posta", safe.email || "—"],
           ])}
           ${infoCard(
             [
@@ -182,7 +256,21 @@ export const createContact = async (req, res) => {
             ],
             { bg: "#fef6e7", border: "#f6e2b3" }
           )}
-          ${safe.message ? noteCard(`<strong>Mesaj:</strong><br/>${safe.message}`) : ""}
+          ${
+            safe.challenges.length || safe.studyRoutine || safe.lastExamResult || safe.goal || safe.supportAreas.length
+              ? infoCard(
+                  [
+                    safe.challenges.length ? ["Zorlandığı Noktalar", safe.challenges.join(", ")] : null,
+                    safe.studyRoutine ? ["Çalışma Düzeni", safe.studyRoutine] : null,
+                    safe.lastExamResult ? ["Son Deneme Sonucu", safe.lastExamResult] : null,
+                    safe.goal ? ["Hedefi", safe.goal] : null,
+                    safe.supportAreas.length ? ["Beklediği Destek", safe.supportAreas.join(", ")] : null,
+                  ].filter(Boolean),
+                  { bg: "#eef2ff", border: "#c7d2fe" }
+                )
+              : ""
+          }
+          ${safe.message ? noteCard(`<strong>Koça Not:</strong><br/>${safe.message}`) : ""}
         `,
       }),
     };
