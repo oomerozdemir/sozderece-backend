@@ -89,6 +89,13 @@ model StudyPlanItem {
   // işaretlenebilir bir durum sistemi.
   status      String    @default("pending")
   statusAt    DateTime?
+  // "done" anındaki hızlı zorluk geri bildirimi — "kolay" | "normal" | "zor".
+  feeling     String?
+  // Öğrencinin görev üzerine bıraktığı kısa not (tamamlama ya da "bugün
+  // yapamadım" anında) — koç panelinde görünür.
+  note        String?
+  // "Bugün Yapamadım" akışında seçilen sebep (status=stuck iken anlamlı).
+  notCompletedReason String?
   pomodoroSessions PomodoroSession[]
 }
 

@@ -165,20 +165,38 @@ export const getMyStudyPlan = async (req, res) => {
 };
 
 const VALID_STATUSES = ["pending", "done", "partial", "stuck"];
+const VALID_FEELINGS = ["kolay", "normal", "zor"];
+const VALID_NOT_COMPLETED_REASONS = [
+  "Vaktim yetmedi",
+  "Konu zor geldi",
+  "Okul/kurstan dolayı yetişmedi",
+  "Motivasyonum düşüktü",
+  "Diğer",
+];
 
 /**
  * PATCH /api/v1/ogrenci/me/study-plan/items/:id/status
  * Öğrenci görevini işaretler: "done" (Bitti), "partial" (Yarıda Kaldı),
- * "stuck" (Zorlandım) ya da "pending"e geri alır. Günün tüm görevleri bir
- * sonuca bağlanınca otomatik Z-Raporu üretir.
+ * "stuck" (Zorlandım/Bugün Yapamadım) ya da "pending"e geri alır. Günün tüm
+ * görevleri bir sonuca bağlanınca otomatik Z-Raporu üretir.
+ * Body: { status, feeling?, note?, notCompletedReason? }
+ * - feeling: sadece status="done" iken anlamlı ("kolay"|"normal"|"zor").
+ * - notCompletedReason: sadece status="stuck" iken anlamlı, "Bugün
+ *   Yapamadım" akışından gelir.
  */
 export const setStudyPlanItemStatus = async (req, res) => {
   try {
     const studentId = req.user.id;
     const itemId = parseInt(req.params.id);
-    const { status } = req.body;
+    const { status, feeling, note, notCompletedReason } = req.body;
     if (!VALID_STATUSES.includes(status)) {
       return res.status(400).json({ success: false, message: "Geçersiz durum." });
+    }
+    if (feeling != null && !VALID_FEELINGS.includes(feeling)) {
+      return res.status(400).json({ success: false, message: "Geçersiz geri bildirim." });
+    }
+    if (notCompletedReason != null && !VALID_NOT_COMPLETED_REASONS.includes(notCompletedReason)) {
+      return res.status(400).json({ success: false, message: "Geçersiz sebep." });
     }
 
     const item = await prisma.studyPlanItem.findUnique({
@@ -189,10 +207,17 @@ export const setStudyPlanItemStatus = async (req, res) => {
       return res.status(404).json({ success: false, message: "Görev bulunamadı." });
     }
 
-    const updated = await prisma.studyPlanItem.update({
-      where: { id: itemId },
-      data: { status, statusAt: status === "pending" ? null : new Date() },
-    });
+    const data = { status, statusAt: status === "pending" ? null : new Date() };
+    if (status === "pending") {
+      data.feeling = null;
+      data.notCompletedReason = null;
+    } else {
+      if (status === "done") data.feeling = feeling ?? null;
+      if (status === "stuck") data.notCompletedReason = notCompletedReason ?? null;
+      if (note !== undefined) data.note = String(note || "").trim().slice(0, 500) || null;
+    }
+
+    const updated = await prisma.studyPlanItem.update({ where: { id: itemId }, data });
 
     await maybeGenerateDayReport(studentId, item.studyPlan.weekStart, item.dayOfWeek);
 
@@ -225,7 +250,10 @@ export const getMyToday = async (req, res) => {
     const actualStudyMinutesToday = await sumActualStudyMinutes(studentId, date);
     const streak = await computeStreak(studentId);
 
-    res.json({ success: true, date, items, report, activePomodoro, actualStudyMinutesToday, streak });
+    // Boş durum mesajını doğru seçebilmek için: koç bu hafta için bir program
+    // hazırlamış mı (o zaman bugünün boş olması bilinçli bir "dinlenme günü"
+    // olabilir) yoksa hiç program yok mu (henüz hazırlanmadı) ayrımı.
+    res.json({ success: true, date, items, report, activePomodoro, actualStudyMinutesToday, streak, hasWeekPlan: !!plan });
   } catch (err) {
     console.error("getMyToday:", err);
     res.status(500).json({ success: false, message: "Bugünün programı alınamadı." });
