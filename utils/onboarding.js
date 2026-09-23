@@ -115,3 +115,17 @@ export async function ensureOnboardingForUser(userId) {
 }
 
 export const isFormDone = (o) => STAGES.indexOf(o.stage) >= STAGES.indexOf("introduction_form_completed");
+
+// Mevcut cevaplara gelen kısmi cevapları uygular. İstemci bir alanı boş ("" ya da
+// []) gönderirse o cevap silinir (ör. sınav YKS'den LGS'ye değişince eski sınıf).
+export function mergeAnswers(existing = {}, input = {}) {
+  const patch = sanitizeAnswers(input);
+  const merged = { ...existing, ...patch };
+  for (const key of Object.keys(input || {})) {
+    if (!(key in patch) && key in merged) {
+      const v = input[key];
+      if (v === "" || v === null || (Array.isArray(v) && v.length === 0)) delete merged[key];
+    }
+  }
+  return merged;
+}

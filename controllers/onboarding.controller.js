@@ -1,6 +1,6 @@
 import prisma from "../utils/prisma.js";
 import { generateToken } from "../middleware/authMiddleware.js";
-import { ensureOnboardingForOrder, ensureOnboardingForUser, sanitizeAnswers, isFormDone } from "../utils/onboarding.js";
+import { ensureOnboardingForOrder, ensureOnboardingForUser, mergeAnswers, isFormDone } from "../utils/onboarding.js";
 
 const publicOnboarding = (o) => ({
   id: o.id,
@@ -45,9 +45,8 @@ export const saveMyOnboarding = async (req, res) => {
     const current = await ensureOnboardingForUser(req.user.id);
     if (!current) return res.status(404).json({ success: false, message: "Onboarding bulunamadı." });
 
-    const patch = sanitizeAnswers(req.body?.answers);
     const step = Math.min(4, Math.max(1, parseInt(req.body?.step) || current.currentStep));
-    const data = { answers: { ...(current.answers || {}), ...patch }, currentStep: isFormDone(current) ? current.currentStep : step };
+    const data = { answers: mergeAnswers(current.answers, req.body?.answers), currentStep: isFormDone(current) ? current.currentStep : step };
     if (current.stage === "payment_completed") {
       data.stage = "introduction_form_started";
       data.stageTimes = { ...(current.stageTimes || {}), introduction_form_started: new Date().toISOString() };
@@ -66,7 +65,7 @@ export const completeMyOnboardingForm = async (req, res) => {
     const current = await ensureOnboardingForUser(req.user.id);
     if (!current) return res.status(404).json({ success: false, message: "Onboarding bulunamadı." });
 
-    const answers = { ...(current.answers || {}), ...sanitizeAnswers(req.body?.answers) };
+    const answers = mergeAnswers(current.answers, req.body?.answers);
     // Sadece koçun ulaşabilmesi için gerçekten gerekli alanlar zorunlu; hedef vb. opsiyonel.
     const missing = ["fullName", "phone", "respondent", "exam"].filter((k) => !answers[k]);
     if (missing.length) return res.status(400).json({ success: false, message: "Zorunlu alanlar eksik.", missing });
