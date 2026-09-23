@@ -1,7 +1,7 @@
 import express from "express";
 import rateLimit from "express-rate-limit";
 import { authenticateToken, authorizeRoles } from "../../middleware/authMiddleware.js";
-import { getMyOnboarding, saveMyOnboarding, completeMyOnboardingForm, claimOnboarding } from "../../controllers/onboarding.controller.js";
+import { getMyOnboarding, saveMyOnboarding, completeMyOnboardingForm, claimOnboarding, saveProcessStep, completeProcessIntro } from "../../controllers/onboarding.controller.js";
 
 const router = express.Router();
 
@@ -17,6 +17,8 @@ const claimLimiter = rateLimit({
 router.post("/claim", claimLimiter, claimOnboarding);
 router.get("/me", authenticateToken, authorizeRoles("student"), getMyOnboarding);
 router.put("/me", authenticateToken, authorizeRoles("student"), saveMyOnboarding);
+router.put("/me/process", authenticateToken, authorizeRoles("student"), saveProcessStep);
+router.post("/me/process/complete", authenticateToken, authorizeRoles("student"), completeProcessIntro);
 router.post("/me/complete", authenticateToken, authorizeRoles("student"), completeMyOnboardingForm);
 
 export default router;

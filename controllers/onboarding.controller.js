@@ -1,6 +1,6 @@
 import prisma from "../utils/prisma.js";
 import { generateToken } from "../middleware/authMiddleware.js";
-import { ensureOnboardingForOrder, ensureOnboardingForUser, mergeAnswers, isFormDone } from "../utils/onboarding.js";
+import { ensureOnboardingForOrder, ensureOnboardingForUser, mergeAnswers, isFormDone, isProcessDone } from "../utils/onboarding.js";
 import { getOnboardingForm, saveOnboardingForm, resetOnboardingForm, validateForm, DEFAULT_FORM } from "../utils/onboardingForm.js";
 
 const publicOnboarding = (o) => ({
@@ -10,6 +10,8 @@ const publicOnboarding = (o) => ({
   answers: o.answers || {},
   packageName: o.packageName,
   formCompleted: isFormDone(o),
+  processStep: o.processStep,
+  processCompleted: isProcessDone(o),
 });
 
 async function buildPrefill(userId, onboarding) {
@@ -186,5 +188,39 @@ export const resetOnboardingFormForAdmin = async (req, res) => {
   } catch (err) {
     console.error("resetOnboardingFormForAdmin:", err);
     res.status(500).json({ success: false, message: "Sıfırlanamadı." });
+  }
+};
+
+// PUT /api/onboarding/me/process  { step }  — süreç anlatımında gelinen ekran (1–6)
+export const saveProcessStep = async (req, res) => {
+  try {
+    const current = await ensureOnboardingForUser(req.user.id);
+    if (!current || !isFormDone(current)) return res.status(404).json({ success: false, message: "Onboarding bulunamadı." });
+    const step = Math.min(6, Math.max(1, parseInt(req.body?.step) || 1));
+    const updated = await prisma.onboarding.update({ where: { id: current.id }, data: { processStep: step } });
+    res.json({ success: true, onboarding: publicOnboarding(updated) });
+  } catch (err) {
+    console.error("saveProcessStep:", err);
+    res.status(500).json({ success: false, message: "Kaydedilemedi." });
+  }
+};
+
+// POST /api/onboarding/me/process/complete
+// Sadece process_intro_completed'a ilerler; koç ataması / ilk program / onboarding_completed
+// bunun için gerekli olduğundan onboarding'in kendisi tamamlandı SAYILMAZ, ileri bir aşama geri çekilmez.
+export const completeProcessIntro = async (req, res) => {
+  try {
+    const current = await ensureOnboardingForUser(req.user.id);
+    if (!current || !isFormDone(current)) return res.status(404).json({ success: false, message: "Onboarding bulunamadı." });
+    const data = { processStep: 6 };
+    if (!isProcessDone(current)) {
+      data.stage = "process_intro_completed";
+      data.stageTimes = { ...(current.stageTimes || {}), process_intro_completed: new Date().toISOString() };
+    }
+    const updated = await prisma.onboarding.update({ where: { id: current.id }, data });
+    res.json({ success: true, onboarding: publicOnboarding(updated) });
+  } catch (err) {
+    console.error("completeProcessIntro:", err);
+    res.status(500).json({ success: false, message: "Tamamlanamadı." });
   }
 };

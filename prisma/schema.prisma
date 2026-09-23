@@ -980,6 +980,8 @@ model Onboarding {
   stage       String   @default("payment_completed")
   stageTimes  Json     @default("{}")
   currentStep Int      @default(1)
+  // "Sürecimi Gör" anlatımında en son gelinen ekran (0 = hiç başlamadı, 1–6)
+  processStep Int      @default(0)
   answers     Json     @default("{}")
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt

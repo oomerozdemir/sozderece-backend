@@ -1,0 +1,1 @@
+ALTER TABLE "Onboarding" ADD COLUMN "processStep" INTEGER NOT NULL DEFAULT 0;

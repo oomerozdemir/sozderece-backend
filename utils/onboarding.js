@@ -103,3 +103,5 @@ export function mergeAnswers(existing = {}, input = {}, form) {
   }
   return merged;
 }
+
+export const isProcessDone = (o) => STAGES.indexOf(o.stage) >= STAGES.indexOf("process_intro_completed");
