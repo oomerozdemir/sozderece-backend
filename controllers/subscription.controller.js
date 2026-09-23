@@ -50,6 +50,7 @@ export const startSubscription = async (req, res) => {
 
     const pkg = await prisma.package.findUnique({ where: { slug } });
     if (!pkg) return res.status(404).json({ error: "Paket bulunamadı." });
+    if (pkg.requiresPriceLock) return res.status(400).json({ error: "Bu paket abonelik olarak başlatılamaz." });
 
     // Paketin sekmeli süre planları (plans[]) varsa ve geçerli bir planIndex
     // gönderilmişse o planın billingCycle'ı kullanılır; aksi halde (sekmesiz,

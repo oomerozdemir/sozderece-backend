@@ -8,6 +8,7 @@ import { v4 as uuidv4 } from "uuid";
 import { cleanMerchantOid, cleanPrice, requireFields, getUserIp } from "../utils/helpers.js";
 import { getPackageConfig } from "../utils/packageCatalog.js";
 import { getAllValidUnitPrices } from "../utils/packagePricing.js";
+import { findActivePriceLock } from "../utils/priceLock.js";
 import { getClassicIframeToken } from "../utils/paytrRecurring.js";
 import { finalizeSubscriptionStart, resolveChargeSuccess, resolveChargeFailure } from "./subscription.controller.js";
 
@@ -115,6 +116,32 @@ export const prepareOrder = async (req, res) => {
         if (!item.slug) continue;
         const dbPkg = await prisma.package.findUnique({ where: { slug: item.slug } });
         if (!dbPkg) continue; // Package tablosunda yok (ör. özel ders kalemi) — kapsam dışı
+
+        // Kilitli fiyatlı (mevcut öğrenci devam) paket: sadece aktif bir
+        // PriceLock kaydı olan kişi alabilir ve tutar paketin fiyatı değil,
+        // o kişinin kilitli fiyatıdır.
+        if (dbPkg.requiresPriceLock) {
+          const lock = await findActivePriceLock({
+            email: req.user?.email || billingInfo.email,
+            phone: billingInfo.phone,
+          });
+          if (!lock) {
+            return res.status(403).json({ error: "Bu ödeme sayfası yalnızca kayıtlı mevcut öğrencilerimiz içindir." });
+          }
+          const claimed = Math.round(item.price * 100);
+          if (Math.abs(lock.unitPrice - claimed) > 1) {
+            return res.status(400).json({ error: "Fiyat bilgisi doğrulanamadı. Lütfen sayfayı yenileyip tekrar deneyin." });
+          }
+          // Tutarı istemciye bırakmıyoruz: tek kalem, miktar 1, kupon yok.
+          if (cleanedCart.length !== 1 || (item.quantity || 1) !== 1) {
+            return res.status(400).json({ error: "Geçersiz sepet." });
+          }
+          totalPrice = (lock.unitPrice / 100).toFixed(2);
+          discountRate = 0;
+          couponCode = "";
+          continue;
+        }
+
         const validPrices = getAllValidUnitPrices(dbPkg);
         const claimedKurus = Math.round(item.price * 100);
         const matches = validPrices.some((p) => Math.abs(p - claimedKurus) <= 1);

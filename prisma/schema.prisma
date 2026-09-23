@@ -504,6 +504,10 @@ model Package {
   // Program gibi tek seferlik/dijital içerik paketlerinde).
   guaranteeText    String?
   noRefund         Boolean   @default(false)
+  // true ise paket vitrinde/listelerde hiç görünmez ve sadece aktif bir
+  // PriceLock (öğrencinin kilitlediği fiyat) kaydı olan kişiler satın alabilir;
+  // tahsil edilen tutar paketin kendi fiyatı değil, PriceLock.unitPrice'tır.
+  requiresPriceLock Boolean  @default(false)
   createdAt        DateTime  @default(now())
   updatedAt        DateTime  @updatedAt
 }
@@ -939,4 +943,23 @@ model NavbarItem {
   openInNew  Boolean  @default(false)
   createdAt  DateTime @default(now())
   updatedAt  DateTime @updatedAt
+}
+
+// Öğrencinin koçluğa başladığı fiyatı koruyan "kilitli fiyat" kaydı. Liste
+// fiyatı artsa da bu kayıttaki kişi devam ödemelerinde unitPrice (kuruş)
+// üzerinden ödemeye devam eder. Kimlik eşleşmesi e-posta VEYA telefonla yapılır.
+model PriceLock {
+  id        Int      @id @default(autoincrement())
+  email     String?
+  phone     String? // normalize edilmiş: sadece rakamlar, son 10 hane
+  userId    Int?
+  unitPrice Int // kuruş
+  label     String?
+  note      String?
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([email])
+  @@index([phone])
 }

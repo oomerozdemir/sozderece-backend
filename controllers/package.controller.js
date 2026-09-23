@@ -5,7 +5,12 @@ export const getAllPackages = async (req, res) => {
   try {
     const includeHidden = req.query.all === "true";
     const packages = await prisma.package.findMany({
-      where: includeHidden ? {} : { hidden: false },
+      // Kilitli fiyatlı (devam) paketler ?all=true ile bile herkese açık listede
+      // görünmez — sadece admin listesinde.
+      where: {
+        ...(includeHidden ? {} : { hidden: false }),
+        ...(req.isAdminList ? {} : { requiresPriceLock: false }),
+      },
       orderBy: { displayOrder: "asc" },
     });
     res.json({ success: true, packages });
@@ -23,7 +28,7 @@ export const createPackage = async (req, res) => {
       subtitle, type, hidden, displayOrder, ctaLabel, ctaHref, features, note, freeLessons,
       promoPrice, promoUnitPrice, promoEndDate, promoLabel,
       examDate, examDiscountRate, plans, billingCycle, badge, videoUrl,
-      guaranteeText, noRefund,
+      guaranteeText, noRefund, requiresPriceLock,
     } = req.body;
 
     if (!slug || !name) {
@@ -60,6 +65,7 @@ export const createPackage = async (req, res) => {
         videoUrl: videoUrl || null,
         guaranteeText: guaranteeText || null,
         noRefund: noRefund === true || noRefund === "true",
+        requiresPriceLock: requiresPriceLock === true || requiresPriceLock === "true",
       },
     });
     res.status(201).json({ success: true, package: created });
@@ -78,7 +84,7 @@ export const updatePackage = async (req, res) => {
       subtitle, type, hidden, displayOrder, ctaLabel, ctaHref, features, note, freeLessons,
       promoPrice, promoUnitPrice, promoEndDate, promoLabel,
       examDate, examDiscountRate, plans, billingCycle, badge, videoUrl,
-      guaranteeText, noRefund,
+      guaranteeText, noRefund, requiresPriceLock,
     } = req.body;
 
     const updated = await prisma.package.update({
@@ -112,6 +118,7 @@ export const updatePackage = async (req, res) => {
         ...(videoUrl !== undefined && { videoUrl: videoUrl || null }),
         ...(guaranteeText !== undefined && { guaranteeText: guaranteeText || null }),
         ...(noRefund !== undefined && { noRefund: noRefund === true || noRefund === "true" }),
+        ...(requiresPriceLock !== undefined && { requiresPriceLock: requiresPriceLock === true || requiresPriceLock === "true" }),
       },
     });
     res.json({ success: true, package: updated });

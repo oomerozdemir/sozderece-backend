@@ -21,6 +21,9 @@ export const addToCart = async (req, res) => {
     // Fiyatı DB'deki güncel paketten al — öncelik: plan > sınav > statik promo > normal
     let priceInt = Number(unitPrice);
     const dbPkg = await prisma.package.findUnique({ where: { slug } });
+    if (dbPkg?.requiresPriceLock) {
+      return res.status(400).json({ success: false, message: "Bu paket sepete eklenemez." });
+    }
     if (dbPkg) {
       const computed = computeUnitPriceForPackage(dbPkg, planIndex);
       if (computed != null) priceInt = computed;
