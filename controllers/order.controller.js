@@ -9,6 +9,7 @@ import { cleanMerchantOid, cleanPrice, requireFields, getUserIp } from "../utils
 import { getPackageConfig } from "../utils/packageCatalog.js";
 import { getAllValidUnitPrices } from "../utils/packagePricing.js";
 import { findActivePriceLock } from "../utils/priceLock.js";
+import { ensureOnboardingForOrder } from "../utils/onboarding.js";
 import { getClassicIframeToken } from "../utils/paytrRecurring.js";
 import { finalizeSubscriptionStart, resolveChargeSuccess, resolveChargeFailure } from "./subscription.controller.js";
 
@@ -433,6 +434,13 @@ export const handlePaytrCallback = async (req, res) => {
         where: { id: order.id },
         data: { status: "paid" },
       });
+
+      // Onboarding kaydı (satın alma sonrası tanışma süreci) — hata ödemeyi asla etkilemez.
+      try {
+        await ensureOnboardingForOrder(order.id);
+      } catch (e) {
+        console.warn("Onboarding kaydı oluşturulamadı:", e?.message);
+      }
 
       // 4) Talebi bağla ve PAID yap (öncelik: paymentMeta.requestId)
       try {

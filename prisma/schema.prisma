@@ -290,6 +290,7 @@ model User {
   verificationCodes   VerificationCode[]
   subscriptions       Subscription[]
   visitors            Visitor[]
+  onboardings         Onboarding[]
 }
 
 // Anonim ziyaretçi kimliği — sd_visitor_id olarak client'ta (localStorage)
@@ -408,6 +409,7 @@ model Order {
   visitorSession   VisitorSession?        @relation(fields: [visitorSessionId], references: [id], onDelete: SetNull)
   orderItems       OrderItem[]
   studentRequests  StudentLessonRequest[] @relation("OrderStudentRequest")
+  onboarding       Onboarding?
 }
 
 // Aylık otomatik ödeme (abonelik). PayTR'nin Direct API / Kart Saklama
@@ -962,4 +964,28 @@ model PriceLock {
 
   @@index([email])
   @@index([phone])
+}
+
+// Satın alma sonrası onboarding. Sipariş başına bir kayıt. stage sırası:
+// payment_completed → introduction_form_started → introduction_form_completed
+// → process_intro_completed → coach_assigned → first_program_created →
+// onboarding_completed. stageTimes her aşamaya ilk geçiş zamanını (ISO) tutar.
+// answers, tanışma formunun (utils/onboarding.js#sanitizeAnswers) doğrulanmış cevapları.
+model Onboarding {
+  id          Int      @id @default(autoincrement())
+  userId      Int
+  orderId     Int      @unique
+  packageSlug String?
+  packageName String?
+  stage       String   @default("payment_completed")
+  stageTimes  Json     @default("{}")
+  currentStep Int      @default(1)
+  answers     Json     @default("{}")
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  user        User     @relation(fields: [userId], references: [id])
+  order       Order    @relation(fields: [orderId], references: [id])
+
+  @@index([userId])
+  @@index([stage])
 }
