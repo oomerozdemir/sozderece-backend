@@ -1,6 +1,7 @@
 import prisma from "../utils/prisma.js";
 import { generateToken } from "../middleware/authMiddleware.js";
 import { ensureOnboardingForOrder, ensureOnboardingForUser, mergeAnswers, isFormDone } from "../utils/onboarding.js";
+import { getOnboardingForm, saveOnboardingForm, resetOnboardingForm, validateForm, DEFAULT_FORM } from "../utils/onboardingForm.js";
 
 const publicOnboarding = (o) => ({
   id: o.id,
@@ -32,7 +33,7 @@ export const getMyOnboarding = async (req, res) => {
   try {
     const onboarding = await ensureOnboardingForUser(req.user.id);
     if (!onboarding) return res.json({ success: true, onboarding: null });
-    res.json({ success: true, onboarding: publicOnboarding(onboarding), prefill: await buildPrefill(req.user.id, onboarding) });
+    res.json({ success: true, onboarding: publicOnboarding(onboarding), prefill: await buildPrefill(req.user.id, onboarding), form: await getOnboardingForm() });
   } catch (err) {
     console.error("getMyOnboarding:", err);
     res.status(500).json({ success: false, message: "Onboarding alınamadı." });
@@ -45,8 +46,9 @@ export const saveMyOnboarding = async (req, res) => {
     const current = await ensureOnboardingForUser(req.user.id);
     if (!current) return res.status(404).json({ success: false, message: "Onboarding bulunamadı." });
 
-    const step = Math.min(4, Math.max(1, parseInt(req.body?.step) || current.currentStep));
-    const data = { answers: mergeAnswers(current.answers, req.body?.answers), currentStep: isFormDone(current) ? current.currentStep : step };
+    const form = await getOnboardingForm();
+    const step = Math.min(form.steps.length, Math.max(1, parseInt(req.body?.step) || current.currentStep));
+    const data = { answers: mergeAnswers(current.answers, req.body?.answers, form), currentStep: isFormDone(current) ? current.currentStep : step };
     if (current.stage === "payment_completed") {
       data.stage = "introduction_form_started";
       data.stageTimes = { ...(current.stageTimes || {}), introduction_form_started: new Date().toISOString() };
@@ -65,12 +67,17 @@ export const completeMyOnboardingForm = async (req, res) => {
     const current = await ensureOnboardingForUser(req.user.id);
     if (!current) return res.status(404).json({ success: false, message: "Onboarding bulunamadı." });
 
-    const answers = mergeAnswers(current.answers, req.body?.answers);
-    // Sadece koçun ulaşabilmesi için gerçekten gerekli alanlar zorunlu; hedef vb. opsiyonel.
-    const missing = ["fullName", "phone", "respondent", "exam"].filter((k) => !answers[k]);
+    const form = await getOnboardingForm();
+    const answers = mergeAnswers(current.answers, req.body?.answers, form);
+    // Zorunlu (ve bu öğrenciye görünen — sınav filtresine uyan) sorular dolu olmalı.
+    const filled = (q) => (Array.isArray(answers[q.key]) ? answers[q.key].length > 0 : !!answers[q.key]);
+    const missing = form.steps
+      .flatMap((st) => st.questions)
+      .filter((q) => q.required && (!q.exam || q.exam === answers.exam) && !filled(q))
+      .map((q) => q.key);
     if (missing.length) return res.status(400).json({ success: false, message: "Zorunlu alanlar eksik.", missing });
 
-    const data = { answers, currentStep: 4 };
+    const data = { answers, currentStep: form.steps.length };
     if (!isFormDone(current)) {
       data.stage = "introduction_form_completed";
       data.stageTimes = { ...(current.stageTimes || {}), introduction_form_completed: new Date().toISOString() };
@@ -141,9 +148,43 @@ export const listOnboardingsForAdmin = async (req, res) => {
         order: { select: { id: true, createdAt: true, totalPrice: true } },
       },
     });
-    res.json({ success: true, onboardings: rows });
+    res.json({ success: true, onboardings: rows, form: await getOnboardingForm() });
   } catch (err) {
     console.error("listOnboardingsForAdmin:", err);
     res.status(500).json({ success: false, message: "Liste alınamadı." });
+  }
+};
+
+// GET /api/admin/onboarding-form
+export const getOnboardingFormForAdmin = async (req, res) => {
+  try {
+    res.json({ success: true, form: await getOnboardingForm(), defaultForm: DEFAULT_FORM });
+  } catch (err) {
+    console.error("getOnboardingFormForAdmin:", err);
+    res.status(500).json({ success: false, message: "Form alınamadı." });
+  }
+};
+
+// PUT /api/admin/onboarding-form  { form }
+export const updateOnboardingForm = async (req, res) => {
+  try {
+    const checked = validateForm(req.body?.form);
+    if (checked.error) return res.status(400).json({ success: false, message: checked.error });
+    await saveOnboardingForm(checked.form);
+    res.json({ success: true, form: checked.form });
+  } catch (err) {
+    console.error("updateOnboardingForm:", err);
+    res.status(500).json({ success: false, message: "Form kaydedilemedi." });
+  }
+};
+
+// DELETE /api/admin/onboarding-form — varsayılan forma dön
+export const resetOnboardingFormForAdmin = async (req, res) => {
+  try {
+    await resetOnboardingForm();
+    res.json({ success: true, form: DEFAULT_FORM });
+  } catch (err) {
+    console.error("resetOnboardingFormForAdmin:", err);
+    res.status(500).json({ success: false, message: "Sıfırlanamadı." });
   }
 };

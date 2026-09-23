@@ -10,7 +10,7 @@ import { sendExpiringOrderReminders } from "../../controllers/reminder.controlle
 import { createCoachWithUser, getAllCoaches, updateCoach, deleteCoach, assignCoachToUser } from "../../controllers/adminCoach.controller.js";
 import { listTeacherPublishRequests, approveTeacherPublish, rejectTeacherPublish, getTeacherRequestSummary } from "../../controllers/AdminTeacher.controller.js";
 import { updateCountdown, updatePopup, updatePaymentPageSettings, updatePricingVideo } from "../../controllers/siteSettings.controller.js";
-import { listOnboardingsForAdmin } from "../../controllers/onboarding.controller.js";
+import { listOnboardingsForAdmin, getOnboardingFormForAdmin, updateOnboardingForm, resetOnboardingFormForAdmin } from "../../controllers/onboarding.controller.js";
 import { listPriceLocks, createPriceLock, updatePriceLock, deletePriceLock } from "../../controllers/priceLock.controller.js";
 import { getAllPackages, createPackage, updatePackage, togglePackageVisibility, deletePackage } from "../../controllers/package.controller.js";
 import { getAdminConsultationSlots, toggleConsultationSlot, bulkUpdateConsultationSlots } from "../../controllers/consultationSlot.controller.js";
@@ -200,6 +200,9 @@ router.patch("/packages/:id/toggle-visibility", authenticateToken, authorizeRole
 router.delete("/packages/:id", authenticateToken, authorizeRoles("admin"), deletePackage);
 
 router.get("/onboardings", authenticateToken, authorizeRoles("admin"), listOnboardingsForAdmin);
+router.get("/onboarding-form", authenticateToken, authorizeRoles("admin"), getOnboardingFormForAdmin);
+router.put("/onboarding-form", authenticateToken, authorizeRoles("admin"), updateOnboardingForm);
+router.delete("/onboarding-form", authenticateToken, authorizeRoles("admin"), resetOnboardingFormForAdmin);
 
 // Kilitli fiyat (mevcut öğrenci devam fiyatı) yönetimi
 router.get("/price-locks", authenticateToken, authorizeRoles("admin"), listPriceLocks);

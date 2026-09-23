@@ -1,4 +1,5 @@
 import prisma from "./prisma.js";
+import { questionIndex } from "./onboardingForm.js";
 
 // Bu tarihten ÖNCE oluşmuş siparişler onboarding'e alınmaz (mevcut öğrenciler
 // birden "tanışma formu doldur" diye karşılanmasın).
@@ -14,58 +15,31 @@ export const STAGES = [
   "onboarding_completed",
 ];
 
-const oneOf = (v, list) => (list.includes(v) ? v : undefined);
 const str = (v, max) => (typeof v === "string" && v.trim() ? v.trim().slice(0, max) : undefined);
-const multi = (v, list) => (Array.isArray(v) ? list.filter((x) => v.includes(x)) : undefined);
 
-export const CHALLENGES = [
-  "Nereden başlayacağımı bilmiyorum",
-  "Program yapıyorum ama sürdüremiyorum",
-  "Günümü planlamakta zorlanıyorum",
-  "Düzenli çalışamıyorum",
-  "Eksiklerimi nasıl kapatacağımı bilmiyorum",
-  "Zorlandığım dersleri erteliyorum",
-  "Deneme sonuçlarımı nasıl değerlendireceğimi bilmiyorum",
-  "Çalışıyorum ama doğru ilerlediğimden emin değilim",
-  "Diğer",
-];
-export const ROUTINES = ["Düzenli çalışıyorum", "Bazen düzenli çalışıyorum", "Oldukça dağınık ilerliyorum", "Henüz bir çalışma düzenim yok"];
-export const DAILY_HOURS = ["Henüz düzenli çalışmıyorum", "1 saatten az", "1–2 saat", "2–4 saat", "4 saat+"];
-export const SUPPORTS = [
-  "Bana uygun çalışma programı",
-  "Düzenli takip",
-  "Zaman yönetimi",
-  "Deneme analizi",
-  "Eksiklerimi belirleme",
-  "Çalışma düzeni oluşturma",
-  "Zorlandığım dersleri yönetme",
-  "Süreç boyunca yönlendirilme",
-];
-export const YKS_GRADES = ["12. sınıf", "Mezun", "Diğer"];
-export const LGS_GRADES = ["5. sınıf", "6. sınıf", "7. sınıf", "8. sınıf"];
-export const FIELDS = ["Sayısal", "Eşit Ağırlık", "Sözel", "Dil"];
-
-// Sadece bilinen alanlar ve geçerli değerler kabul edilir; gerisi atılır.
-export function sanitizeAnswers(input = {}) {
+// Cevaplar, admin panelinden düzenlenebilen form tanımına (getOnboardingForm)
+// göre doğrulanır: sadece tanımlı anahtarlar, tek/çoklu seçimde sadece tanımlı
+// seçenekler, metinde uzunluk sınırı. Bilinmeyen her şey atılır.
+export function sanitizeAnswers(input = {}, form) {
   const a = input || {};
-  const out = {
-    fullName: str(a.fullName, 120),
-    phone: str(a.phone, 30),
-    respondent: oneOf(a.respondent, ["ogrenci", "veli"]),
-    exam: oneOf(a.exam, ["YKS", "LGS"]),
-    grade: oneOf(a.grade, [...YKS_GRADES, ...LGS_GRADES]),
-    field: oneOf(a.field, FIELDS),
-    targetSchool: str(a.targetSchool, 300),
-    targetRank: str(a.targetRank, 100),
-    challenges: multi(a.challenges, CHALLENGES),
-    challengesOther: str(a.challengesOther, 300),
-    routine: oneOf(a.routine, ROUTINES),
-    dailyHours: oneOf(a.dailyHours, DAILY_HOURS),
-    lastExam: str(a.lastExam, 200),
-    supports: multi(a.supports, SUPPORTS),
-    note: str(a.note, 1500),
-  };
-  return Object.fromEntries(Object.entries(out).filter(([, v]) => v !== undefined));
+  const out = {};
+  for (const q of questionIndex(form).values()) {
+    const v = a[q.key];
+    if (q.type === "single") {
+      if (typeof v === "string" && q.options.has(v)) out[q.key] = v;
+    } else if (q.type === "multi") {
+      if (Array.isArray(v)) {
+        const picked = [...q.options].filter((o) => v.includes(o));
+        if (picked.length) out[q.key] = picked;
+      }
+      const other = str(a[`${q.key}Other`], 300);
+      if (other) out[`${q.key}Other`] = other;
+    } else {
+      const t = str(v, q.type === "textarea" ? 1500 : q.type === "tel" ? 30 : 200);
+      if (t) out[q.key] = t;
+    }
+  }
+  return out;
 }
 
 // Bir sipariş için onboarding kaydı oluşturur (yoksa). Sadece: ödenmiş sipariş,
@@ -118,8 +92,8 @@ export const isFormDone = (o) => STAGES.indexOf(o.stage) >= STAGES.indexOf("intr
 
 // Mevcut cevaplara gelen kısmi cevapları uygular. İstemci bir alanı boş ("" ya da
 // []) gönderirse o cevap silinir (ör. sınav YKS'den LGS'ye değişince eski sınıf).
-export function mergeAnswers(existing = {}, input = {}) {
-  const patch = sanitizeAnswers(input);
+export function mergeAnswers(existing = {}, input = {}, form) {
+  const patch = sanitizeAnswers(input, form);
   const merged = { ...existing, ...patch };
   for (const key of Object.keys(input || {})) {
     if (!(key in patch) && key in merged) {
