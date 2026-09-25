@@ -99,6 +99,36 @@ model StudyPlanItem {
   pomodoroSessions PomodoroSession[]
 }
 
+// Koçun yüklediği bir görsel/PDF'in AI (Claude vision) ile haftalık programa
+// okunması denemesini loglar — hem başarılı hem başarısız her deneme için.
+// Asıl amacı maliyet/operasyon takibi; öğrenci program verisinin kalıcı
+// ikinci bir deposu DEĞİL — resultJson yalnızca kısa ömürlü bir idempotency
+// cache'i (bkz. cron/pruneAiUsageResultCache.js, 24 saat sonra null'lanır).
+model AiUsageLog {
+  id           Int      @id @default(autoincrement())
+  feature      String   @default("study_plan_image")
+  studentId    Int?     // StudyPlan.createdById gibi gevşek referans, FK yok
+  coachId      Int?
+  model        String
+  status       String   // "success" | "error" — Anthropic API çağrısının kendisi başarılı mıydı
+  reviewStatus String?  // "ready" | "needs_review" — yalnızca status="success" iken anlamlı
+  errorCode    String?  // "timeout" | "rate_limit" | "invalid_input" | "api_error" | "config_error"
+  inputTokens  Int?
+  outputTokens Int?
+  cacheCreationInputTokens Int?
+  cacheReadInputTokens     Int?
+  estimatedCostUsd Float?
+  fileHash     String?
+  fileMimeType String?
+  rowsExtracted Int?
+  resultJson   Json?
+  createdAt    DateTime @default(now())
+
+  @@index([studentId, feature, fileHash])
+  @@index([createdAt])
+  @@index([coachId])
+}
+
 // Bir öğrencinin bir gününün otomatik özeti ("Z-Raporu") — o günün tüm
 // görevleri bir sonuca bağlandığında (pending kalmadığında) otomatik
 // oluşur. Veliye otomatik gönderim YOK (henüz veli iletişim bilgisi

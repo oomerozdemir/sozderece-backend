@@ -18,6 +18,7 @@ import { getAllNavbarItems, createNavbarItem, updateNavbarItem, deleteNavbarItem
 import { getAllSubscriptionsForAdmin, adminCancelSubscription } from "../../controllers/subscription.controller.js";
 import { getAbandonedCartsForAdmin, deleteAbandonedCart } from "../../controllers/cart.controller.js";
 import { getPageViewStats, getConsentStats } from "../../controllers/tracking.controller.js";
+import { getAiUsageSummary } from "../../controllers/adminAiUsage.controller.js";
 import {
   getAllResources, createResource, updateResource, deleteResource,
   getAllAnnouncements, createAnnouncement, updateAnnouncement, deleteAnnouncement,
@@ -238,6 +239,7 @@ router.delete("/topics/:id", authenticateToken, authorizeRoles("admin"), deleteT
 
 router.get("/pageviews", authenticateToken, authorizeRoles("admin"), getPageViewStats);
 router.get("/consent-stats", authenticateToken, authorizeRoles("admin"), getConsentStats);
+router.get("/ai-usage/summary", authenticateToken, authorizeRoles("admin"), getAiUsageSummary);
 
 // Görsel yükleme (Cloudinary → WebP)
 import uploadRoutes from "./upload.routes.js";

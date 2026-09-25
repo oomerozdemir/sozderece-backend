@@ -10,6 +10,7 @@ import "./cron/abondonedCart.js";
 // güne çıkarmıştı. Cron'u da durdurduk ki hiçbir zamanlanmış çekim tetiklenmesin.
 // import "./cron/subscriptionBilling.js";
 import "./cron/pruneVisitorSessions.js";
+import "./cron/pruneAiUsageResultCache.js";
 
 dotenv.config();
 const app = express();
