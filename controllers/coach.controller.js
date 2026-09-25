@@ -306,6 +306,16 @@ function mapAnthropicError(err) {
     return { status: 503, code: "config_error", message: "Görsel okuma özelliği şu anda kullanılamıyor." };
   }
   if (err instanceof Anthropic.BadRequestError) {
+    // Bu spesifik 400, dosyayla ilgili değil — API anahtarı bir workspace'e
+    // bağlı değilken anthropic-workspace-id header'ı eksikse Anthropic bunu
+    // BadRequestError olarak döndürüyor (AuthenticationError değil). Yanlış
+    // sınıflandırılırsa koç "dosya bozuk" sanır, asıl sorun ortam değişkeni
+    // yapılandırmasıdır — bu yüzden ayrıca yakalanıp config_error'a çevrilir.
+    const isWorkspaceConfigError = /workspace/i.test(err.error?.error?.message || err.message || "");
+    if (isWorkspaceConfigError) {
+      console.error("ANTHROPIC_WORKSPACE_ID eksik/yanlış yapılandırılmış olabilir.");
+      return { status: 503, code: "config_error", message: "Görsel okuma özelliği şu anda kullanılamıyor." };
+    }
     return { status: 422, code: "invalid_input", message: "Yüklenen dosya okunamadı, farklı bir görsel ya da PDF deneyin." };
   }
   if (err instanceof Anthropic.APIConnectionError) {
