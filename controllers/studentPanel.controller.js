@@ -1,4 +1,9 @@
 import prisma from "../utils/prisma.js";
+import { EXAM_TYPES, computeExamAggregates, validateExamResultPayload } from "../utils/examCalculations.js";
+
+// Bir LIVE denemenin "bitmemiş" sayıldığı durumlar — üçü de aynı derecede
+// "devam eden deneme" kabul edilir (yalnızca IN_PROGRESS değil).
+const ACTIVE_LIVE_STATUSES = ["IN_PROGRESS", "RESULT_PENDING", "ANALYSIS_PENDING"];
 
 // LGS/YKS ayrımı ayrı bir alan olarak tutulmuyor — grade bandından türetiliyor.
 // 5-8. sınıf LGS, geri kalanı (9-12/Mezun/Üniversite/boş) YKS kabul edilir.
@@ -363,6 +368,299 @@ export const getMyExamResults = async (req, res) => {
   } catch (err) {
     console.error("getMyExamResults:", err);
     res.status(500).json({ success: false, message: "Deneme sonuçları alınamadı." });
+  }
+};
+
+/**
+ * GET /api/v1/ogrenci/me/exam-results/active
+ * Devam eden (bitmemiş) bir LIVE deneme var mı — varsa döner. Üç durum da
+ * (IN_PROGRESS/RESULT_PENDING/ANALYSIS_PENDING) "bitmemiş" sayılır; frontend
+ * dönen `status`'e göre timer/sonuç-formu/analiz adımından hangisine
+ * devam edeceğine karar verir.
+ */
+export const getMyActiveExam = async (req, res) => {
+  try {
+    const exam = await prisma.examResult.findFirst({
+      where: { studentId: req.user.id, entryMode: "LIVE", status: { in: ACTIVE_LIVE_STATUSES } },
+    });
+    res.json({ success: true, exam: exam || null });
+  } catch (err) {
+    console.error("getMyActiveExam:", err);
+    res.status(500).json({ success: false, message: "Aktif deneme kontrol edilemedi." });
+  }
+};
+
+/**
+ * POST /api/v1/ogrenci/me/exam-results/live/start
+ * Body: { examName, examType, branch?, totalQuestions?, targetNet?, targetDurationMinutes?, focusAreas? }
+ * Aynı öğrencinin aynı anda birden fazla aktif LIVE denemesi olamaz — DB'de
+ * kısmi unique index bunu garanti ediyor (bkz. migration). Önce iyimser bir
+ * findFirst ile hızlı yol denenir; iki eşzamanlı istek yarışırsa create'in
+ * ihlal ettiği kısıt Prisma P2002 hatası olarak geri döner, bu durumda aktif
+ * deneme yeniden sorgulanıp idempotent olarak döndürülür — asla iki satır
+ * oluşmaz.
+ */
+export const startLiveExam = async (req, res) => {
+  try {
+    const studentId = req.user.id;
+    const existing = await prisma.examResult.findFirst({
+      where: { studentId, entryMode: "LIVE", status: { in: ACTIVE_LIVE_STATUSES } },
+    });
+    if (existing) return res.json({ success: true, exam: existing });
+
+    const { examName, examType, branch, totalQuestions, targetNet, targetDurationMinutes, focusAreas } = req.body || {};
+    if (!examName || !String(examName).trim()) {
+      return res.status(400).json({ success: false, message: "Deneme adı zorunlu." });
+    }
+    if (!EXAM_TYPES.includes(examType)) {
+      return res.status(400).json({ success: false, message: "Geçersiz deneme türü." });
+    }
+    if (examType === "BRANS" && (!branch || !String(branch).trim())) {
+      return res.status(400).json({ success: false, message: "Branş denemesi için ders seçilmeli." });
+    }
+
+    try {
+      const now = new Date();
+      const exam = await prisma.examResult.create({
+        data: {
+          studentId,
+          examName: String(examName).trim().slice(0, 200),
+          examType,
+          examDate: now,
+          branch: branch ? String(branch).trim().slice(0, 100) : null,
+          totalQuestions: totalQuestions != null ? parseInt(totalQuestions) : null,
+          targetNet: targetNet != null && targetNet !== "" ? parseFloat(targetNet) : null,
+          targetDurationMinutes: targetDurationMinutes != null && targetDurationMinutes !== "" ? parseInt(targetDurationMinutes) : null,
+          focusAreas: Array.isArray(focusAreas) ? focusAreas : undefined,
+          subjectNets: [],
+          entryMode: "LIVE",
+          status: "IN_PROGRESS",
+          // startedAt sunucuda üretilen `now`dan set edilir — MANUAL satırlar
+          // startedAt=null kalmalı diye şemada @default(now()) YOK (varsayılan
+          // her satıra uygulanırdı); client'tan asla kabul edilmez, PomodoroSession
+          // ile aynı güven seviyesi, yalnızca DB-default yerine app-level.
+          startedAt: now,
+        },
+      });
+      return res.status(201).json({ success: true, exam });
+    } catch (createErr) {
+      if (createErr?.code === "P2002") {
+        // Yarış durumu: eşzamanlı bir istek araya girdi. Kısmi unique index
+        // ihlali — aktif denemeyi yeniden sorgulayıp idempotent dön.
+        const raced = await prisma.examResult.findFirst({
+          where: { studentId, entryMode: "LIVE", status: { in: ACTIVE_LIVE_STATUSES } },
+        });
+        if (raced) return res.json({ success: true, exam: raced });
+      }
+      throw createErr;
+    }
+  } catch (err) {
+    console.error("startLiveExam:", err);
+    res.status(500).json({ success: false, message: "Deneme başlatılamadı." });
+  }
+};
+
+/**
+ * PATCH /api/v1/ogrenci/me/exam-results/:id/finish
+ * Gerçek süre sunucuda (startedAt->şimdi) hesaplanır; istemcinin gönderdiği
+ * süreye güvenilmez (Pomodoro'daki stopPomodoro ile aynı desen).
+ */
+export const finishLiveExam = async (req, res) => {
+  try {
+    const studentId = req.user.id;
+    const id = parseInt(req.params.id);
+    const exam = await prisma.examResult.findUnique({ where: { id } });
+    if (!exam || exam.studentId !== studentId) {
+      return res.status(404).json({ success: false, message: "Deneme bulunamadı." });
+    }
+    if (exam.entryMode !== "LIVE") {
+      return res.status(400).json({ success: false, message: "Bu deneme canlı zamanlayıcı ile başlatılmamış." });
+    }
+    if (exam.status !== "IN_PROGRESS") {
+      return res.json({ success: true, exam }); // zaten bitmiş, idempotent
+    }
+
+    const now = new Date();
+    const durationSeconds = Math.max(0, Math.round((now - exam.startedAt) / 1000));
+    const updated = await prisma.examResult.update({
+      where: { id },
+      data: { finishedAt: now, durationSeconds, status: "RESULT_PENDING" },
+    });
+    res.json({ success: true, exam: updated });
+  } catch (err) {
+    console.error("finishLiveExam:", err);
+    res.status(500).json({ success: false, message: "Deneme bitirilemedi." });
+  }
+};
+
+/**
+ * PATCH /api/v1/ogrenci/me/exam-results/:id/results
+ * Body: { subjectNets: [{subject, questionCount?, correct, wrong, blank}] }
+ * Netler her zaman sunucuda yeniden hesaplanır (utils/examCalculations.js) —
+ * client'ın gönderdiği net değerine güvenilmez.
+ */
+export const submitExamResults = async (req, res) => {
+  try {
+    const studentId = req.user.id;
+    const id = parseInt(req.params.id);
+    const exam = await prisma.examResult.findUnique({ where: { id } });
+    if (!exam || exam.studentId !== studentId) {
+      return res.status(404).json({ success: false, message: "Deneme bulunamadı." });
+    }
+
+    if (exam.status === "IN_PROGRESS") {
+      return res.status(400).json({ success: false, message: "Önce denemeyi bitirmelisin." });
+    }
+
+    const { subjectNets } = req.body || {};
+    const validation = validateExamResultPayload(subjectNets, exam.totalQuestions);
+    if (!validation.valid) {
+      return res.status(400).json({ success: false, message: validation.message });
+    }
+
+    const user = await prisma.user.findUnique({ where: { id: studentId }, select: { grade: true } });
+    const studentTrack = effectiveTrackFromGrade(user?.grade);
+    const aggregates = computeExamAggregates(subjectNets, exam.examType, studentTrack);
+
+    const nextStatus = exam.status === "ANALYSIS_PENDING" || exam.status === "COMPLETED" ? exam.status : "ANALYSIS_PENDING";
+    const updated = await prisma.examResult.update({
+      where: { id },
+      data: {
+        subjectNets: aggregates.subjectNets,
+        totalCorrect: aggregates.totalCorrect,
+        totalWrong: aggregates.totalWrong,
+        totalBlank: aggregates.totalBlank,
+        totalNet: aggregates.totalNet,
+        status: nextStatus,
+      },
+    });
+    res.json({ success: true, exam: updated });
+  } catch (err) {
+    console.error("submitExamResults:", err);
+    res.status(500).json({ success: false, message: "Sonuçlar kaydedilemedi." });
+  }
+};
+
+/**
+ * PATCH /api/v1/ogrenci/me/exam-results/:id/analysis
+ * Body: { difficultyReasons?, didWell?, nextImprovement?, studentNote? }
+ */
+export const submitExamSelfAnalysis = async (req, res) => {
+  try {
+    const studentId = req.user.id;
+    const id = parseInt(req.params.id);
+    const exam = await prisma.examResult.findUnique({ where: { id } });
+    if (!exam || exam.studentId !== studentId) {
+      return res.status(404).json({ success: false, message: "Deneme bulunamadı." });
+    }
+    if (exam.status === "COMPLETED") {
+      return res.json({ success: true, exam }); // zaten tamamlanmış, idempotent
+    }
+    if (exam.status !== "ANALYSIS_PENDING") {
+      return res.status(400).json({ success: false, message: "Önce deneme sonuçlarını girmelisin." });
+    }
+
+    const { difficultyReasons, didWell, nextImprovement, studentNote } = req.body || {};
+    const updated = await prisma.examResult.update({
+      where: { id },
+      data: {
+        difficultyReasons: Array.isArray(difficultyReasons) ? difficultyReasons : undefined,
+        didWell: didWell != null ? String(didWell).trim().slice(0, 1000) || null : undefined,
+        nextImprovement: nextImprovement != null ? String(nextImprovement).trim().slice(0, 1000) || null : undefined,
+        studentNote: studentNote != null ? String(studentNote).trim().slice(0, 1000) || null : undefined,
+        status: "COMPLETED",
+      },
+    });
+    res.json({ success: true, exam: updated });
+  } catch (err) {
+    console.error("submitExamSelfAnalysis:", err);
+    res.status(500).json({ success: false, message: "Analiz kaydedilemedi." });
+  }
+};
+
+/**
+ * POST /api/v1/ogrenci/me/exam-results/manual
+ * Timer kullanılmadan geçmiş bir denemenin tek seferde eklenmesi. Sonuçlar
+ * zorunlu (subjectNets); hedef/süre/öz-analiz opsiyonel. Öz analiz aynı
+ * istekte verildiyse status doğrudan COMPLETED, verilmediyse ANALYSIS_PENDING.
+ */
+export const createManualExamResult = async (req, res) => {
+  try {
+    const studentId = req.user.id;
+    const {
+      examName, examType, branch, examDate, totalQuestions,
+      subjectNets, durationMinutes, targetNet, targetDurationMinutes, focusAreas,
+      difficultyReasons, didWell, nextImprovement, studentNote,
+    } = req.body || {};
+
+    if (!examName || !String(examName).trim()) {
+      return res.status(400).json({ success: false, message: "Deneme adı zorunlu." });
+    }
+    if (!EXAM_TYPES.includes(examType)) {
+      return res.status(400).json({ success: false, message: "Geçersiz deneme türü." });
+    }
+    if (examType === "BRANS" && (!branch || !String(branch).trim())) {
+      return res.status(400).json({ success: false, message: "Branş denemesi için ders seçilmeli." });
+    }
+    const validation = validateExamResultPayload(subjectNets, totalQuestions != null ? parseInt(totalQuestions) : null);
+    if (!validation.valid) {
+      return res.status(400).json({ success: false, message: validation.message });
+    }
+
+    const user = await prisma.user.findUnique({ where: { id: studentId }, select: { grade: true } });
+    const studentTrack = effectiveTrackFromGrade(user?.grade);
+    const aggregates = computeExamAggregates(subjectNets, examType, studentTrack);
+
+    const hasAnalysis = !!(didWell || nextImprovement || studentNote || (Array.isArray(difficultyReasons) && difficultyReasons.length));
+
+    const exam = await prisma.examResult.create({
+      data: {
+        studentId,
+        examName: String(examName).trim().slice(0, 200),
+        examType,
+        examDate: examDate ? new Date(examDate) : new Date(),
+        branch: branch ? String(branch).trim().slice(0, 100) : null,
+        totalQuestions: totalQuestions != null ? parseInt(totalQuestions) : null,
+        entryMode: "MANUAL",
+        durationSeconds: durationMinutes != null && durationMinutes !== "" ? Math.round(parseFloat(durationMinutes) * 60) : null,
+        targetNet: targetNet != null && targetNet !== "" ? parseFloat(targetNet) : null,
+        targetDurationMinutes: targetDurationMinutes != null && targetDurationMinutes !== "" ? parseInt(targetDurationMinutes) : null,
+        focusAreas: Array.isArray(focusAreas) ? focusAreas : undefined,
+        subjectNets: aggregates.subjectNets,
+        totalCorrect: aggregates.totalCorrect,
+        totalWrong: aggregates.totalWrong,
+        totalBlank: aggregates.totalBlank,
+        totalNet: aggregates.totalNet,
+        difficultyReasons: Array.isArray(difficultyReasons) ? difficultyReasons : undefined,
+        didWell: didWell ? String(didWell).trim().slice(0, 1000) : null,
+        nextImprovement: nextImprovement ? String(nextImprovement).trim().slice(0, 1000) : null,
+        studentNote: studentNote ? String(studentNote).trim().slice(0, 1000) : null,
+        status: hasAnalysis ? "COMPLETED" : "ANALYSIS_PENDING",
+      },
+    });
+    res.status(201).json({ success: true, exam });
+  } catch (err) {
+    console.error("createManualExamResult:", err);
+    res.status(500).json({ success: false, message: "Deneme eklenemedi." });
+  }
+};
+
+/**
+ * GET /api/v1/ogrenci/me/exam-results/:id
+ * Tek deneme detayı — yalnızca kendi kaydıysa döner.
+ */
+export const getMyExamResultDetail = async (req, res) => {
+  try {
+    const studentId = req.user.id;
+    const id = parseInt(req.params.id);
+    const exam = await prisma.examResult.findUnique({ where: { id } });
+    if (!exam || exam.studentId !== studentId) {
+      return res.status(404).json({ success: false, message: "Deneme bulunamadı." });
+    }
+    res.json({ success: true, exam });
+  } catch (err) {
+    console.error("getMyExamResultDetail:", err);
+    res.status(500).json({ success: false, message: "Deneme alınamadı." });
   }
 };
 

@@ -236,17 +236,56 @@ model ExamResult {
   student     User     @relation("StudentExamResults", fields: [studentId], references: [id])
   examDate    DateTime
   examName    String // "3D Yayınları TYT Deneme 4"
-  examType    String // "TYT" | "AYT" | "LGS"
-  subjectNets Json // [{subject:"Matematik", net:24.5, correct:28, wrong:7, wrongTopicIds:[12,45]}, ...]
+  examType    String // "TYT" | "AYT" | "LGS" | "BRANS"
+  subjectNets Json // [{subject, questionCount, correct, wrong, blank, net, wrongTopicIds}, ...]
   // wrongTopicIds opsiyonel — "Akıllı Deneme Analizi" tekrar eden konu
   // hatalarını tespit edebilsin diye (bkz. detectRecurringWeaknesses).
+  // Eski satırlarda questionCount/blank yok — okuyucular null olarak ele alır.
   totalNet    Float?
   ranking     Int?
   notes       String?
-  enteredById Int? // girişi yapan koç/admin User.id
+  enteredById Int? // girişi yapan koç/admin User.id — öğrenci kendi girerse null
   createdAt   DateTime @default(now())
 
+  // Deneme Merkezi (canlı zamanlayıcı + öz analiz) için genişletme —
+  // hepsi opsiyonel/varsayılanlı, eski koç-girişli satırları etkilemez.
+  entryMode      String  @default("MANUAL") // "LIVE" | "MANUAL"
+  branch         String? // "BRANS" türü için ders adı (ör. "Matematik")
+  totalQuestions Int?
+
+  // Canlı zamanlayıcı (yalnızca LIVE) — startedAt startLiveExam() içinde
+  // sunucuda üretilen `new Date()` ile set edilir (DB @default(now()) DEĞİL,
+  // çünkü MANUAL satırlarda null kalmalı); client'tan asla kabul edilmez.
+  startedAt       DateTime?
+  finishedAt      DateTime?
+  durationSeconds Int? // LIVE: sunucuda now-startedAt'ten hesaplanır; MANUAL: öğrenci dakika girerse saniyeye çevrilir
+
+  targetNet             Float?
+  targetDurationMinutes Int?
+  focusAreas            Json? // ["sure_yonetimi","dikkat",...]
+
+  // subjectNets'ten sunucuda toplanır — client'ın gönderdiği toplam netlere
+  // güvenilmez.
+  totalCorrect Int?
+  totalWrong   Int?
+  totalBlank   Int?
+
+  difficultyReasons Json? // ["sure_yetmedi","dikkat_hatasi",...]
+  didWell           String?
+  nextImprovement   String?
+  studentNote       String?
+
+  // "IN_PROGRESS" (timer çalışıyor) | "RESULT_PENDING" (bitti, sonuç
+  // girilmedi) | "ANALYSIS_PENDING" (sonuç girildi, öz analiz yok) |
+  // "COMPLETED". Eski koç-girişli satırlar hep COMPLETED.
+  status String @default("COMPLETED")
+
   @@index([studentId, examDate])
+  @@index([studentId, entryMode, status]) // aktif LIVE deneme sorgusu için
+  // Aynı öğrencinin birden fazla aktif (IN_PROGRESS/RESULT_PENDING/
+  // ANALYSIS_PENDING) LIVE denemesi olamaz — bu kısmi unique index yalnızca
+  // migration.sql'de var (Prisma DSL'i WHERE koşullu unique index'i ifade
+  // edemiyor): 20260927120000_extend_exam_result_live_flow/migration.sql
 }
 
 model Resource {
