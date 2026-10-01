@@ -1,5 +1,8 @@
 import prisma from "../utils/prisma.js";
 import { EXAM_TYPES, computeExamAggregates, validateExamResultPayload } from "../utils/examCalculations.js";
+import { toMondayStart, toDayStart, todayDayOfWeek } from "../utils/istanbulTime.js";
+
+export { toMondayStart, toDayStart, todayDayOfWeek };
 
 // Bir LIVE denemenin "bitmemiş" sayıldığı durumlar — üçü de aynı derecede
 // "devam eden deneme" kabul edilir (yalnızca IN_PROGRESS değil).
@@ -9,53 +12,6 @@ const ACTIVE_LIVE_STATUSES = ["IN_PROGRESS", "RESULT_PENDING", "ANALYSIS_PENDING
 // 5-8. sınıf LGS, geri kalanı (9-12/Mezun/Üniversite/boş) YKS kabul edilir.
 const LGS_GRADES = new Set(["5", "6", "7", "8"]);
 export const effectiveTrackFromGrade = (grade) => (LGS_GRADES.has(String(grade || "")) ? "lgs" : "yks");
-
-// "Bugün"/"bu hafta" hesapları öğrencinin takvim gününe (İstanbul, UTC+3,
-// DST yok) göre yapılmalı — sunucunun kendi çalışma zaman dilimine (Render
-// varsayılan UTC) göre DEĞİL. İkisi arasında her gece 00:00-03:00 İstanbul
-// saatinde bir gün farkı oluşabiliyor; bu da hafta Pazar/Pazartesi sınırına
-// denk geldiğinde koçun kaydettiği planın yanlış haftaya düşmesine yol
-// açabiliyor (canlı testte doğrulandı). Bu yüzden `new Date().getDay()` gibi
-// sunucu-yerel-saatine bağımlı metotlar yerine Intl ile İstanbul takvim
-// gününü açıkça okuyoruz.
-const TZ = "Europe/Istanbul";
-
-const istanbulYMD = (dateInput) => {
-  const d = dateInput ? new Date(dateInput) : new Date();
-  const parts = new Intl.DateTimeFormat("en-CA", {
-    timeZone: TZ,
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-  }).formatToParts(d);
-  const map = {};
-  for (const p of parts) if (p.type !== "literal") map[p.type] = Number(p.value);
-  return { year: map.year, month: map.month, day: map.day };
-};
-
-// {year,month,day} İstanbul takvim gününün yerel 00:00'ına karşılık gelen
-// UTC anı (İstanbul sabit UTC+3 -> yerel 00:00 = bir önceki günün 21:00 UTC'si).
-const istanbulMidnightUTC = ({ year, month, day }) => new Date(Date.UTC(year, month - 1, day, -3, 0, 0, 0));
-
-// Pazartesi 00:00'a (İstanbul) normalize eder — StudyPlan.weekStart hep bu çapayla kaydediliyor/aranıyor.
-export const toMondayStart = (dateInput) => {
-  const { year, month, day } = istanbulYMD(dateInput);
-  const noonUTC = new Date(Date.UTC(year, month - 1, day, 12)); // öğlen çapası: gün kayması riski yok
-  const jsDay = noonUTC.getUTCDay(); // 0=Pazar..6=Cumartesi
-  const diff = jsDay === 0 ? -6 : 1 - jsDay; // Pazartesi'ye git
-  noonUTC.setUTCDate(noonUTC.getUTCDate() + diff);
-  return istanbulMidnightUTC({ year: noonUTC.getUTCFullYear(), month: noonUTC.getUTCMonth() + 1, day: noonUTC.getUTCDate() });
-};
-
-export const toDayStart = (dateInput) => istanbulMidnightUTC(istanbulYMD(dateInput));
-
-// JS getDay(): 0=Pazar..6=Cumartesi -> StudyPlanItem.dayOfWeek'in
-// kullandığı Pazartesi=0 tabanına çevirir. İstanbul takvim gününe göre.
-export const todayDayOfWeek = () => {
-  const { year, month, day } = istanbulYMD(new Date());
-  const jsDay = new Date(Date.UTC(year, month - 1, day, 12)).getUTCDay();
-  return (jsDay + 6) % 7;
-};
 
 // Bir günün (plan + dayOfWeek) TÜM görevleri bir sonuca bağlandığında
 // ("pending" kalmadığında) otomatik bir DayReport ("Z-Raporu") üretir/

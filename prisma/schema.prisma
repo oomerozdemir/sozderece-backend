@@ -230,6 +230,57 @@ model CoachNote {
   @@index([studentId, createdAt])
 }
 
+// AI Soru Asistanı — öğrencinin yüklediği soru fotoğrafı + Claude'un ürettiği
+// yapılandırılmış çözüm. Günlük kota (yalnızca status="COMPLETED" düşer) ve
+// günlük attempt tavanı (her gerçek Claude çağrısı, sonucu ne olursa olsun)
+// bu tablo üzerinden canlı COUNT ile hesaplanır — ayrı bir sayaç kolonu yok,
+// bkz. utils/aiQuestionQuota.js.
+model AiQuestion {
+  id               Int                  @id @default(autoincrement())
+  studentId        Int
+  student          User                 @relation("StudentAiQuestions", fields: [studentId], references: [id])
+  subject          String?
+  topic            String?
+  imageUrl         String?
+  imageHash        String // sha256(orijinal buffer) — duplicate tespiti için
+  questionSummary  String?
+  concept          String?
+  steps            Json? // string[]
+  answer           String?
+  option           String?
+  tip              String?
+  status           String // PROCESSING | COMPLETED | MULTIPLE_QUESTIONS | UNREADABLE | NOT_A_QUESTION | INVALID_IMAGE | ERROR
+  model            String?
+  inputTokens      Int?
+  outputTokens     Int?
+  estimatedCostUsd Float?
+  followupCount    Int                  @default(0) // yalnızca başarılı follow-up anında artar
+  createdAt        DateTime             @default(now())
+  updatedAt        DateTime             @updatedAt
+  followups        AiQuestionFollowup[]
+
+  @@index([studentId, createdAt])
+  @@index([studentId, status, createdAt])
+  @@index([studentId, imageHash])
+}
+
+model AiQuestionFollowup {
+  id               Int        @id @default(autoincrement())
+  questionId       Int
+  question         AiQuestion @relation(fields: [questionId], references: [id])
+  type             String // EXPLAIN_SIMPLER | EXPLAIN_STEP | SIMILAR_EXAMPLE
+  stepIndex        Int? // yalnızca EXPLAIN_STEP için
+  responseText     String?
+  status           String     @default("PROCESSING") // PROCESSING | COMPLETED | ERROR
+  model            String?
+  inputTokens      Int?
+  outputTokens     Int?
+  estimatedCostUsd Float?
+  createdAt        DateTime   @default(now())
+
+  @@index([questionId, status, createdAt])
+}
+
 model ExamResult {
   id          Int      @id @default(autoincrement())
   studentId   Int
@@ -338,6 +389,7 @@ model User {
   panelBetaAccess     Boolean                @default(false)
   studyPlans          StudyPlan[]            @relation("StudentStudyPlans")
   examResults         ExamResult[]           @relation("StudentExamResults")
+  aiQuestions         AiQuestion[]           @relation("StudentAiQuestions")
   dayReports          DayReport[]            @relation("StudentDayReports")
   pomodoroSessions    PomodoroSession[]      @relation("StudentPomodoroSessions")
   sosAlerts           SosAlert[]             @relation("StudentSosAlerts")

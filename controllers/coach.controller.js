@@ -1,22 +1,10 @@
 import crypto from "node:crypto";
-import Anthropic from "@anthropic-ai/sdk";
 import prisma from "../utils/prisma.js";
-import { toMondayStart, todayDayOfWeek, toDayStart, detectRecurringWeaknesses, effectiveTrackFromGrade, computeStreak, sumActualStudyMinutes } from "./studentPanel.controller.js";
+import { detectRecurringWeaknesses, effectiveTrackFromGrade, computeStreak, sumActualStudyMinutes } from "./studentPanel.controller.js";
+import { toMondayStart, todayDayOfWeek, toDayStart } from "../utils/istanbulTime.js";
 import { detectFileType } from "../utils/fileSignature.js";
 import { estimateCostUsd } from "../utils/aiPricing.js";
-
-// Anahtar bir workspace'e bağlı değilse Anthropic API'si isteği reddediyor
-// (400 invalid_request_error) — bu yüzden anthropic-workspace-id header'ı zorunlu.
-const anthropic = process.env.ANTHROPIC_API_KEY
-  ? new Anthropic({
-      apiKey: process.env.ANTHROPIC_API_KEY,
-      defaultHeaders: process.env.ANTHROPIC_WORKSPACE_ID
-        ? { "anthropic-workspace-id": process.env.ANTHROPIC_WORKSPACE_ID }
-        : undefined,
-      timeout: 55_000,
-      maxRetries: 2,
-    })
-  : null;
+import { anthropic, mapAnthropicError } from "../utils/anthropicClient.js";
 
 
 export const getAssignedStudents = async (req, res) => {
@@ -294,35 +282,6 @@ const STUDY_PLAN_TOOL = {
 };
 
 const AI_USAGE_IDEMPOTENCY_WINDOW_MS = 24 * 60 * 60 * 1000;
-
-function mapAnthropicError(err) {
-  if (err instanceof Anthropic.RateLimitError) {
-    return { status: 429, code: "rate_limit", message: "Sistem şu anda yoğun, birkaç dakika sonra tekrar deneyin." };
-  }
-  if (err instanceof Anthropic.APIConnectionTimeoutError) {
-    return { status: 504, code: "timeout", message: "İşlem zaman aşımına uğradı, lütfen tekrar deneyin." };
-  }
-  if (err instanceof Anthropic.AuthenticationError || err instanceof Anthropic.PermissionDeniedError) {
-    return { status: 503, code: "config_error", message: "Görsel okuma özelliği şu anda kullanılamıyor." };
-  }
-  if (err instanceof Anthropic.BadRequestError) {
-    // Bu spesifik 400, dosyayla ilgili değil — API anahtarı bir workspace'e
-    // bağlı değilken anthropic-workspace-id header'ı eksikse Anthropic bunu
-    // BadRequestError olarak döndürüyor (AuthenticationError değil). Yanlış
-    // sınıflandırılırsa koç "dosya bozuk" sanır, asıl sorun ortam değişkeni
-    // yapılandırmasıdır — bu yüzden ayrıca yakalanıp config_error'a çevrilir.
-    const isWorkspaceConfigError = /workspace/i.test(err.error?.error?.message || err.message || "");
-    if (isWorkspaceConfigError) {
-      console.error("ANTHROPIC_WORKSPACE_ID eksik/yanlış yapılandırılmış olabilir.");
-      return { status: 503, code: "config_error", message: "Görsel okuma özelliği şu anda kullanılamıyor." };
-    }
-    return { status: 422, code: "invalid_input", message: "Yüklenen dosya okunamadı, farklı bir görsel ya da PDF deneyin." };
-  }
-  if (err instanceof Anthropic.APIConnectionError) {
-    return { status: 503, code: "api_error", message: "Anthropic servisine şu anda ulaşılamıyor, lütfen daha sonra tekrar deneyin." };
-  }
-  return { status: 503, code: "api_error", message: "Görsel işlenirken bir sorun oluştu, lütfen tekrar deneyin." };
-}
 
 // Ham tool-use çıktısını tip-güvenli hale getirir. Eksik alanlı satırlar
 // ARTIK ATILMAZ (önceki sürümden bilinçli fark) — koç önizleme ekranında
