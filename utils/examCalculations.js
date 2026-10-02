@@ -22,9 +22,13 @@ export function computeSubjectNet(correct, wrong, divisor) {
 
 /**
  * subjectNets[] satırlarından totalCorrect/totalWrong/totalBlank/totalNet'i
- * sunucuda yeniden hesaplar. Her satırın "net" alanı da burada yeniden
- * yazılır — client'ın gönderdiği net değerine hiçbir zaman güvenilmez.
- * @param {Array<{subject, questionCount, correct, wrong, blank}>} subjectNets
+ * sunucuda yeniden hesaplar. Her satırın "blank" ve "net" alanı da burada
+ * yeniden yazılır — client'ın gönderdiği blank/net değerine hiçbir zaman
+ * güvenilmez (öğrenci yalnızca correct/wrong girer, blank = questionCount -
+ * correct - wrong). validateExamResultPayload bu fonksiyondan önce çağrıldığı
+ * için questionCount'un geçerli olduğu ve correct+wrong <= questionCount
+ * olduğu garanti edilmiştir.
+ * @param {Array<{subject, questionCount, correct, wrong}>} subjectNets
  * @param {string} examType
  * @param {string} studentTrack - "yks" | "lgs"
  * @returns {{ subjectNets: Array, totalCorrect: number, totalWrong: number, totalBlank: number, totalNet: number }}
@@ -39,7 +43,8 @@ export function computeExamAggregates(subjectNets, examType, studentTrack) {
   const recomputed = subjectNets.map((row) => {
     const correct = Number(row.correct) || 0;
     const wrong = Number(row.wrong) || 0;
-    const blank = Number(row.blank) || 0;
+    const questionCount = Number(row.questionCount) || 0;
+    const blank = questionCount - correct - wrong;
     const net = computeSubjectNet(correct, wrong, divisor);
     totalCorrect += correct;
     totalWrong += wrong;
@@ -47,7 +52,7 @@ export function computeExamAggregates(subjectNets, examType, studentTrack) {
     totalNet += net;
     return {
       subject: row.subject,
-      questionCount: row.questionCount != null ? Number(row.questionCount) : null,
+      questionCount,
       correct,
       wrong,
       blank,
@@ -60,9 +65,11 @@ export function computeExamAggregates(subjectNets, examType, studentTrack) {
 }
 
 /**
- * Ders bazlı sonuç payload'ını doğrular. İlk hatada { valid:false, message }
- * döner; geçerliyse { valid:true }.
- * @param {Array<{subject, questionCount, correct, wrong, blank}>} subjectNets
+ * Ders bazlı sonuç payload'ını doğrular. Öğrenci yalnızca correct/wrong
+ * girer; blank artık client'tan hiç okunmaz/validate edilmez (gönderilse
+ * bile computeExamAggregates onu yok sayıp yeniden hesaplar). İlk hatada
+ * { valid:false, message } döner; geçerliyse { valid:true }.
+ * @param {Array<{subject, questionCount, correct, wrong}>} subjectNets
  * @param {number|null} totalQuestions - dolu ise satırların questionCount toplamıyla tutarlılığı da kontrol edilir
  */
 export function validateExamResultPayload(subjectNets, totalQuestions) {
@@ -71,36 +78,33 @@ export function validateExamResultPayload(subjectNets, totalQuestions) {
   }
 
   let questionCountSum = 0;
-  let anyQuestionCountMissing = false;
 
   for (const row of subjectNets) {
     if (!row || typeof row.subject !== "string" || !row.subject.trim()) {
       return { valid: false, message: "Her satırda bir ders adı olmalı." };
     }
+    const questionCount = Number(row.questionCount);
+    if (row.questionCount == null || !Number.isFinite(questionCount) || questionCount < 0) {
+      return { valid: false, message: `${row.subject}: soru sayısı girilmeli.` };
+    }
     const correct = Number(row.correct);
     const wrong = Number(row.wrong);
-    const blank = Number(row.blank);
-    if (!Number.isFinite(correct) || !Number.isFinite(wrong) || !Number.isFinite(blank)) {
-      return { valid: false, message: `${row.subject}: doğru/yanlış/boş sayısal olmalı.` };
+    if (!Number.isFinite(correct) || !Number.isFinite(wrong)) {
+      return { valid: false, message: `${row.subject}: doğru/yanlış sayısal olmalı.` };
     }
-    if (correct < 0 || wrong < 0 || blank < 0) {
-      return { valid: false, message: `${row.subject}: doğru/yanlış/boş negatif olamaz.` };
+    if (correct < 0 || correct > questionCount) {
+      return { valid: false, message: `${row.subject}: Doğru sayısı 0 ile ${questionCount} arasında olmalı.` };
     }
-    const questionCount = row.questionCount != null ? Number(row.questionCount) : null;
-    if (questionCount != null) {
-      if (!Number.isFinite(questionCount) || questionCount < 0) {
-        return { valid: false, message: `${row.subject}: soru sayısı geçersiz.` };
-      }
-      if (correct + wrong + blank !== questionCount) {
-        return { valid: false, message: `${row.subject}: doğru+yanlış+boş (${correct + wrong + blank}) soru sayısıyla (${questionCount}) uyuşmuyor.` };
-      }
-      questionCountSum += questionCount;
-    } else {
-      anyQuestionCountMissing = true;
+    if (wrong < 0 || wrong > questionCount) {
+      return { valid: false, message: `${row.subject}: Yanlış sayısı 0 ile ${questionCount} arasında olmalı.` };
     }
+    if (correct + wrong > questionCount) {
+      return { valid: false, message: `${row.subject}: Doğru ve yanlış toplamı soru sayısını geçemez.` };
+    }
+    questionCountSum += questionCount;
   }
 
-  if (totalQuestions != null && !anyQuestionCountMissing && questionCountSum !== Number(totalQuestions)) {
+  if (totalQuestions != null && questionCountSum !== Number(totalQuestions)) {
     return { valid: false, message: `Ders bazlı soru sayıları toplamı (${questionCountSum}), toplam soru sayısıyla (${totalQuestions}) uyuşmuyor.` };
   }
 
