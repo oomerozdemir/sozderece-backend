@@ -9,6 +9,7 @@ import {
   getMyPastAppointmentsStudent,
   createAppointmentReviewByStudent,
   getFreeRights,
+  markPanelTourCompleted,
 } from "../../controllers/studentController.js";
 import {
   getMyStudyPlan,
@@ -80,6 +81,7 @@ const aiQuestionLimiter = rateLimit({
 
 /* Profil */
 router.get("/me", authenticateToken, getStudentProfile);
+router.patch("/me/tour-completed", authenticateToken, markPanelTourCompleted);
 
 router.patch(
   "/appointments/:id/complete",

@@ -387,6 +387,11 @@ model User {
   // /student/dashboard aynı kalır, StudentDashboard.jsx bu alana göre
   // eski/yeni paneli seçer. Admin panelden aç/kapat edilebilir.
   panelBetaAccess     Boolean                @default(false)
+  // Panel Turu'nun (guided tour) kalıcı tamamlanma zamanı — null ise öğrenci
+  // paneli ilk kez gördüğünde otomatik karşılama teklif edilir. Farklı
+  // cihazdan giriş yapsa bile tekrar tur görmesin diye backend'de (yalnızca
+  // sessionStorage değil) tutuluyor. "Şimdilik Geç" bu alana yazmaz.
+  panelTourCompletedAt DateTime?
   studyPlans          StudyPlan[]            @relation("StudentStudyPlans")
   examResults         ExamResult[]           @relation("StudentExamResults")
   aiQuestions         AiQuestion[]           @relation("StudentAiQuestions")

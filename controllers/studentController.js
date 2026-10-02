@@ -1,5 +1,28 @@
 import prisma from "../utils/prisma.js";
 
+/**
+ * PATCH /api/v1/ogrenci/me/tour-completed
+ * Panel Turu'nun kalıcı tamamlanma kaydı. Body almaz — req.user.id dışında
+ * hiçbir kimlik kabul edilmez (mevcut öğrenci-taraf desenle aynı). "Tekrar
+ * Başlat" akışında da aynı uç tekrar çağrılır, completedAt güncellenir.
+ */
+export const markPanelTourCompleted = async (req, res) => {
+  try {
+    const userId = req.user?.id;
+    if (!userId) return res.status(401).json({ message: "Yetkisiz" });
+
+    const user = await prisma.user.update({
+      where: { id: userId },
+      data: { panelTourCompletedAt: new Date() },
+      select: { panelTourCompletedAt: true },
+    });
+    res.json({ success: true, panelTourCompletedAt: user.panelTourCompletedAt });
+  } catch (error) {
+    console.error("markPanelTourCompleted:", error);
+    res.status(500).json({ success: false, message: "Kaydedilemedi." });
+  }
+};
+
 export const getStudentProfile = async (req, res) => {
   try {
     const userId = req.user?.id;
