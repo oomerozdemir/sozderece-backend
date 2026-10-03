@@ -68,6 +68,41 @@ export async function reserveAttempt(studentId, imageHash) {
   });
 }
 
+// R3 — doğrulama (verification) için AYRI günlük limit, ana 10-soru
+// kotasından tamamen bağımsız. Yalnızca YENİ verification üretimi (generate)
+// bu sayacı tüketir; mevcut bir verification'a cevap vermek (answer) hiçbir
+// hak tüketmez (o yüzden bu sayaç yalnızca AiQuestionVerification.createdAt
+// üzerinden sayar, evaluationStatus'tan bağımsız).
+export const VERIFICATION_DAILY_LIMIT = Number(process.env.AI_VERIFICATION_DAILY_LIMIT || 5);
+
+export class VerificationQuotaError extends Error {
+  constructor(usage) {
+    super("Bugünkü doğrulama hakkını kullandın.");
+    this.kind = "VERIFICATION_DAILY_LIMIT";
+    this.usage = usage;
+  }
+}
+
+// R4 — bir soru için aynı anda yalnızca tek cevaplanmamış verification
+// olması DB seviyesinde garanti edilir (bkz. migration'daki partial unique
+// index AiQuestionVerification_questionId_unanswered_key). Bu fonksiyon
+// yalnızca günlük limiti kontrol eder; unique-violation (P2002) durumunda
+// caller (controller) var olan cevapsız kaydı bulup döner — bu fonksiyonun
+// sorumluluğu değil.
+export async function reserveVerificationGeneration(studentId, questionId) {
+  const dayKeyInt = Math.floor(toDayStart(new Date()).getTime() / 86400000);
+  return prisma.$transaction(async (tx) => {
+    await tx.$executeRaw`SELECT pg_advisory_xact_lock(${studentId}::int, ${dayKeyInt}::int)`;
+    const dayStart = toDayStart(new Date());
+    const generatedToday = await tx.aiQuestionVerification.count({ where: { studentId, createdAt: { gte: dayStart } } });
+    const usage = { usedToday: generatedToday, remaining: Math.max(0, VERIFICATION_DAILY_LIMIT - generatedToday), dailyLimit: VERIFICATION_DAILY_LIMIT };
+    if (generatedToday >= VERIFICATION_DAILY_LIMIT) {
+      throw new VerificationQuotaError(usage);
+    }
+    return tx.aiQuestionVerification.create({ data: { questionId, studentId, status: "PROCESSING" } });
+  });
+}
+
 // Follow-up rezervasyonu — questionId bazlı advisory lock (farklı sorular
 // birbirini etkilemez). Canlı (COMPLETED + yakın-PROCESSING) sayım
 // MAX_FOLLOWUPS'tan azsa yeni bir PROCESSING AiQuestionFollowup satırı

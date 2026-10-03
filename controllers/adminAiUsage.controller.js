@@ -56,7 +56,9 @@ export const getAiUsageSummary = async (req, res) => {
  * GET /api/admin/ai-usage/question-summary?month=YYYY-MM
  * AI Soru Asistanı'nın bir aylık maliyet/operasyon özeti. getAiUsageSummary
  * ile aynı ay-seçim deseni, ayrı bir endpoint — AiQuestion/AiUsageLog
- * ("ai_question_assistant"+"ai_question_followup") verisinden derlenir.
+ * ("ai_question_assistant"+"ai_question_followup"+"ai_question_verification"
+ * — V2, generate ve answer çağrılarının ikisi de bu tek feature adı altında
+ * loglanıyor, bkz. aiQuestion.controller.js) verisinden derlenir.
  */
 export const getAiQuestionUsageSummary = async (req, res) => {
   try {
@@ -76,7 +78,7 @@ export const getAiQuestionUsageSummary = async (req, res) => {
     const todayStart = new Date();
     todayStart.setHours(0, 0, 0, 0);
 
-    const [monthlyQuestions, todayCount, followupLogs] = await Promise.all([
+    const [monthlyQuestions, todayCount, followupLogs, verificationLogs] = await Promise.all([
       prisma.aiQuestion.findMany({
         where: { createdAt: { gte: monthStart, lt: monthEnd } },
         select: { studentId: true, status: true, inputTokens: true, outputTokens: true, estimatedCostUsd: true },
@@ -85,6 +87,10 @@ export const getAiQuestionUsageSummary = async (req, res) => {
       prisma.aiUsageLog.findMany({
         where: { feature: "ai_question_followup", createdAt: { gte: monthStart, lt: monthEnd } },
         select: { estimatedCostUsd: true, inputTokens: true, outputTokens: true },
+      }),
+      prisma.aiUsageLog.findMany({
+        where: { feature: "ai_question_verification", createdAt: { gte: monthStart, lt: monthEnd } },
+        select: { estimatedCostUsd: true, inputTokens: true, outputTokens: true, status: true },
       }),
     ]);
 
@@ -95,11 +101,15 @@ export const getAiQuestionUsageSummary = async (req, res) => {
     const sumTokens = (rows, field) => rows.reduce((sum, r) => sum + (r[field] || 0), 0);
     const sumCost = (rows) => rows.reduce((sum, r) => sum + (r.estimatedCostUsd || 0), 0);
 
-    const totalInputTokens = sumTokens(monthlyQuestions, "inputTokens") + sumTokens(followupLogs, "inputTokens");
-    const totalOutputTokens = sumTokens(monthlyQuestions, "outputTokens") + sumTokens(followupLogs, "outputTokens");
-    const totalCostUsd = sumCost(monthlyQuestions) + sumCost(followupLogs);
+    const totalInputTokens = sumTokens(monthlyQuestions, "inputTokens") + sumTokens(followupLogs, "inputTokens") + sumTokens(verificationLogs, "inputTokens");
+    const totalOutputTokens = sumTokens(monthlyQuestions, "outputTokens") + sumTokens(followupLogs, "outputTokens") + sumTokens(verificationLogs, "outputTokens");
+    const totalCostUsd = sumCost(monthlyQuestions) + sumCost(followupLogs) + sumCost(verificationLogs);
     const avgCostPerStudent = uniqueStudents > 0 ? totalCostUsd / uniqueStudents : null;
     const avgQuestionsPerStudent = uniqueStudents > 0 ? totalAttempts / uniqueStudents : null;
+    // Doğrulama (verification) ayrı görünür kalsın diye grand total'a karışmanın
+    // yanı sıra kendi satırı da raporlanır (plan §16: "ayrı ayrı görülebilsin").
+    const totalVerificationCalls = verificationLogs.length;
+    const totalVerificationCostUsd = sumCost(verificationLogs);
 
     // Öğrenci dökümü — isim join'i için ayrı bir User sorgusu.
     const byStudent = new Map();
@@ -137,6 +147,8 @@ export const getAiQuestionUsageSummary = async (req, res) => {
         totalCostUsd: Math.round(totalCostUsd * 1_000_000) / 1_000_000,
         avgCostPerStudent: avgCostPerStudent != null ? Math.round(avgCostPerStudent * 1_000_000) / 1_000_000 : null,
         avgQuestionsPerStudent: avgQuestionsPerStudent != null ? Math.round(avgQuestionsPerStudent * 10) / 10 : null,
+        totalVerificationCalls,
+        totalVerificationCostUsd: Math.round(totalVerificationCostUsd * 1_000_000) / 1_000_000,
       },
       studentBreakdown,
     });

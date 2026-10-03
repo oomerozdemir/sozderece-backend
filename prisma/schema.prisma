@@ -259,9 +259,61 @@ model AiQuestion {
   updatedAt        DateTime             @updatedAt
   followups        AiQuestionFollowup[]
 
+  // V2 — yapısal öğrenme sinyalleri (tamamı nullable, eski satırlar null
+  // kalır, hiçbir backfill yapılmaz). errorType/struggleSource ana çözüm
+  // akışında backend tarafından HER ZAMAN "UNKNOWN"/"INFERRED"e sabitlenir
+  // (Claude'un kontrolünde değil) — V2 kapsamında gerçek hata sınıflandırması
+  // için gözlemlenmiş bir girdi (öğrencinin kendi çözümü vb.) yok; gerçek
+  // sinyal yalnızca AiQuestionVerification üzerinden aggregation katmanında
+  // oluşur, bu satır geriye dönük mutate edilmez (bkz. utils/aiQuestionInsights.js).
+  subtopic            String?
+  questionType        String? // KNOWLEDGE|CALCULATION|INTERPRETATION|REASONING|GRAPH|PROBLEM_SOLVING|PARAGRAPH|FORMULA_APPLICATION|OTHER
+  difficulty          String? // EASY|MEDIUM|HARD — kategorik tahmin, kesin zorluk puanı değil
+  likelyStruggle      String? // Claude'un tahmini, kesin gerçek olarak sunulmaz
+  errorType           String? // V2'de fiilen hep "UNKNOWN"
+  struggleSource      String? // V2'de fiilen hep "INFERRED"
+  skills              Json? // string[], 1-5 atomik beceri
+  understandingStatus String? // SELF_REPORTED_UNDERSTOOD|NEEDS_MORE_HELP|REQUESTED_PRACTICE
+  verifications       AiQuestionVerification[]
+
   @@index([studentId, createdAt])
   @@index([studentId, status, createdAt])
   @@index([studentId, imageHash])
+  @@index([studentId, subject, topic, createdAt])
+}
+
+// "Benzer soruyla doğrulama" — öğrenci "Benzer soru çözmek istiyorum"
+// dediğinde üretilen, orijinalin kopyası olmayan kısa pratik sorusu.
+// expectedAnswerJson SERVER-ONLY: hiçbir öğrenci-facing API response'unda
+// dönülmez (bkz. controllers/aiQuestion.controller.js#toPublicVerification).
+// Resmi bir ölçme-değerlendirme skoru değil, yalnızca ürün-içi öğrenme
+// sinyali — ana 10-soru günlük kotasından düşmez, kendi ayrı günlük
+// limitine tabidir (bkz. utils/aiQuestionQuota.js#reserveVerificationGeneration).
+model AiQuestionVerification {
+  id                 Int        @id @default(autoincrement())
+  questionId         Int
+  question           AiQuestion @relation(fields: [questionId], references: [id])
+  studentId          Int
+  student            User       @relation("StudentAiQuestionVerifications", fields: [studentId], references: [id])
+  promptText         String?
+  expectedAnswerJson Json? // SERVER-ONLY
+  studentAnswer      String? // backend'de max 1000 karakter doğrulanır
+  evaluationStatus   String? // CORRECT | PARTIAL | INCORRECT — cevaplanana kadar null
+  feedback           String? // öğrenciye gösterilecek kısa değerlendirme metni — expectedAnswerJson'ın aksine PUBLIC
+  status             String     @default("PROCESSING") // PROCESSING | COMPLETED | ERROR (üretim aşaması)
+  subject            String?
+  topic              String?
+  subtopic           String?
+  skills             Json?
+  model              String?
+  inputTokens        Int?
+  outputTokens       Int?
+  estimatedCostUsd   Float?
+  createdAt          DateTime   @default(now())
+  answeredAt         DateTime?
+
+  @@index([studentId, createdAt])
+  @@index([questionId])
 }
 
 model AiQuestionFollowup {
@@ -395,6 +447,7 @@ model User {
   studyPlans          StudyPlan[]            @relation("StudentStudyPlans")
   examResults         ExamResult[]           @relation("StudentExamResults")
   aiQuestions         AiQuestion[]           @relation("StudentAiQuestions")
+  aiQuestionVerifications AiQuestionVerification[] @relation("StudentAiQuestionVerifications")
   dayReports          DayReport[]            @relation("StudentDayReports")
   pomodoroSessions    PomodoroSession[]      @relation("StudentPomodoroSessions")
   sosAlerts           SosAlert[]             @relation("StudentSosAlerts")

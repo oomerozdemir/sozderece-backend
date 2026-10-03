@@ -1,6 +1,7 @@
 import crypto from "node:crypto";
 import prisma from "../utils/prisma.js";
 import { detectRecurringWeaknesses, effectiveTrackFromGrade, computeStreak, sumActualStudyMinutes } from "./studentPanel.controller.js";
+import { buildQuestionInsights } from "../utils/aiQuestionInsights.js";
 import { toMondayStart, todayDayOfWeek, toDayStart } from "../utils/istanbulTime.js";
 import { detectFileType } from "../utils/fileSignature.js";
 import { estimateCostUsd } from "../utils/aiPricing.js";
@@ -615,6 +616,28 @@ export const getInsightsForCoach = async (req, res) => {
     res.json({ success: true, insights });
   } catch (error) {
     console.error("getInsightsForCoach:", error);
+    res.status(500).json({ success: false, message: "İçgörüler alınamadı." });
+  }
+};
+
+/**
+ * GET /api/coach/students/:studentId/ai-question-insights?days=
+ * AI Soru Asistanı V2 — deterministic öğrenme sinyali aggregation'ı, aynı
+ * utils/aiQuestionInsights.js#buildQuestionInsights öğrenci endpoint'iyle
+ * (studentPanel.controller.js#getMyQuestionInsights) ortak — tek yerden.
+ */
+export const getStudentAiQuestionInsightsForCoach = async (req, res) => {
+  try {
+    const studentId = parseInt(req.params.studentId);
+    const coach = await assertOwnStudent(req.user.id, studentId);
+    if (!coach) return res.status(403).json({ success: false, message: "Bu öğrenci size atanmamış." });
+
+    const parsedDays = parseInt(req.query.days, 10);
+    const days = Number.isFinite(parsedDays) && parsedDays > 0 ? Math.min(parsedDays, 365) : 30;
+    const insights = await buildQuestionInsights(studentId, { days });
+    res.json({ success: true, ...insights });
+  } catch (error) {
+    console.error("getStudentAiQuestionInsightsForCoach:", error);
     res.status(500).json({ success: false, message: "İçgörüler alınamadı." });
   }
 };

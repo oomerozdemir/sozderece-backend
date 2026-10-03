@@ -10,8 +10,16 @@ import {
   AI_QUESTION_TOOL,
   AI_QUESTION_FOLLOWUP_TOOL,
   buildFollowupMessages,
+  AI_QUESTION_VERIFICATION_GENERATE_TOOL,
+  AI_QUESTION_VERIFICATION_ANSWER_TOOL,
+  buildVerificationGeneratePrompt,
+  buildVerificationAnswerPrompt,
 } from "../utils/aiQuestionPrompt.js";
-import { getUsageForDisplay, reserveAttempt, reserveFollowup, QuotaError, MAX_FOLLOWUPS } from "../utils/aiQuestionQuota.js";
+import {
+  getUsageForDisplay, reserveAttempt, reserveFollowup, QuotaError, MAX_FOLLOWUPS,
+  reserveVerificationGeneration, VerificationQuotaError,
+} from "../utils/aiQuestionQuota.js";
+import { buildQuestionInsights, getRepeatSignalForTopic } from "../utils/aiQuestionInsights.js";
 
 const DUPLICATE_WINDOW_MS = 30 * 24 * 60 * 60 * 1000; // 30 gün — aynı soru fotoğrafının anlamı zamanla değişmez, ama makul bir pencere
 const FOLLOWUP_TYPES = ["EXPLAIN_SIMPLER", "EXPLAIN_STEP", "SIMILAR_EXAMPLE"];
@@ -27,15 +35,38 @@ const SOLUTION_STATUS_TO_DB = {
   NOT_A_QUESTION: "NOT_A_QUESTION",
 };
 
+const VALID_QUESTION_TYPES = ["KNOWLEDGE", "CALCULATION", "INTERPRETATION", "REASONING", "GRAPH", "PROBLEM_SOLVING", "PARAGRAPH", "FORMULA_APPLICATION", "OTHER"];
+const VALID_DIFFICULTIES = ["EASY", "MEDIUM", "HARD"];
+
 function sanitizeText(value, maxLen) {
   if (typeof value !== "string") return null;
   const trimmed = value.trim();
   return trimmed ? trimmed.slice(0, maxLen) : null;
 }
 
+function sanitizeEnum(value, allowed) {
+  return typeof value === "string" && allowed.includes(value) ? value : null;
+}
+
+function sanitizeSkills(value) {
+  if (!Array.isArray(value)) return [];
+  return value
+    .filter((s) => typeof s === "string")
+    .map((s) => s.trim().slice(0, 80))
+    .filter(Boolean)
+    .slice(0, 5);
+}
+
 // Claude çıktısına güvenilmez — tip/uzunluk/enum kontrolünden geçirir.
 // Şema dışı/eksik bir status gelirse (malformed tool-use) güvenli şekilde
 // ERROR'a düşürülür, 500 patlamaz.
+//
+// V2: errorType/struggleSource Claude'un çıktısından OKUNMAZ — ana çözüm
+// akışı yalnızca fotoğrafa bakıyor, öğrencinin gerçek hatasını gözlemleme
+// imkânı yok. Bu iki alan backend tarafından sabit "UNKNOWN"/"INFERRED"
+// yazılır (bkz. plan R2); gerçek sinyal yalnızca AiQuestionVerification
+// üzerinden aggregation katmanında oluşur, bu satır geriye dönük mutate
+// edilmez.
 function sanitizeQuestionResult(raw) {
   const rawStatus = typeof raw?.status === "string" ? raw.status : null;
   if (!rawStatus || !VALID_SOLUTION_STATUSES.includes(rawStatus)) {
@@ -51,18 +82,48 @@ function sanitizeQuestionResult(raw) {
     fields: {
       subject: sanitizeText(raw.subject, 100),
       topic: sanitizeText(raw.topic, 150),
+      subtopic: sanitizeText(raw.subtopic, 150),
       questionSummary: sanitizeText(raw.questionSummary, 1000),
       concept: isSolved ? sanitizeText(raw.concept, 1000) : null,
       steps: isSolved ? steps : [],
       answer: isSolved ? sanitizeText(raw.answer, 500) : null,
       option: isSolved ? sanitizeText(raw.option, 10) : null,
       tip: isSolved ? sanitizeText(raw.tip, 500) : null,
+      questionType: isSolved ? sanitizeEnum(raw.questionType, VALID_QUESTION_TYPES) : null,
+      difficulty: isSolved ? sanitizeEnum(raw.difficulty, VALID_DIFFICULTIES) : null,
+      likelyStruggle: isSolved ? sanitizeText(raw.likelyStruggle, 500) : null,
+      skills: isSolved ? sanitizeSkills(raw.skills) : [],
+      errorType: isSolved ? "UNKNOWN" : null,
+      struggleSource: isSolved ? "INFERRED" : null,
     },
   };
 }
 
 function sanitizeFollowupText(raw) {
   return sanitizeText(raw?.responseText, 2000);
+}
+
+const UNDERSTANDING_STATUSES = ["SELF_REPORTED_UNDERSTOOD", "NEEDS_MORE_HELP", "REQUESTED_PRACTICE"];
+const EVALUATION_STATUSES = ["CORRECT", "PARTIAL", "INCORRECT"];
+
+// R5 — expectedAnswerJson SERVER-ONLY, hiçbir öğrenci-facing response'a
+// girmez. Tüm verification response'ları bu mapper'dan geçer.
+function toPublicVerification(row) {
+  return {
+    id: row.id,
+    questionId: row.questionId,
+    promptText: row.promptText,
+    studentAnswer: row.studentAnswer,
+    evaluationStatus: row.evaluationStatus,
+    feedback: row.feedback,
+    status: row.status,
+    subject: row.subject,
+    topic: row.topic,
+    subtopic: row.subtopic,
+    skills: row.skills,
+    createdAt: row.createdAt,
+    answeredAt: row.answeredAt,
+  };
 }
 
 async function fetchAsBase64(url) {
@@ -236,6 +297,23 @@ export const createAiQuestion = async (req, res) => {
 };
 
 /**
+ * GET /api/v1/ogrenci/me/ai-question/insights
+ * Query: ?days= (varsayılan 30, azami 365). Tamamen deterministic —
+ * AI çağrısı yok, bkz. utils/aiQuestionInsights.js.
+ */
+export const getMyQuestionInsights = async (req, res) => {
+  try {
+    const parsedDays = parseInt(req.query.days, 10);
+    const days = Number.isFinite(parsedDays) && parsedDays > 0 ? Math.min(parsedDays, 365) : 30;
+    const insights = await buildQuestionInsights(req.user.id, { days });
+    res.json({ success: true, ...insights });
+  } catch (error) {
+    console.error("getMyQuestionInsights:", error);
+    res.status(500).json({ success: false, message: "İçgörüler alınamadı." });
+  }
+};
+
+/**
  * GET /api/v1/ogrenci/me/ai-question/history
  */
 export const getAiQuestionHistory = async (req, res) => {
@@ -260,12 +338,18 @@ export const getAiQuestionDetail = async (req, res) => {
     const id = parseInt(req.params.id);
     const question = await prisma.aiQuestion.findUnique({
       where: { id },
-      include: { followups: { orderBy: { createdAt: "asc" } } },
+      include: {
+        followups: { orderBy: { createdAt: "asc" } },
+        verifications: { orderBy: { createdAt: "asc" } }, // R5: expectedAnswerJson aşağıda mapleniyor
+      },
     });
     if (!question || question.studentId !== req.user.id) {
       return res.status(404).json({ success: false, message: "Soru bulunamadı." });
     }
-    res.json({ success: true, question });
+    res.json({
+      success: true,
+      question: { ...question, verifications: question.verifications.map(toPublicVerification) },
+    });
   } catch (error) {
     console.error("getAiQuestionDetail:", error);
     res.status(500).json({ success: false, message: "Soru alınamadı." });
@@ -318,6 +402,10 @@ export const createFollowup = async (req, res) => {
     }
 
     const model = process.env.ANTHROPIC_QUESTION_MODEL || "claude-sonnet-5";
+    // R1: kişiselleştirme yalnızca follow-up'ta, yalnızca öğrencinin AYNI
+    // konuda 3+ geçmiş sorusu varsa (K5 eşiği) — yoksa getRepeatSignalForTopic
+    // null döner, hiçbir context eklenmez.
+    const repeatSignal = await getRepeatSignalForTopic(req.user.id, question.subject, question.topic).catch(() => null);
     let message;
     try {
       message = await anthropic.messages.create({
@@ -326,7 +414,7 @@ export const createFollowup = async (req, res) => {
         system: AI_QUESTION_SYSTEM_PROMPT,
         tools: [AI_QUESTION_FOLLOWUP_TOOL],
         tool_choice: { type: "tool", name: "submit_followup_response" },
-        messages: buildFollowupMessages(question, type, stepIndex),
+        messages: buildFollowupMessages(question, type, stepIndex, repeatSignal),
       });
     } catch (apiErr) {
       const mapped = mapAnthropicError(apiErr);
@@ -381,5 +469,246 @@ export const createFollowup = async (req, res) => {
   } catch (error) {
     console.error("createFollowup:", error);
     res.status(500).json({ success: false, message: "Follow-up işlenemedi, lütfen tekrar deneyin." });
+  }
+};
+
+/**
+ * PATCH /api/v1/ogrenci/me/ai-question/:id/understanding
+ * Body: { status: "SELF_REPORTED_UNDERSTOOD"|"NEEDS_MORE_HELP"|"REQUESTED_PRACTICE" }
+ * "Bu soruyu şimdi anladın mı?" geri bildirimi — AI çağrısı yok, salt bir
+ * kayıt. NEEDS_MORE_HELP mevcut follow-up akışına, REQUESTED_PRACTICE
+ * verification akışına yönlendirir (frontend'de), burada yalnızca işaretlenir.
+ */
+export const updateUnderstandingStatus = async (req, res) => {
+  try {
+    const id = parseInt(req.params.id);
+    const status = req.body?.status;
+    if (!UNDERSTANDING_STATUSES.includes(status)) {
+      return res.status(400).json({ success: false, message: "Geçersiz durum." });
+    }
+    const question = await prisma.aiQuestion.findUnique({ where: { id } });
+    if (!question || question.studentId !== req.user.id) {
+      return res.status(404).json({ success: false, message: "Soru bulunamadı." });
+    }
+    if (question.status !== "COMPLETED") {
+      return res.status(400).json({ success: false, message: "Bu geri bildirim yalnızca çözülmüş bir soru için verilebilir." });
+    }
+    const updated = await prisma.aiQuestion.update({ where: { id }, data: { understandingStatus: status } });
+    res.json({ success: true, question: updated });
+  } catch (error) {
+    console.error("updateUnderstandingStatus:", error);
+    res.status(500).json({ success: false, message: "Geri bildirim kaydedilemedi." });
+  }
+};
+
+/**
+ * POST /api/v1/ogrenci/me/ai-question/:id/verification/generate
+ * "Benzer soru çözmek istiyorum" — orijinal sorunun kazanımını test eden
+ * yeni, kısa, text-only bir pratik sorusu üretir. Ayrı günlük limite tabi
+ * (R3, ana 10-soru kotasından bağımsız). Bir soru için aynı anda yalnızca
+ * tek cevaplanmamış verification olabilir — DB seviyesinde garanti (R4,
+ * partial unique index); P2002 burada yakalanıp var olan kayıt idempotent
+ * şekilde dönülür (ExamResult LIVE-akışındaki aynı desen, startLiveExam).
+ */
+export const generateVerification = async (req, res) => {
+  const studentId = req.user.id;
+  try {
+    if (!anthropic) {
+      return res.status(503).json({ success: false, message: "Bu özellik şu anda yapılandırılmamış." });
+    }
+    const id = parseInt(req.params.id);
+    const question = await prisma.aiQuestion.findUnique({ where: { id } });
+    if (!question || question.studentId !== studentId) {
+      return res.status(404).json({ success: false, message: "Soru bulunamadı." });
+    }
+    if (question.status !== "COMPLETED") {
+      return res.status(400).json({ success: false, message: "Doğrulama yalnızca çözülmüş bir sorudan istenebilir." });
+    }
+
+    let reserved;
+    try {
+      reserved = await reserveVerificationGeneration(studentId, id);
+    } catch (err) {
+      if (err instanceof VerificationQuotaError) {
+        return res.status(429).json({ success: false, message: err.message, code: err.kind, usage: err.usage });
+      }
+      if (err?.code === "P2002") {
+        const existing = await prisma.aiQuestionVerification.findFirst({
+          where: { questionId: id, evaluationStatus: null },
+          orderBy: { createdAt: "desc" },
+        });
+        if (existing) return res.json({ success: true, verification: toPublicVerification(existing) });
+      }
+      throw err;
+    }
+
+    const model = process.env.ANTHROPIC_QUESTION_MODEL || "claude-sonnet-5";
+    let message;
+    try {
+      message = await anthropic.messages.create({
+        model,
+        max_tokens: 800,
+        system: AI_QUESTION_SYSTEM_PROMPT,
+        tools: [AI_QUESTION_VERIFICATION_GENERATE_TOOL],
+        tool_choice: { type: "tool", name: "submit_verification_question" },
+        messages: buildVerificationGeneratePrompt(question),
+      });
+    } catch (apiErr) {
+      const mapped = mapAnthropicError(apiErr);
+      console.error("generateVerification (Anthropic API):", apiErr);
+      await prisma.aiQuestionVerification.update({ where: { id: reserved.id }, data: { status: "ERROR" } });
+      await prisma.aiUsageLog
+        .create({ data: { feature: "ai_question_verification", studentId, model, status: "error", errorCode: mapped.code } })
+        .catch((e) => console.error("AiUsageLog yazılamadı:", e));
+      return res.status(mapped.status).json({ success: false, message: mapped.message });
+    }
+
+    const toolUse = message.content?.find((b) => b.type === "tool_use" && b.name === "submit_verification_question");
+    const promptText = sanitizeText(toolUse?.input?.promptText, 1000);
+    const expectedAnswer = sanitizeText(toolUse?.input?.expectedAnswer, 1000);
+    const skills = sanitizeSkills(toolUse?.input?.skills);
+    const estimatedCostUsd = estimateCostUsd(model, message.usage);
+
+    if (!promptText || !expectedAnswer) {
+      await prisma.aiQuestionVerification.update({ where: { id: reserved.id }, data: { status: "ERROR", model } });
+      return res.status(502).json({ success: false, message: "Pratik sorusu üretilemedi, lütfen tekrar dene." });
+    }
+
+    const updated = await prisma.aiQuestionVerification.update({
+      where: { id: reserved.id },
+      data: {
+        status: "COMPLETED",
+        promptText,
+        expectedAnswerJson: { expectedAnswer },
+        subject: question.subject,
+        topic: question.topic,
+        subtopic: question.subtopic,
+        skills,
+        model,
+        inputTokens: message.usage?.input_tokens ?? null,
+        outputTokens: message.usage?.output_tokens ?? null,
+        estimatedCostUsd,
+      },
+    });
+
+    await prisma.aiUsageLog
+      .create({
+        data: {
+          feature: "ai_question_verification",
+          studentId,
+          model,
+          status: "success",
+          inputTokens: message.usage?.input_tokens ?? null,
+          outputTokens: message.usage?.output_tokens ?? null,
+          estimatedCostUsd,
+        },
+      })
+      .catch((e) => console.error("AiUsageLog yazılamadı:", e));
+
+    res.json({ success: true, verification: toPublicVerification(updated) });
+  } catch (error) {
+    console.error("generateVerification:", error);
+    res.status(500).json({ success: false, message: "Pratik sorusu üretilemedi, lütfen tekrar dene." });
+  }
+};
+
+/**
+ * POST /api/v1/ogrenci/me/ai-question/:id/verification/:verificationId/answer
+ * Body: { studentAnswer: string } — tip/uzunluk doğrulanır (R8, max 1000
+ * karakter), Claude'a gönderilirken delimiter ile güvenilmeyen veri olarak
+ * sarmalanır (buildVerificationAnswerPrompt). Cevaplama HİÇBİR kota
+ * tüketmez — yalnızca generate tüketir (R3).
+ */
+export const answerVerification = async (req, res) => {
+  const studentId = req.user.id;
+  try {
+    const id = parseInt(req.params.id);
+    const verificationId = parseInt(req.params.verificationId);
+    const studentAnswerRaw = req.body?.studentAnswer;
+
+    if (typeof studentAnswerRaw !== "string" || !studentAnswerRaw.trim() || studentAnswerRaw.length > 1000) {
+      return res.status(400).json({ success: false, message: "Cevap boş olamaz ve 1000 karakteri geçemez." });
+    }
+
+    const verification = await prisma.aiQuestionVerification.findUnique({ where: { id: verificationId } });
+    if (!verification || verification.studentId !== studentId || verification.questionId !== id) {
+      return res.status(404).json({ success: false, message: "Doğrulama sorusu bulunamadı." });
+    }
+    if (verification.status !== "COMPLETED") {
+      return res.status(400).json({ success: false, message: "Bu doğrulama sorusu henüz hazır değil." });
+    }
+    if (verification.evaluationStatus != null) {
+      return res.status(400).json({ success: false, message: "Bu doğrulama sorusu zaten cevaplandı." });
+    }
+    if (!anthropic) {
+      return res.status(503).json({ success: false, message: "Bu özellik şu anda yapılandırılmamış." });
+    }
+
+    const studentAnswer = studentAnswerRaw.trim().slice(0, 1000);
+    // Cevabı erken kaydet — aşağıdaki Claude çağrısı başarısız olursa
+    // evaluationStatus null kalır, öğrenci tekrar cevap gönderebilir, hiçbir
+    // veri kaybolmaz.
+    await prisma.aiQuestionVerification.update({ where: { id: verificationId }, data: { studentAnswer } });
+
+    const model = process.env.ANTHROPIC_QUESTION_MODEL || "claude-sonnet-5";
+    let message;
+    try {
+      message = await anthropic.messages.create({
+        model,
+        max_tokens: 500,
+        system: AI_QUESTION_SYSTEM_PROMPT,
+        tools: [AI_QUESTION_VERIFICATION_ANSWER_TOOL],
+        tool_choice: { type: "tool", name: "submit_verification_evaluation" },
+        messages: buildVerificationAnswerPrompt({ ...verification, studentAnswer }),
+      });
+    } catch (apiErr) {
+      const mapped = mapAnthropicError(apiErr);
+      console.error("answerVerification (Anthropic API):", apiErr);
+      await prisma.aiUsageLog
+        .create({ data: { feature: "ai_question_verification", studentId, model, status: "error", errorCode: mapped.code } })
+        .catch((e) => console.error("AiUsageLog yazılamadı:", e));
+      return res.status(mapped.status).json({ success: false, message: mapped.message });
+    }
+
+    const toolUse = message.content?.find((b) => b.type === "tool_use" && b.name === "submit_verification_evaluation");
+    const evaluationStatus = sanitizeEnum(toolUse?.input?.evaluationStatus, EVALUATION_STATUSES);
+    const feedback = sanitizeText(toolUse?.input?.feedback, 800);
+    const estimatedCostUsd = estimateCostUsd(model, message.usage);
+
+    if (!evaluationStatus) {
+      await prisma.aiUsageLog
+        .create({ data: { feature: "ai_question_verification", studentId, model, status: "error", errorCode: "invalid_input" } })
+        .catch((e) => console.error("AiUsageLog yazılamadı:", e));
+      return res.status(502).json({ success: false, message: "Değerlendirme yapılamadı, lütfen tekrar dene." });
+    }
+
+    // Not: generate çağrısının model/token/maliyet alanları burada EZİLMEZ —
+    // bu satır yalnızca bir kez (generate anında) o çağrının maliyetini
+    // taşır; answer çağrısının kendi maliyeti yalnızca AiUsageLog'da (ayrı
+    // satır, aynı feature) tutulur. AiQuestionFollowup'tan farklı olarak
+    // verification'ın generate/answer için ayrı child satırları yok.
+    const updated = await prisma.aiQuestionVerification.update({
+      where: { id: verificationId },
+      data: { evaluationStatus, feedback, answeredAt: new Date() },
+    });
+
+    await prisma.aiUsageLog
+      .create({
+        data: {
+          feature: "ai_question_verification",
+          studentId,
+          model,
+          status: "success",
+          inputTokens: message.usage?.input_tokens ?? null,
+          outputTokens: message.usage?.output_tokens ?? null,
+          estimatedCostUsd,
+        },
+      })
+      .catch((e) => console.error("AiUsageLog yazılamadı:", e));
+
+    res.json({ success: true, verification: toPublicVerification(updated) });
+  } catch (error) {
+    console.error("answerVerification:", error);
+    res.status(500).json({ success: false, message: "Cevap işlenemedi, lütfen tekrar dene." });
   }
 };

@@ -40,6 +40,10 @@ import {
   getAiQuestionHistory,
   getAiQuestionDetail,
   createFollowup,
+  getMyQuestionInsights,
+  updateUnderstandingStatus,
+  generateVerification,
+  answerVerification,
 } from "../../controllers/aiQuestion.controller.js";
 
 const router = express.Router();
@@ -144,8 +148,12 @@ router.post(
   createAiQuestion
 );
 router.get("/me/ai-question/history", authenticateToken, authorizeRoles("student"), getAiQuestionHistory);
+router.get("/me/ai-question/insights", authenticateToken, authorizeRoles("student"), getMyQuestionInsights);
 router.get("/me/ai-question/:id", authenticateToken, authorizeRoles("student"), getAiQuestionDetail);
 router.post("/me/ai-question/:id/followup", authenticateToken, authorizeRoles("student"), createFollowup);
+router.patch("/me/ai-question/:id/understanding", authenticateToken, authorizeRoles("student"), updateUnderstandingStatus);
+router.post("/me/ai-question/:id/verification/generate", authenticateToken, authorizeRoles("student"), aiQuestionLimiter, generateVerification);
+router.post("/me/ai-question/:id/verification/:verificationId/answer", authenticateToken, authorizeRoles("student"), aiQuestionLimiter, answerVerification);
 
 
 
