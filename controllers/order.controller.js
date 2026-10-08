@@ -137,7 +137,11 @@ export const prepareOrder = async (req, res) => {
           if (cleanedCart.length !== 1 || (item.quantity || 1) !== 1) {
             return res.status(400).json({ error: "Geçersiz sepet." });
           }
-          totalPrice = (lock.unitPrice / 100).toFixed(2);
+          // PaymentMeta.totalPrice Prisma şemasında Float — .toFixed(2) bir
+          // string döner, Number() ile sarmalanmazsa paymentMeta.create()
+          // PrismaClientValidationError ile patlar (prepareOrder'ın catch'i
+          // bunu ayırt edilemeyen bir 500'e çevirir).
+          totalPrice = Number((lock.unitPrice / 100).toFixed(2));
           discountRate = 0;
           couponCode = "";
           continue;
