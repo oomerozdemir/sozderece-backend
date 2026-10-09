@@ -24,6 +24,7 @@ import {
   createManualExamResult,
   getMyExamResultDetail,
   getMyResources,
+  getMyAssignedResources,
   getMyAnnouncements,
   getMySummary,
   startPomodoro,
@@ -125,6 +126,7 @@ router.patch("/me/exam-results/:id/results", authenticateToken, submitExamResult
 router.patch("/me/exam-results/:id/analysis", authenticateToken, submitExamSelfAnalysis);
 router.get("/me/exam-results/:id", authenticateToken, getMyExamResultDetail);
 router.get("/me/resources", authenticateToken, getMyResources);
+router.get("/me/assigned-resources", authenticateToken, getMyAssignedResources);
 router.get("/me/announcements", authenticateToken, getMyAnnouncements);
 router.get("/me/summary", authenticateToken, getMySummary);
 router.post("/me/pomodoro/start", authenticateToken, startPomodoro);

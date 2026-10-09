@@ -772,3 +772,158 @@ export const createAudioNote = async (req, res) => {
   }
 };
 
+/* =========================
+   Koç → Öğrenci Kaynak Atama (StudentResource)
+========================= */
+
+const RESOURCE_TYPES = ["BOOK", "MOCK_EXAM", "BRANCH_MOCK", "FASCICLE", "OTHER"];
+const RESOURCE_EXAM_TYPES = ["TYT", "AYT", "LGS"];
+// MOCK_EXAM (Genel Deneme) için ders kavramı yok — subject her zaman null'a
+// zorlanır. BOOK/BRANCH_MOCK/FASCICLE'da ders anlamlı olduğu için zorunlu;
+// OTHER'da opsiyonel.
+const RESOURCE_SUBJECT_REQUIRED_TYPES = new Set(["BOOK", "BRANCH_MOCK", "FASCICLE"]);
+
+// Not (teknik borç): repo genelinde backend'de güvenilir, merkezi bir subject
+// taksonomisi/allowlist'i yok (yalnızca FE'deki src/config/academicSubjects.js
+// dropdown'u besliyor) — subject burada yalnızca trim+length ile kabul
+// ediliyor, mevcut validateExamResultPayload'daki seviyeyle aynı.
+function validateResourcePayload(body) {
+  const type = String(body?.type || "");
+  const examType = String(body?.examType || "");
+  const title = String(body?.title || "").trim();
+  const publisherRaw = body?.publisher != null ? String(body.publisher).trim() : "";
+  const noteRaw = body?.note != null ? String(body.note).trim() : "";
+  let subject = body?.subject != null ? String(body.subject).trim() : "";
+
+  if (!RESOURCE_TYPES.includes(type)) return { error: "Geçersiz kaynak türü." };
+  if (!RESOURCE_EXAM_TYPES.includes(examType)) return { error: "Geçersiz sınav türü." };
+  if (!title || title.length > 150) return { error: "Kaynak adı 1-150 karakter olmalı." };
+  if (publisherRaw.length > 120) return { error: "Yayınevi en fazla 120 karakter olabilir." };
+  if (noteRaw.length > 1000) return { error: "Koç notu en fazla 1000 karakter olabilir." };
+  if (subject.length > 60) return { error: "Ders adı en fazla 60 karakter olabilir." };
+
+  if (type === "MOCK_EXAM") {
+    subject = null;
+  } else if (RESOURCE_SUBJECT_REQUIRED_TYPES.has(type) && !subject) {
+    return { error: "Bu kaynak türü için ders seçimi zorunludur." };
+  } else {
+    subject = subject || null;
+  }
+
+  return {
+    data: { type, examType, title, subject, publisher: publisherRaw || null, note: noteRaw || null },
+  };
+}
+
+/**
+ * GET /api/coach/students/:studentId/resources?examType=
+ */
+export const getResourcesForCoach = async (req, res) => {
+  try {
+    const studentId = parseInt(req.params.studentId);
+    const coach = await assertOwnStudent(req.user.id, studentId);
+    if (!coach) return res.status(403).json({ success: false, message: "Bu öğrenci size atanmamış." });
+
+    const { examType } = req.query;
+    const where = { studentId, archivedAt: null };
+    if (examType && RESOURCE_EXAM_TYPES.includes(examType)) where.examType = examType;
+
+    const resources = await prisma.studentResource.findMany({ where, orderBy: { createdAt: "desc" } });
+    res.json({ success: true, resources });
+  } catch (error) {
+    console.error("getResourcesForCoach:", error);
+    res.status(500).json({ success: false, message: "Kaynaklar alınamadı." });
+  }
+};
+
+/**
+ * POST /api/coach/students/:studentId/resources
+ * Body: { type, examType, subject?, title, publisher?, note?, force? }
+ * force:true verilmezse aynı studentId+title+examType+subject aktif kaydı
+ * varsa 409 ile uyarı döner — koç isterse force:true ile yine ekleyebilir.
+ */
+export const createStudentResource = async (req, res) => {
+  try {
+    const studentId = parseInt(req.params.studentId);
+    const coach = await assertOwnStudent(req.user.id, studentId);
+    if (!coach) return res.status(403).json({ success: false, message: "Bu öğrenci size atanmamış." });
+
+    const validated = validateResourcePayload(req.body);
+    if (validated.error) return res.status(400).json({ success: false, message: validated.error });
+    const { data } = validated;
+
+    if (!req.body?.force) {
+      const duplicate = await prisma.studentResource.findFirst({
+        where: { studentId, archivedAt: null, title: data.title, examType: data.examType, subject: data.subject },
+        select: { id: true },
+      });
+      if (duplicate) {
+        return res.status(409).json({ success: false, duplicate: true, message: "Bu öğrenciye benzer bir kaynak zaten eklenmiş." });
+      }
+    }
+
+    const resource = await prisma.studentResource.create({
+      data: { ...data, studentId, assignedByCoachId: req.user.id },
+    });
+    res.status(201).json({ success: true, resource });
+  } catch (error) {
+    console.error("createStudentResource:", error);
+    res.status(500).json({ success: false, message: "Kaynak eklenemedi." });
+  }
+};
+
+/**
+ * PATCH /api/coach/students/:studentId/resources/:resourceId
+ * Body: { type, examType, subject?, title, publisher?, note? }
+ */
+export const updateStudentResource = async (req, res) => {
+  try {
+    const studentId = parseInt(req.params.studentId);
+    const resourceId = parseInt(req.params.resourceId);
+    const coach = await assertOwnStudent(req.user.id, studentId);
+    if (!coach) return res.status(403).json({ success: false, message: "Bu öğrenci size atanmamış." });
+
+    // IDOR koruması: assertOwnStudent yalnızca studentId'nin bu koça ait
+    // olduğunu doğrular — resourceId'nin GERÇEKTEN bu studentId'ye ait olup
+    // olmadığı ayrıca doğrulanmazsa, koç kendi öğrencisinin URL'sini
+    // kullanarak başka bir öğrencinin kaynağını güncelleyebilir.
+    const existing = await prisma.studentResource.findFirst({ where: { id: resourceId, studentId } });
+    if (!existing) return res.status(404).json({ success: false, message: "Kaynak bulunamadı." });
+
+    const validated = validateResourcePayload(req.body);
+    if (validated.error) return res.status(400).json({ success: false, message: validated.error });
+
+    const resource = await prisma.studentResource.update({ where: { id: resourceId }, data: validated.data });
+    res.json({ success: true, resource });
+  } catch (error) {
+    console.error("updateStudentResource:", error);
+    res.status(500).json({ success: false, message: "Kaynak güncellenemedi." });
+  }
+};
+
+/**
+ * PATCH /api/coach/students/:studentId/resources/:resourceId/archive
+ * Hard delete yok — yalnızca archivedAt set edilir, listelerden düşer.
+ */
+export const archiveStudentResource = async (req, res) => {
+  try {
+    const studentId = parseInt(req.params.studentId);
+    const resourceId = parseInt(req.params.resourceId);
+    const coach = await assertOwnStudent(req.user.id, studentId);
+    if (!coach) return res.status(403).json({ success: false, message: "Bu öğrenci size atanmamış." });
+
+    // IDOR koruması — bkz. updateStudentResource'taki aynı not.
+    const existing = await prisma.studentResource.findFirst({ where: { id: resourceId, studentId } });
+    if (!existing) return res.status(404).json({ success: false, message: "Kaynak bulunamadı." });
+
+    const resource = await prisma.studentResource.update({
+      where: { id: resourceId },
+      data: { archivedAt: new Date() },
+    });
+    res.json({ success: true, resource });
+  } catch (error) {
+    console.error("archiveStudentResource:", error);
+    res.status(500).json({ success: false, message: "Kaynak kaldırılamadı." });
+  }
+};
+

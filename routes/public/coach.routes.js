@@ -10,6 +10,7 @@ import {
   getInsightsForCoach, addInsightTopicToPlan, getTopicsForCoach, getMasteryForCoach,
   getStudentAiQuestionInsightsForCoach,
   getNotesForCoach, createTextNote, createAudioNote,
+  getResourcesForCoach, createStudentResource, updateStudentResource, archiveStudentResource,
 } from "../../controllers/coach.controller.js";
 import { authenticateToken, authorizeRoles } from "../../middleware/authMiddleware.js";
 import { uploadAudio } from "../../middleware/upload.js";
@@ -53,6 +54,10 @@ router.get("/students/:studentId/ai-question-insights", authenticateToken, autho
 router.get("/students/:studentId/notes", authenticateToken, authorizeRoles("coach"), getNotesForCoach);
 router.post("/students/:studentId/notes/text", authenticateToken, authorizeRoles("coach"), createTextNote);
 router.post("/students/:studentId/notes/audio", authenticateToken, authorizeRoles("coach"), uploadAudio.single("audio"), createAudioNote);
+router.get("/students/:studentId/resources", authenticateToken, authorizeRoles("coach"), getResourcesForCoach);
+router.post("/students/:studentId/resources", authenticateToken, authorizeRoles("coach"), createStudentResource);
+router.patch("/students/:studentId/resources/:resourceId", authenticateToken, authorizeRoles("coach"), updateStudentResource);
+router.patch("/students/:studentId/resources/:resourceId/archive", authenticateToken, authorizeRoles("coach"), archiveStudentResource);
 
 
 export default router;

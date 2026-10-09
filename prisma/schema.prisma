@@ -409,6 +409,37 @@ model Resource {
   requiredStreak Int    @default(0)
 }
 
+// Koçun bir öğrenciye manuel atadığı çalışma kaynağı (kitap/soru bankası,
+// deneme, fasikül vb.) — model Resource'tan (global admin yayın kataloğu,
+// studentId/coachId yok) KASITLI olarak ayrı. AI önerisi/otomatik atama yok;
+// her satır bir koçun bilinçli kararını temsil eder.
+model StudentResource {
+  id                Int    @id @default(autoincrement())
+  studentId         Int
+  student           User   @relation("StudentResources", fields: [studentId], references: [id])
+  // Atayan koçun User.id'si — TeacherProfile'daki reviewer/user ikili
+  // relation deseniyle aynı (schema'da zaten var olan, test edilmiş bir
+  // kalıp): gerçek FK, koç değişse de geçmiş kaydın "kim verdi" bilgisi
+  // kaybolmaz.
+  assignedByCoachId Int
+  assignedByCoach   User   @relation("StudentResourceAssignedBy", fields: [assignedByCoachId], references: [id])
+  type              String // "BOOK" | "MOCK_EXAM" | "BRANCH_MOCK" | "FASCICLE" | "OTHER"
+  examType          String // "TYT" | "AYT" | "LGS"
+  // MOCK_EXAM'de (Genel Deneme) ders kavramı yok — null. BOOK/BRANCH_MOCK/
+  // FASCICLE'da backend zorunlu kılar, OTHER'da opsiyonel (bkz. controller).
+  subject    String?
+  title      String
+  publisher  String?
+  note       String?   @db.Text
+  archivedAt DateTime?
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+
+  @@index([studentId, archivedAt])
+  @@index([studentId, examType])
+  @@index([assignedByCoachId])
+}
+
 model Announcement {
   id          Int       @id @default(autoincrement())
   title       String
@@ -453,6 +484,8 @@ model User {
   sosAlerts           SosAlert[]             @relation("StudentSosAlerts")
   topicMasteries      TopicMastery[]         @relation("StudentTopicMastery")
   coachNotes          CoachNote[]            @relation("StudentCoachNotes")
+  studentResources    StudentResource[]      @relation("StudentResources")
+  assignedStudentResources StudentResource[] @relation("StudentResourceAssignedBy")
   studentAppointments Appointment[]          @relation("StudentAppointments")
   carts               Cart[]
   coachProfile        Coach?                 @relation("CoachProfile")

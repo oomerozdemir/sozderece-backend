@@ -649,6 +649,26 @@ export const getMyResources = async (req, res) => {
 };
 
 /**
+ * GET /api/v1/ogrenci/me/assigned-resources
+ * Koçun bu öğrenciye atadığı kaynaklar (StudentResource) — model Resource'tan
+ * (global yayın kataloğu, /me/resources) AYRI bir domain. Yalnızca JWT'deki
+ * req.user.id için, archivedAt:null (aktif) kayıtlar döner; body/param'dan
+ * studentId kabul edilmez.
+ */
+export const getMyAssignedResources = async (req, res) => {
+  try {
+    const resources = await prisma.studentResource.findMany({
+      where: { studentId: req.user.id, archivedAt: null },
+      orderBy: { createdAt: "desc" },
+    });
+    res.json({ success: true, resources });
+  } catch (err) {
+    console.error("getMyAssignedResources:", err);
+    res.status(500).json({ success: false, message: "Kaynaklar alınamadı." });
+  }
+};
+
+/**
  * GET /api/v1/ogrenci/me/announcements
  * Süresi geçmemiş, gizli olmayan, sınıf/türüne uygun duyurular.
  */
