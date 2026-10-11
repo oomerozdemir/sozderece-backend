@@ -722,6 +722,10 @@ model Package {
   // PriceLock (öğrencinin kilitlediği fiyat) kaydı olan kişiler satın alabilir;
   // tahsil edilen tutar paketin kendi fiyatı değil, PriceLock.unitPrice'tır.
   requiresPriceLock Boolean  @default(false)
+  // AI Soru Asistanı erişimi bu pakete dahil mi — admin panelden işaretlenir.
+  // Paket adı/fiyatı asla hardcode edilmez, erişim kararı yalnızca bu bayrağı
+  // okur (bkz. utils/aiAccessControl.js#hasAiQuestionAssistantAccess).
+  aiQuestionAssistantAccess Boolean @default(false)
   createdAt        DateTime  @default(now())
   updatedAt        DateTime  @updatedAt
 }

@@ -3,6 +3,7 @@ import express from "express";
 import multer from "multer";
 import rateLimit, { ipKeyGenerator } from "express-rate-limit";
 import { authenticateToken, authorizeRoles } from "../../middleware/authMiddleware.js";
+import { requireAiQuestionAssistantAccess } from "../../utils/aiAccessControl.js";
 import {
   getStudentProfile,
   completeAppointmentByStudent,
@@ -144,6 +145,7 @@ router.post(
   "/me/ai-question",
   authenticateToken,
   authorizeRoles("student"),
+  requireAiQuestionAssistantAccess,
   aiQuestionLimiter,
   memUploadQuestionImage.single("image"),
   handleUploadError,
@@ -152,10 +154,10 @@ router.post(
 router.get("/me/ai-question/history", authenticateToken, authorizeRoles("student"), getAiQuestionHistory);
 router.get("/me/ai-question/insights", authenticateToken, authorizeRoles("student"), getMyQuestionInsights);
 router.get("/me/ai-question/:id", authenticateToken, authorizeRoles("student"), getAiQuestionDetail);
-router.post("/me/ai-question/:id/followup", authenticateToken, authorizeRoles("student"), createFollowup);
+router.post("/me/ai-question/:id/followup", authenticateToken, authorizeRoles("student"), requireAiQuestionAssistantAccess, createFollowup);
 router.patch("/me/ai-question/:id/understanding", authenticateToken, authorizeRoles("student"), updateUnderstandingStatus);
-router.post("/me/ai-question/:id/verification/generate", authenticateToken, authorizeRoles("student"), aiQuestionLimiter, generateVerification);
-router.post("/me/ai-question/:id/verification/:verificationId/answer", authenticateToken, authorizeRoles("student"), aiQuestionLimiter, answerVerification);
+router.post("/me/ai-question/:id/verification/generate", authenticateToken, authorizeRoles("student"), requireAiQuestionAssistantAccess, aiQuestionLimiter, generateVerification);
+router.post("/me/ai-question/:id/verification/:verificationId/answer", authenticateToken, authorizeRoles("student"), requireAiQuestionAssistantAccess, aiQuestionLimiter, answerVerification);
 
 
 

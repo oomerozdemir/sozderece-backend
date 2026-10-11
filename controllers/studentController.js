@@ -1,4 +1,5 @@
 import prisma from "../utils/prisma.js";
+import { hasAiQuestionAssistantAccess } from "../utils/aiAccessControl.js";
 
 /**
  * PATCH /api/v1/ogrenci/me/tour-completed
@@ -60,7 +61,24 @@ export const getStudentProfile = async (req, res) => {
     // Şifre hash'i client'a hiçbir zaman gitmemeli — select kullanılmadığı
     // için Prisma tüm alanları döndürüyordu.
     const { password, ...safeUser } = user;
-    res.json(safeUser);
+
+    // Frontend her tab'da ayrı ayrı paket hesaplaması yapmasın diye tek
+    // kaynaktan (hasAiQuestionAssistantAccess) hesaplanıp buraya eklenir —
+    // bu alan yalnızca GÖSTERİM içindir, gerçek yetkilendirme backend'deki
+    // requireAiQuestionAssistantAccess middleware'inde ayrıca yapılır.
+    let aiQuestionAssistantEnabled = false;
+    try {
+      const access = await hasAiQuestionAssistantAccess(userId);
+      aiQuestionAssistantEnabled = access.allowed;
+    } catch (err) {
+      console.error("getStudentProfile entitlement check failed:", err);
+      // Fail-closed: hesaplanamıyorsa frontend'e "yok" denir, asla "var" denmez.
+    }
+
+    res.json({
+      ...safeUser,
+      entitlements: { aiQuestionAssistant: { enabled: aiQuestionAssistantEnabled } },
+    });
   } catch (error) {
     console.error("Öğrenci bilgileri alınamadı:", error);
     res.status(500).json({ message: "Bir hata oluştu." });

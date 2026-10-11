@@ -28,7 +28,7 @@ export const createPackage = async (req, res) => {
       subtitle, type, hidden, displayOrder, ctaLabel, ctaHref, features, note, freeLessons,
       promoPrice, promoUnitPrice, promoEndDate, promoLabel,
       examDate, examDiscountRate, plans, billingCycle, badge, videoUrl,
-      guaranteeText, noRefund, requiresPriceLock,
+      guaranteeText, noRefund, requiresPriceLock, aiQuestionAssistantAccess,
     } = req.body;
 
     if (!slug || !name) {
@@ -66,6 +66,7 @@ export const createPackage = async (req, res) => {
         guaranteeText: guaranteeText || null,
         noRefund: noRefund === true || noRefund === "true",
         requiresPriceLock: requiresPriceLock === true || requiresPriceLock === "true",
+        aiQuestionAssistantAccess: aiQuestionAssistantAccess === true || aiQuestionAssistantAccess === "true",
       },
     });
     res.status(201).json({ success: true, package: created });
@@ -84,7 +85,7 @@ export const updatePackage = async (req, res) => {
       subtitle, type, hidden, displayOrder, ctaLabel, ctaHref, features, note, freeLessons,
       promoPrice, promoUnitPrice, promoEndDate, promoLabel,
       examDate, examDiscountRate, plans, billingCycle, badge, videoUrl,
-      guaranteeText, noRefund, requiresPriceLock,
+      guaranteeText, noRefund, requiresPriceLock, aiQuestionAssistantAccess,
     } = req.body;
 
     const updated = await prisma.package.update({
@@ -119,6 +120,7 @@ export const updatePackage = async (req, res) => {
         ...(guaranteeText !== undefined && { guaranteeText: guaranteeText || null }),
         ...(noRefund !== undefined && { noRefund: noRefund === true || noRefund === "true" }),
         ...(requiresPriceLock !== undefined && { requiresPriceLock: requiresPriceLock === true || requiresPriceLock === "true" }),
+        ...(aiQuestionAssistantAccess !== undefined && { aiQuestionAssistantAccess: aiQuestionAssistantAccess === true || aiQuestionAssistantAccess === "true" }),
       },
     });
     res.json({ success: true, package: updated });
