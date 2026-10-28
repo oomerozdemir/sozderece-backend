@@ -499,7 +499,7 @@ export const submitExamResults = async (req, res) => {
 
 /**
  * PATCH /api/v1/ogrenci/me/exam-results/:id/analysis
- * Body: { difficultyReasons?, didWell?, nextImprovement?, studentNote? }
+ * Body: { difficultyReasons?, didWell?, nextImprovement?, studentNote?, reviewNotes? }
  */
 export const submitExamSelfAnalysis = async (req, res) => {
   try {
@@ -516,7 +516,7 @@ export const submitExamSelfAnalysis = async (req, res) => {
       return res.status(400).json({ success: false, message: "Önce deneme sonuçlarını girmelisin." });
     }
 
-    const { difficultyReasons, didWell, nextImprovement, studentNote } = req.body || {};
+    const { difficultyReasons, didWell, nextImprovement, studentNote, reviewNotes } = req.body || {};
     const updated = await prisma.examResult.update({
       where: { id },
       data: {
@@ -524,6 +524,7 @@ export const submitExamSelfAnalysis = async (req, res) => {
         didWell: didWell != null ? String(didWell).trim().slice(0, 1000) || null : undefined,
         nextImprovement: nextImprovement != null ? String(nextImprovement).trim().slice(0, 1000) || null : undefined,
         studentNote: studentNote != null ? String(studentNote).trim().slice(0, 1000) || null : undefined,
+        reviewNotes: reviewNotes != null ? String(reviewNotes).trim().slice(0, 2000) || null : undefined,
         status: "COMPLETED",
       },
     });
@@ -531,6 +532,38 @@ export const submitExamSelfAnalysis = async (req, res) => {
   } catch (err) {
     console.error("submitExamSelfAnalysis:", err);
     res.status(500).json({ success: false, message: "Analiz kaydedilemedi." });
+  }
+};
+
+/**
+ * PATCH /api/v1/ogrenci/me/exam-results/:id/review-notes
+ * Body: { reviewNotes }
+ * "Bilmediğim/tekrar etmem gereken sorular" alanı — analiz adımı tamamlandıktan
+ * SONRA da (Deneme Analizim'deki hatırlatmadan) eklenebilir/güncellenebilir,
+ * submitExamSelfAnalysis'in aksine COMPLETED durumunda idempotent dönmez.
+ * Yalnızca bu tek alanı değiştirir, diğer analiz alanlarına dokunmaz.
+ */
+export const updateExamReviewNotes = async (req, res) => {
+  try {
+    const studentId = req.user.id;
+    const id = parseInt(req.params.id);
+    const exam = await prisma.examResult.findUnique({ where: { id } });
+    if (!exam || exam.studentId !== studentId) {
+      return res.status(404).json({ success: false, message: "Deneme bulunamadı." });
+    }
+    if (exam.status !== "COMPLETED") {
+      return res.status(400).json({ success: false, message: "Önce deneme analizini tamamlamalısın." });
+    }
+
+    const { reviewNotes } = req.body || {};
+    const updated = await prisma.examResult.update({
+      where: { id },
+      data: { reviewNotes: reviewNotes != null ? String(reviewNotes).trim().slice(0, 2000) || null : null },
+    });
+    res.json({ success: true, exam: updated });
+  } catch (err) {
+    console.error("updateExamReviewNotes:", err);
+    res.status(500).json({ success: false, message: "Kaydedilemedi." });
   }
 };
 
@@ -546,7 +579,7 @@ export const createManualExamResult = async (req, res) => {
     const {
       examName, examType, branch, examDate, totalQuestions,
       subjectNets, durationMinutes, targetNet, targetDurationMinutes, focusAreas,
-      difficultyReasons, didWell, nextImprovement, studentNote,
+      difficultyReasons, didWell, nextImprovement, studentNote, reviewNotes,
     } = req.body || {};
 
     if (!examName || !String(examName).trim()) {
@@ -567,7 +600,7 @@ export const createManualExamResult = async (req, res) => {
     const studentTrack = effectiveTrackFromGrade(user?.grade);
     const aggregates = computeExamAggregates(subjectNets, examType, studentTrack);
 
-    const hasAnalysis = !!(didWell || nextImprovement || studentNote || (Array.isArray(difficultyReasons) && difficultyReasons.length));
+    const hasAnalysis = !!(didWell || nextImprovement || studentNote || reviewNotes || (Array.isArray(difficultyReasons) && difficultyReasons.length));
 
     const exam = await prisma.examResult.create({
       data: {
@@ -591,6 +624,7 @@ export const createManualExamResult = async (req, res) => {
         didWell: didWell ? String(didWell).trim().slice(0, 1000) : null,
         nextImprovement: nextImprovement ? String(nextImprovement).trim().slice(0, 1000) : null,
         studentNote: studentNote ? String(studentNote).trim().slice(0, 1000) : null,
+        reviewNotes: reviewNotes ? String(reviewNotes).trim().slice(0, 2000) : null,
         status: hasAnalysis ? "COMPLETED" : "ANALYSIS_PENDING",
       },
     });

@@ -22,6 +22,7 @@ import {
   finishLiveExam,
   submitExamResults,
   submitExamSelfAnalysis,
+  updateExamReviewNotes,
   createManualExamResult,
   getMyExamResultDetail,
   getMyResources,
@@ -125,6 +126,7 @@ router.post("/me/exam-results/manual", authenticateToken, createManualExamResult
 router.patch("/me/exam-results/:id/finish", authenticateToken, finishLiveExam);
 router.patch("/me/exam-results/:id/results", authenticateToken, submitExamResults);
 router.patch("/me/exam-results/:id/analysis", authenticateToken, submitExamSelfAnalysis);
+router.patch("/me/exam-results/:id/review-notes", authenticateToken, updateExamReviewNotes);
 router.get("/me/exam-results/:id", authenticateToken, getMyExamResultDetail);
 router.get("/me/resources", authenticateToken, getMyResources);
 router.get("/me/assigned-resources", authenticateToken, getMyAssignedResources);

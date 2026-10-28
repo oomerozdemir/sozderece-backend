@@ -377,6 +377,9 @@ model ExamResult {
   didWell           String?
   nextImprovement   String?
   studentNote       String?
+  // Bilmediği / tekrar etmesi gereken sorular — öğrencinin kendi analiz
+  // ettiği, yanlış/boş bıraktığı soruların serbest metin listesi.
+  reviewNotes       String? @db.Text
 
   // "IN_PROGRESS" (timer çalışıyor) | "RESULT_PENDING" (bitti, sonuç
   // girilmedi) | "ANALYSIS_PENDING" (sonuç girildi, öz analiz yok) |
