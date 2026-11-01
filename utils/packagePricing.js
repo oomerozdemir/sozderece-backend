@@ -25,7 +25,15 @@ export function computeUnitPriceForPackage(dbPkg, planIndex) {
     const rate = dbPkg.examDiscountRate ?? 5;
     const totalTL = (daysLeft / 30) * dbPkg.price;
     const discountedTL = totalTL * (1 - rate / 100);
-    return Math.round(discountedTL * 100);
+    // ÖNEMLİ: frontend (promoUtils.js#getExamPrice) ekranda gösterdiği VE
+    // müşteriden tahsil ettiği tutarı önce TAM LİRA'ya yuvarlıyor, sonra
+    // kuruşa çeviriyor — burada ham kuruşu doğrudan yuvarlarsak (floating-point
+    // TL'yi *100 sonrası tek adımda) iki taraf farklı kuruş değerleri üretir.
+    // prepareOrder bu değeri ±1 kuruş toleransla karşılaştırdığı için o fark
+    // (günlere göre genelde birkaç TL) her sınav-indirimli siparişi meşru
+    // olduğu halde "Fiyat bilgisi doğrulanamadı" ile reddediyordu. Aynı
+    // yuvarlama sırası (önce tam TL, sonra kuruş) burada da uygulanıyor.
+    return Math.round(discountedTL) * 100;
   }
   if (dbPkg.promoPrice && dbPkg.promoEndDate && new Date(dbPkg.promoEndDate) > new Date() && dbPkg.promoUnitPrice != null) {
     return dbPkg.promoUnitPrice;
