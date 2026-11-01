@@ -1,4 +1,5 @@
 import prisma from "./prisma.js";
+import { toDayStart } from "./istanbulTime.js";
 
 // Bir paket + (opsiyonel) plan index için DB'deki güncel doğru birim fiyatını
 // (kuruş) hesaplar. Öncelik: plan > sınav > statik promo > normal.
@@ -19,8 +20,16 @@ export function computeUnitPriceForPackage(dbPkg, planIndex) {
     return selectedPlan.unitPrice;
   }
   if (dbPkg.examDate && new Date(dbPkg.examDate) > new Date()) {
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
+    // ÖNEMLİ: "today" sunucunun kendi saat dilimine (Render varsayılan UTC)
+    // göre değil, İstanbul takvim gününe göre sıfırlanmalı — aksi halde
+    // examDate tam UTC gece yarısında saklandığı için backend'in daysLeft'i
+    // frontend'in (müşterinin İstanbul/UTC+3 tarayıcısı, promoUtils.js#
+    // getExamDaysLeft) hesapladığından HER GÜN tam 1 gün az çıkıyor — gece
+    // yarısına yakın bir pencereyle sınırlı değil, sabit bir kayma (bkz.
+    // istanbulTime.js'in aynı sınıf hata için yazılmış açıklaması). Bu da
+    // sınava-kadar fiyatını her zaman birkaç TL farklı hesaplatıp
+    // prepareOrder'ın ±1 kuruş toleransını her seferinde aşıyordu.
+    const today = toDayStart(new Date());
     const daysLeft = Math.ceil((new Date(dbPkg.examDate) - today) / (1000 * 60 * 60 * 24));
     const rate = dbPkg.examDiscountRate ?? 5;
     const totalTL = (daysLeft / 30) * dbPkg.price;
