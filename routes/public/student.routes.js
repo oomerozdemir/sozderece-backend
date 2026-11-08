@@ -24,6 +24,8 @@ import {
   submitExamSelfAnalysis,
   updateExamReviewNotes,
   createManualExamResult,
+  createExamAnalysisOnly,
+  toggleExamReviewItem,
   getMyExamResultDetail,
   getMyResources,
   getMyAssignedResources,
@@ -123,6 +125,8 @@ router.get("/me/exam-results", authenticateToken, getMyExamResults);
 router.get("/me/exam-results/active", authenticateToken, getMyActiveExam);
 router.post("/me/exam-results/live/start", authenticateToken, startLiveExam);
 router.post("/me/exam-results/manual", authenticateToken, createManualExamResult);
+router.post("/me/exam-results/review-only", authenticateToken, createExamAnalysisOnly);
+router.patch("/me/exam-results/review-items/:id/toggle", authenticateToken, toggleExamReviewItem);
 router.patch("/me/exam-results/:id/finish", authenticateToken, finishLiveExam);
 router.patch("/me/exam-results/:id/results", authenticateToken, submitExamResults);
 router.patch("/me/exam-results/:id/analysis", authenticateToken, submitExamSelfAnalysis);

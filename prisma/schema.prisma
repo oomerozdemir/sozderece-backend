@@ -380,6 +380,10 @@ model ExamResult {
   // Bilmediği / tekrar etmesi gereken sorular — öğrencinin kendi analiz
   // ettiği, yanlış/boş bıraktığı soruların serbest metin listesi.
   reviewNotes       String? @db.Text
+  // "Deneme Analizi Yap" (net'siz) akışının tek tek tiklenebilir maddeleri —
+  // reviewNotes'tan farklı: serbest metin değil, her biri ayrı done durumu
+  // taşıyan yapılandırılmış bir liste.
+  reviewItems       ExamReviewItem[]
 
   // "IN_PROGRESS" (timer çalışıyor) | "RESULT_PENDING" (bitti, sonuç
   // girilmedi) | "ANALYSIS_PENDING" (sonuç girildi, öz analiz yok) |
@@ -392,6 +396,21 @@ model ExamResult {
   // ANALYSIS_PENDING) LIVE denemesi olamaz — bu kısmi unique index yalnızca
   // migration.sql'de var (Prisma DSL'i WHERE koşullu unique index'i ifade
   // edemiyor): 20260927120000_extend_exam_result_live_flow/migration.sql
+}
+
+// "Deneme Analizi Yap" (net'siz) akışının tekil, tiklenebilir maddesi —
+// öğrencinin "bilmediğim/tekrar etmem gereken" dediği her konu/soru ayrı bir
+// satır, kendi done durumuyla.
+model ExamReviewItem {
+  id           Int        @id @default(autoincrement())
+  examResultId Int
+  examResult   ExamResult @relation(fields: [examResultId], references: [id], onDelete: Cascade)
+  text         String
+  done         Boolean    @default(false)
+  createdAt    DateTime   @default(now())
+  doneAt       DateTime?
+
+  @@index([examResultId])
 }
 
 model Resource {

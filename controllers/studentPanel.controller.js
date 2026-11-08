@@ -323,6 +323,7 @@ export const getMyExamResults = async (req, res) => {
     const results = await prisma.examResult.findMany({
       where: { studentId: req.user.id },
       orderBy: { examDate: "asc" },
+      include: { reviewItems: true },
     });
     res.json({ success: true, results });
   } catch (err) {
@@ -640,6 +641,77 @@ export const createManualExamResult = async (req, res) => {
 };
 
 /**
+ * POST /api/v1/ogrenci/me/exam-results/review-only
+ * Body: { examName, examType, examDate, items: string[] }
+ * "Deneme Analizi Yap" — net/doğru-yanlış istemeyen, yalnızca bilmediği/
+ * tekrar etmesi gereken konuları/soruları tek tek madde olarak kaydeden
+ * hafif akış. createManualExamResult'tan BİLEREK ayrı: doğrulama kuralları
+ * (ders sonucu yerine en az bir madde) kökten farklı.
+ */
+export const createExamAnalysisOnly = async (req, res) => {
+  try {
+    const studentId = req.user.id;
+    const { examName, examType, examDate, items } = req.body || {};
+
+    if (!examName || !String(examName).trim()) {
+      return res.status(400).json({ success: false, message: "Deneme adı zorunlu." });
+    }
+    if (!EXAM_TYPES.includes(examType)) {
+      return res.status(400).json({ success: false, message: "Geçersiz deneme türü." });
+    }
+    const cleanedItems = (Array.isArray(items) ? items : [])
+      .map((t) => String(t || "").trim().slice(0, 300))
+      .filter(Boolean);
+    if (cleanedItems.length === 0) {
+      return res.status(400).json({ success: false, message: "En az bir konu/soru girmelisin." });
+    }
+
+    const exam = await prisma.examResult.create({
+      data: {
+        studentId,
+        examName: String(examName).trim().slice(0, 200),
+        examType,
+        examDate: examDate ? new Date(examDate) : new Date(),
+        entryMode: "MANUAL",
+        subjectNets: [],
+        totalNet: null,
+        status: "COMPLETED",
+        reviewItems: { create: cleanedItems.map((text) => ({ text })) },
+      },
+      include: { reviewItems: true },
+    });
+    res.status(201).json({ success: true, exam });
+  } catch (err) {
+    console.error("createExamAnalysisOnly:", err);
+    res.status(500).json({ success: false, message: "Analiz programı oluşturulamadı." });
+  }
+};
+
+/**
+ * PATCH /api/v1/ogrenci/me/exam-results/review-items/:id/toggle
+ * Bir "Deneme Analizi Yap" maddesini tamamlandı/tamamlanmadı olarak işaretler.
+ */
+export const toggleExamReviewItem = async (req, res) => {
+  try {
+    const studentId = req.user.id;
+    const id = parseInt(req.params.id);
+    const item = await prisma.examReviewItem.findUnique({ where: { id }, include: { examResult: true } });
+    if (!item || item.examResult.studentId !== studentId) {
+      return res.status(404).json({ success: false, message: "Madde bulunamadı." });
+    }
+    const done = !item.done;
+    const updated = await prisma.examReviewItem.update({
+      where: { id },
+      data: { done, doneAt: done ? new Date() : null },
+    });
+    res.json({ success: true, item: updated });
+  } catch (err) {
+    console.error("toggleExamReviewItem:", err);
+    res.status(500).json({ success: false, message: "Güncellenemedi." });
+  }
+};
+
+/**
  * GET /api/v1/ogrenci/me/exam-results/:id
  * Tek deneme detayı — yalnızca kendi kaydıysa döner.
  */
@@ -647,7 +719,7 @@ export const getMyExamResultDetail = async (req, res) => {
   try {
     const studentId = req.user.id;
     const id = parseInt(req.params.id);
-    const exam = await prisma.examResult.findUnique({ where: { id } });
+    const exam = await prisma.examResult.findUnique({ where: { id }, include: { reviewItems: true } });
     if (!exam || exam.studentId !== studentId) {
       return res.status(404).json({ success: false, message: "Deneme bulunamadı." });
     }
@@ -752,7 +824,7 @@ export const getMySummary = async (req, res) => {
 
     const [allPlans, examResults] = await Promise.all([
       prisma.studyPlan.findMany({ where: { studentId }, include: { items: true } }),
-      prisma.examResult.findMany({ where: { studentId }, orderBy: { examDate: "desc" } }),
+      prisma.examResult.findMany({ where: { studentId }, orderBy: { examDate: "desc" }, include: { reviewItems: true } }),
     ]);
 
     const currentWeekStart = toMondayStart(new Date());
@@ -830,12 +902,34 @@ export const getMySummary = async (req, res) => {
       ? Math.floor((toDayStart(new Date()) - toDayStart(activity[0].at)) / 86400000)
       : null;
 
+    // Genel Bakış'taki deneme-analizi hatırlatması — iki ayrı "eksik analiz"
+    // biçimini TEK sinyale indirger: önce bekleyen (done:false) "Deneme
+    // Analizi Yap" maddeleri var mı bakılır (daha somut/aksiyonel), yoksa en
+    // güncel SKORLU denemenin reviewNotes'u boş mu bakılır (eski akış).
+    // examResults zaten examDate'e göre azalan sıralı, ekstra sort gerekmiyor.
+    const latestScoredExam = examResults.find((r) => r.totalNet != null) || null;
+    const latestAnalysisOnlyExam = examResults.find((r) => r.totalNet == null && (r.reviewItems || []).length > 0) || null;
+    const pendingReviewItems = latestAnalysisOnlyExam ? latestAnalysisOnlyExam.reviewItems.filter((i) => !i.done) : [];
+
+    let examReviewReminder = null;
+    if (pendingReviewItems.length > 0) {
+      examReviewReminder = {
+        type: "pending_items",
+        examId: latestAnalysisOnlyExam.id,
+        examName: latestAnalysisOnlyExam.examName,
+        pendingCount: pendingReviewItems.length,
+      };
+    } else if (latestScoredExam && !latestScoredExam.reviewNotes?.trim()) {
+      examReviewReminder = { type: "missing_notes", examId: latestScoredExam.id, examName: latestScoredExam.examName };
+    }
+
     res.json({
       success: true,
       totalMinutesCompleted,
       weeklyMinutesCompleted,
       streak,
       daysSinceLastActivity,
+      examReviewReminder,
       weeklyTaskDone,
       weeklyTaskTotal,
       examCount: examResults.length,
