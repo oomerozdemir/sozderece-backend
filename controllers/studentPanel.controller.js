@@ -234,9 +234,11 @@ export const getMyToday = async (req, res) => {
 
 /**
  * POST /api/v1/ogrenci/me/pomodoro/start
- * Body: { studyPlanItemId?: number }
- * Yeni bir Pomodoro turu (25dk) başlatır. Zaten aktif bir tur varsa (sayfa
- * yenilenmiş olabilir) onu döner — aynı anda tek tur olur.
+ * Body: { studyPlanItemId?: number, plannedSeconds?: number }
+ * Yeni bir Pomodoro turu başlatır (varsayılan 25dk). Zaten aktif bir tur
+ * varsa (sayfa yenilenmiş olabilir) onu döner — aynı anda tek tur olur.
+ * studyPlanItemId'siz çağrı (Genel Bakış'taki görev-bağımsız odak sayacı)
+ * plannedSeconds ile öğrencinin girdiği hedef süreyi taşıyabilir.
  */
 export const startPomodoro = async (req, res) => {
   try {
@@ -245,8 +247,10 @@ export const startPomodoro = async (req, res) => {
     if (existing) return res.json({ success: true, session: existing });
 
     const studyPlanItemId = req.body?.studyPlanItemId ? parseInt(req.body.studyPlanItemId) : null;
+    const rawPlanned = parseInt(req.body?.plannedSeconds);
+    const plannedSeconds = Number.isFinite(rawPlanned) ? Math.min(28800, Math.max(300, rawPlanned)) : 1500;
     const session = await prisma.pomodoroSession.create({
-      data: { studentId, studyPlanItemId, plannedSeconds: 1500 },
+      data: { studentId, studyPlanItemId, plannedSeconds },
     });
     res.status(201).json({ success: true, session });
   } catch (err) {
