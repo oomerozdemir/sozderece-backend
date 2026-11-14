@@ -2,7 +2,7 @@ import prisma from "../utils/prisma.js";
 
 import bcrypt from 'bcrypt';
 import crypto from "crypto";
-import { sendCoachAssignmentToStudent, sendStudentAssignmentToCoach, sendCoachWelcomeEmail } from "../utils/sendEmail.js";
+import { sendCoachAssignmentToStudent, sendStudentAssignmentToCoach } from "../utils/sendEmail.js";
 import { uploadBufferToCloudinary } from "../helpers/cloudinaryUpload.js";
 
 
@@ -64,11 +64,10 @@ export const createCoachWithUser = async (req, res) => {
       data: { name, email, password: hashedPassword, role: "coach", isVerified: true, emailVerified: true },
     });
 
-    try {
-      await sendCoachWelcomeEmail(email, { name, tempPassword });
-    } catch (e) {
-      console.warn("Koç hoş geldin maili gönderilemedi:", e?.message);
-    }
+    // Hoş geldin/geçici şifre maili artık GÖNDERİLMİYOR (admin talebiyle
+    // iptal edildi) — hesap yine de rastgele bir şifreyle oluşturuluyor
+    // (üstteki not: sabit "default123" riskine geri dönülmesin diye), koç
+    // giriş yapmak isterse "Şifremi Unuttum" akışını kullanır.
 
    let imageUrl = null;
 
