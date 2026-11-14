@@ -4,6 +4,7 @@ import bcrypt from 'bcrypt';
 import crypto from "crypto";
 import { sendCoachAssignmentToStudent, sendStudentAssignmentToCoach } from "../utils/sendEmail.js";
 import { uploadBufferToCloudinary } from "../helpers/cloudinaryUpload.js";
+import { getSoleHeadCoachUserId } from "../utils/headCoachAuto.js";
 
 
 
@@ -78,8 +79,10 @@ if (req.file?.buffer) {
   imageUrl = req.file.path; // CloudinaryStorage ile gelen hazır URL
 }
 
+    // Yeni koç, mevcut TEK bir Ana Koç varsa otomatik onun bünyesine girer.
+    const soleHeadCoachUserId = await getSoleHeadCoachUserId();
     await prisma.coach.create({
-      data: { name, subject, description, image: imageUrl, userId: newUser.id },
+      data: { name, subject, description, image: imageUrl, userId: newUser.id, headCoachUserId: soleHeadCoachUserId },
     });
 
     return res.status(201).json({ message: "Koç başarıyla oluşturuldu.", userId: newUser.id });

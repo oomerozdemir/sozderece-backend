@@ -1,4 +1,5 @@
 import prisma from "../utils/prisma.js";
+import { autoAssignAllCoachesToHeadCoach, getSoleHeadCoachUserId } from "../utils/headCoachAuto.js";
 
 import bcrypt from 'bcrypt';
 
@@ -83,6 +84,8 @@ export const updateUser = async (req, res) => {
     if (updatedUser.role === "coach") {
       const existingCoach = await prisma.coach.findUnique({ where: { userId: updatedUser.id } });
       if (!existingCoach) {
+        // Yeni koç, mevcut TEK bir Ana Koç varsa otomatik onun bünyesine girer.
+        const soleHeadCoachUserId = await getSoleHeadCoachUserId();
         newCoachProfile = await prisma.coach.create({
           data: {
             name: updatedUser.name || "İsimsiz Koç",
@@ -90,9 +93,17 @@ export const updateUser = async (req, res) => {
             description: "",
             image: "",
             userId: updatedUser.id,
+            headCoachUserId: soleHeadCoachUserId,
           },
         });
       }
+    }
+
+    // Biri head_coach yapıldıysa, sistemdeki TÜM koçlar otomatik onun
+    // bünyesine girer (admin'in her koçu tek tek "Ana Koç" dropdown'undan
+    // atamasına gerek kalmıyor).
+    if (updatedUser.role === "head_coach") {
+      await autoAssignAllCoachesToHeadCoach(updatedUser.id);
     }
 
     const { password, ...safeUser } = updatedUser;
@@ -155,9 +166,16 @@ if (existingUser) {
 
     // Aynı otomatik-Coach-profili mantığı burada da geçerli — bkz. updateUser.
     if (role === "coach") {
+      const soleHeadCoachUserId = await getSoleHeadCoachUserId();
       await prisma.coach.create({
-        data: { name, subject: "Belirtilmedi", description: "", image: "", userId: user.id },
+        data: { name, subject: "Belirtilmedi", description: "", image: "", userId: user.id, headCoachUserId: soleHeadCoachUserId },
       });
+    }
+
+    // head_coach olarak oluşturulduysa, sistemdeki tüm koçlar otomatik
+    // onun bünyesine girer — bkz. updateUser'daki aynı mantık.
+    if (role === "head_coach") {
+      await autoAssignAllCoachesToHeadCoach(user.id);
     }
 
     res.status(201).json(user);
