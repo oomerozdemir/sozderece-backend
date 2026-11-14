@@ -151,6 +151,30 @@ const assertOwnStudent = async (coachUserId, studentId) => {
   return student ? coach : null;
 };
 
+// Ana Koç (head_coach) bir öğrenciye şu İKİ yoldan biriyle erişebilir:
+// (a) kendi Coach profiline doğrudan atanmış öğrencisi, (b) supervise ettiği
+// bir coach'a atanmış öğrenci. İkisi de tek sorguda OR ile kontrol edilir.
+const assertHeadCoachOwnsStudent = async (headCoachUserId, studentId) => {
+  const student = await prisma.user.findFirst({
+    where: {
+      id: studentId,
+      role: "student",
+      assignedCoach: { OR: [{ userId: headCoachUserId }, { headCoachUserId }] },
+    },
+    select: { id: true },
+  });
+  return student ? true : null;
+};
+
+// Bu dosyadaki per-student endpoint'lerin ortak erişim-çözücüsü — coach için
+// davranış birebir aynı kalır (assertOwnStudent), head_coach için K4/K6'da
+// kararlaştırılan iki-küme kontrolüne dallanır. student/admin bu dosyadaki
+// route'lara zaten authorizeRoles ile giremiyor, o yüzden ele alınmıyor.
+const resolveStudentAccess = async (req, studentId) => {
+  if (req.user.role === "head_coach") return assertHeadCoachOwnsStudent(req.user.id, studentId);
+  return assertOwnStudent(req.user.id, studentId);
+};
+
 /**
  * GET /api/coach/students/:studentId/study-plan?weekStart=YYYY-MM-DD
  * POST /api/coach/students/:studentId/study-plan
@@ -159,7 +183,7 @@ const assertOwnStudent = async (coachUserId, studentId) => {
 export const getStudentStudyPlanForCoach = async (req, res) => {
   try {
     const studentId = parseInt(req.params.studentId);
-    const coach = await assertOwnStudent(req.user.id, studentId);
+    const coach = await resolveStudentAccess(req, studentId);
     if (!coach) return res.status(403).json({ success: false, message: "Bu öğrenci size atanmamış." });
 
     const weekStart = toMondayStart(req.query.weekStart);
@@ -177,7 +201,7 @@ export const getStudentStudyPlanForCoach = async (req, res) => {
 export const upsertStudentStudyPlan = async (req, res) => {
   try {
     const studentId = parseInt(req.params.studentId);
-    const coach = await assertOwnStudent(req.user.id, studentId);
+    const coach = await resolveStudentAccess(req, studentId);
     if (!coach) return res.status(403).json({ success: false, message: "Bu öğrenci size atanmamış." });
 
     const { weekStart: rawWeekStart, title, items } = req.body;
@@ -188,6 +212,11 @@ export const upsertStudentStudyPlan = async (req, res) => {
 
     const existing = await prisma.studyPlan.findFirst({ where: { studentId, weekStart } });
 
+    // BİLİNEN BOŞLUK: update dalı createdById'yi güncellemiyor — bir
+    // head_coach, başka bir coach'un oluşturduğu haftayı düzenlerse,
+    // createdById hâlâ o coach'u gösterir (en son kimin düzenlediği değil,
+    // yalnızca kim OLUŞTURDU bilgisi tutuluyor). Genel bir audit sistemi
+    // kurulmuyor (V1 kapsam kararı) — bu, bilinçli kabul edilmiş bir sınırlama.
     const plan = existing
       ? await prisma.studyPlan.update({
           where: { id: existing.id },
@@ -431,7 +460,7 @@ export const parseStudyPlanImage = async (req, res) => {
 export const getStudentExamResultsForCoach = async (req, res) => {
   try {
     const studentId = parseInt(req.params.studentId);
-    const coach = await assertOwnStudent(req.user.id, studentId);
+    const coach = await resolveStudentAccess(req, studentId);
     if (!coach) return res.status(403).json({ success: false, message: "Bu öğrenci size atanmamış." });
 
     const results = await prisma.examResult.findMany({ where: { studentId }, orderBy: { examDate: "desc" } });
@@ -482,7 +511,7 @@ export const addStudentExamResult = async (req, res) => {
 export const getStudentTodayForCoach = async (req, res) => {
   try {
     const studentId = parseInt(req.params.studentId);
-    const coach = await assertOwnStudent(req.user.id, studentId);
+    const coach = await resolveStudentAccess(req, studentId);
     if (!coach) return res.status(403).json({ success: false, message: "Bu öğrenci size atanmamış." });
 
     const weekStart = toMondayStart(new Date());
@@ -556,7 +585,7 @@ export const resolveSosAlert = async (req, res) => {
 export const getTopicsForCoach = async (req, res) => {
   try {
     const studentId = parseInt(req.params.studentId);
-    const coach = await assertOwnStudent(req.user.id, studentId);
+    const coach = await resolveStudentAccess(req, studentId);
     if (!coach) return res.status(403).json({ success: false, message: "Bu öğrenci size atanmamış." });
 
     const student = await prisma.user.findUnique({ where: { id: studentId }, select: { grade: true } });
@@ -582,7 +611,7 @@ export const getTopicsForCoach = async (req, res) => {
 export const getMasteryForCoach = async (req, res) => {
   try {
     const studentId = parseInt(req.params.studentId);
-    const coach = await assertOwnStudent(req.user.id, studentId);
+    const coach = await resolveStudentAccess(req, studentId);
     if (!coach) return res.status(403).json({ success: false, message: "Bu öğrenci size atanmamış." });
 
     const student = await prisma.user.findUnique({ where: { id: studentId }, select: { grade: true } });
@@ -609,7 +638,7 @@ export const getMasteryForCoach = async (req, res) => {
 export const getInsightsForCoach = async (req, res) => {
   try {
     const studentId = parseInt(req.params.studentId);
-    const coach = await assertOwnStudent(req.user.id, studentId);
+    const coach = await resolveStudentAccess(req, studentId);
     if (!coach) return res.status(403).json({ success: false, message: "Bu öğrenci size atanmamış." });
 
     const insights = await detectRecurringWeaknesses(studentId);
@@ -629,7 +658,7 @@ export const getInsightsForCoach = async (req, res) => {
 export const getStudentAiQuestionInsightsForCoach = async (req, res) => {
   try {
     const studentId = parseInt(req.params.studentId);
-    const coach = await assertOwnStudent(req.user.id, studentId);
+    const coach = await resolveStudentAccess(req, studentId);
     if (!coach) return res.status(403).json({ success: false, message: "Bu öğrenci size atanmamış." });
 
     const parsedDays = parseInt(req.query.days, 10);
@@ -651,7 +680,7 @@ export const getStudentAiQuestionInsightsForCoach = async (req, res) => {
 export const addInsightTopicToPlan = async (req, res) => {
   try {
     const studentId = parseInt(req.params.studentId);
-    const coach = await assertOwnStudent(req.user.id, studentId);
+    const coach = await resolveStudentAccess(req, studentId);
     if (!coach) return res.status(403).json({ success: false, message: "Bu öğrenci size atanmamış." });
 
     const topicId = parseInt(req.params.topicId);
@@ -693,7 +722,7 @@ export const addInsightTopicToPlan = async (req, res) => {
 export const getStudentDayReports = async (req, res) => {
   try {
     const studentId = parseInt(req.params.studentId);
-    const coach = await assertOwnStudent(req.user.id, studentId);
+    const coach = await resolveStudentAccess(req, studentId);
     if (!coach) return res.status(403).json({ success: false, message: "Bu öğrenci size atanmamış." });
 
     const reports = await prisma.dayReport.findMany({
@@ -716,7 +745,7 @@ export const getStudentDayReports = async (req, res) => {
 export const getNotesForCoach = async (req, res) => {
   try {
     const studentId = parseInt(req.params.studentId);
-    const coach = await assertOwnStudent(req.user.id, studentId);
+    const coach = await resolveStudentAccess(req, studentId);
     if (!coach) return res.status(403).json({ success: false, message: "Bu öğrenci size atanmamış." });
 
     const notes = await prisma.coachNote.findMany({ where: { studentId }, orderBy: { createdAt: "desc" }, take: 10 });
@@ -734,7 +763,7 @@ export const getNotesForCoach = async (req, res) => {
 export const createTextNote = async (req, res) => {
   try {
     const studentId = parseInt(req.params.studentId);
-    const coach = await assertOwnStudent(req.user.id, studentId);
+    const coach = await resolveStudentAccess(req, studentId);
     if (!coach) return res.status(403).json({ success: false, message: "Bu öğrenci size atanmamış." });
 
     const text = (req.body?.text || "").trim();
@@ -757,7 +786,7 @@ export const createTextNote = async (req, res) => {
 export const createAudioNote = async (req, res) => {
   try {
     const studentId = parseInt(req.params.studentId);
-    const coach = await assertOwnStudent(req.user.id, studentId);
+    const coach = await resolveStudentAccess(req, studentId);
     if (!coach) return res.status(403).json({ success: false, message: "Bu öğrenci size atanmamış." });
 
     if (!req.file?.path) return res.status(400).json({ success: false, message: "Ses dosyası alınamadı." });
@@ -821,7 +850,7 @@ function validateResourcePayload(body) {
 export const getResourcesForCoach = async (req, res) => {
   try {
     const studentId = parseInt(req.params.studentId);
-    const coach = await assertOwnStudent(req.user.id, studentId);
+    const coach = await resolveStudentAccess(req, studentId);
     if (!coach) return res.status(403).json({ success: false, message: "Bu öğrenci size atanmamış." });
 
     const { examType } = req.query;

@@ -29,6 +29,13 @@ const coaches = await prisma.coach.findMany({
         email: true,
       },
     },
+    headCoach: {
+      select: {
+        id: true,
+        name: true,
+        email: true,
+      },
+    },
   },
 });
     res.status(200).json(coaches);
@@ -87,11 +94,17 @@ if (req.file?.buffer) {
 // Koçu güncelle
 export const updateCoach = async (req, res) => {
   try {
-    const { name, subject, description, email } = req.body;
+    const { name, subject, description, email, headCoachUserId } = req.body;
     const id = parseInt(req.params.id);
 
     // Güncellenecek alanlar
     const data = { name, subject, description };
+    // "" (dropdown'da "Yok" seçilmesi) ve null ikisi de Ana Koç'u kaldırır.
+    // NOT: bu alanın kim/ne zaman değiştirdiği tutulmuyor — V1 kapsamında
+    // yeni bir audit sistemi kurulmuyor (bkz. implementasyon planı K5).
+    if (headCoachUserId !== undefined) {
+      data.headCoachUserId = headCoachUserId ? parseInt(headCoachUserId) : null;
+    }
 
     // Yeni resim geldiyse Cloudinary’e yükle
   if (req.file?.buffer) {

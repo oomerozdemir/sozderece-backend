@@ -525,6 +525,7 @@ model User {
   subscriptions       Subscription[]
   visitors            Visitor[]
   onboardings         Onboarding[]
+  supervisedCoaches   Coach[]                @relation("HeadCoachSupervises")
 }
 
 // Anonim ziyaretçi kimliği — sd_visitor_id olarak client'ta (localStorage)
@@ -616,6 +617,15 @@ model Coach {
   userId      Int?   @unique
   user        User?  @relation("CoachProfile", fields: [userId], references: [id])
   assignedTo  User[] @relation("AssignedCoach")
+
+  // Ana Koç (head_coach) hiyerarşisi — basit, geçmişsiz tek alan (mevcut
+  // User.assignedCoachId emsaliyle tutarlı: üzerine yazılır, log tutulmaz).
+  // Bir head_coach'un KENDİ Coach profili olabilir (userId) ve AYRICA başka
+  // coach'ları supervise edebilir (headCoachUserId) — ikisi bağımsız.
+  headCoachUserId Int?
+  headCoach       User? @relation("HeadCoachSupervises", fields: [headCoachUserId], references: [id])
+
+  @@index([headCoachUserId])
 }
 
 model Order {
