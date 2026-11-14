@@ -151,6 +151,16 @@ export const prepareOrder = async (req, res) => {
         const claimedKurus = Math.round(item.price * 100);
         const matches = validPrices.some((p) => Math.abs(p - claimedKurus) <= 1);
         if (!matches) {
+          // Müşteri tam olarak bir kampanya fiyatını göndermiş ama o kampanya
+          // şu an artık geçerli DEĞİLSE (tam o sırada bitmiş olabilir), genel
+          // "doğrulanamadı" yerine ayrı bir kod dönülür — frontend bunu
+          // yakalayıp "kampanya bitti, fiyat güncellendi" diye kullanıcı
+          // dostu davranabilsin diye (ham sahtekarlık denemelerinden ayrı).
+          const pkgPlans = Array.isArray(dbPkg.plans) ? dbPkg.plans : [];
+          const wasCampaignPrice = pkgPlans.some((p) => p?.campaignUnitPrice && Math.abs(p.campaignUnitPrice - claimedKurus) <= 1);
+          if (wasCampaignPrice) {
+            return res.status(400).json({ error: "Kampanya süresi doldu, fiyat güncellendi.", code: "CAMPAIGN_EXPIRED" });
+          }
           console.warn(
             `🚨 prepareOrder fiyat uyuşmazlığı: slug=${item.slug} claimed=${claimedKurus} valid=[${validPrices.join(",")}]`
           );

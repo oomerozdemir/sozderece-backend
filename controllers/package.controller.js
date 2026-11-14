@@ -1,4 +1,21 @@
 import prisma from "../utils/prisma.js";
+import { isPlanCampaignActive, validatePlanCampaignFields } from "../utils/packagePricing.js";
+
+// Her plan'a (DB'ye YAZMADAN, sadece response'ta) hesaplanmış kampanya
+// alanlarını ekler — frontend'in "campaignActive" diye kendi Date.now()
+// karşılaştırması yapmaması için tek source-of-truth isPlanCampaignActive'i
+// burada da çağırıyoruz (ödeme doğrulamasıyla AYNI fonksiyon).
+function withComputedCampaignFields(pkg) {
+  const plans = Array.isArray(pkg.plans) ? pkg.plans : [];
+  const computedPlans = plans.map((plan) => {
+    const campaignActive = isPlanCampaignActive(plan);
+    const remainingSeconds = campaignActive
+      ? Math.max(0, Math.round((new Date(plan.campaignEndsAt).getTime() - Date.now()) / 1000))
+      : null;
+    return { ...plan, campaignActive, remainingSeconds };
+  });
+  return { ...pkg, plans: computedPlans };
+}
 
 // Tüm paketleri getir (vitrin için sadece görünür olanlar, admin için hepsi)
 export const getAllPackages = async (req, res) => {
@@ -13,7 +30,7 @@ export const getAllPackages = async (req, res) => {
       },
       orderBy: { displayOrder: "asc" },
     });
-    res.json({ success: true, packages });
+    res.json({ success: true, packages: packages.map(withComputedCampaignFields) });
   } catch (err) {
     console.error("Paketler alınamadı:", err);
     res.status(500).json({ success: false, message: "Paketler alınamadı." });
@@ -33,6 +50,12 @@ export const createPackage = async (req, res) => {
 
     if (!slug || !name) {
       return res.status(400).json({ success: false, message: "Slug ve isim zorunludur." });
+    }
+    if (Array.isArray(plans)) {
+      for (const plan of plans) {
+        const err = validatePlanCampaignFields(plan);
+        if (err) return res.status(400).json({ success: false, message: err });
+      }
     }
 
     const created = await prisma.package.create({
@@ -69,7 +92,7 @@ export const createPackage = async (req, res) => {
         aiQuestionAssistantAccess: aiQuestionAssistantAccess === true || aiQuestionAssistantAccess === "true",
       },
     });
-    res.status(201).json({ success: true, package: created });
+    res.status(201).json({ success: true, package: withComputedCampaignFields(created) });
   } catch (err) {
     console.error("Paket oluşturulamadı:", err);
     res.status(500).json({ success: false, message: "Paket oluşturulamadı." });
@@ -87,6 +110,13 @@ export const updatePackage = async (req, res) => {
       examDate, examDiscountRate, plans, billingCycle, badge, videoUrl,
       guaranteeText, noRefund, requiresPriceLock, aiQuestionAssistantAccess,
     } = req.body;
+
+    if (plans !== undefined && Array.isArray(plans)) {
+      for (const plan of plans) {
+        const err = validatePlanCampaignFields(plan);
+        if (err) return res.status(400).json({ success: false, message: err });
+      }
+    }
 
     const updated = await prisma.package.update({
       where: { id: parseInt(id) },
@@ -123,7 +153,7 @@ export const updatePackage = async (req, res) => {
         ...(aiQuestionAssistantAccess !== undefined && { aiQuestionAssistantAccess: aiQuestionAssistantAccess === true || aiQuestionAssistantAccess === "true" }),
       },
     });
-    res.json({ success: true, package: updated });
+    res.json({ success: true, package: withComputedCampaignFields(updated) });
   } catch (err) {
     console.error("Paket güncellenemedi:", err);
     res.status(500).json({ success: false, message: "Paket güncellenemedi." });
