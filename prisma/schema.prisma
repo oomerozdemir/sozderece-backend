@@ -497,6 +497,15 @@ model User {
   // cihazdan giriş yapsa bile tekrar tur görmesin diye backend'de (yalnızca
   // sessionStorage değil) tutuluyor. "Şimdilik Geç" bu alana yazmaz.
   panelTourCompletedAt DateTime?
+  // Koç Paneli Turu'nun aşaması — null: hiç başlamadı. 0: koçun hiç
+  // öğrencisi yokken SADECE dashboard bölümü gösterildi, öğrenci workspace
+  // bölümü BEKLEMEDE (ilk öğrenci atandıktan sonra, o öğrencinin workspace'ine
+  // ilk girişte otomatik devam eder). COACH_TOUR_CURRENT_VERSION (coach.
+  // controller.js): turun TAMAMI (dashboard+workspace) tamamlandı. Tek alanla
+  // hem "tamamlandı mı" hem "hangi versiyon" hem "kısmi tamamlanma" temsil
+  // ediliyor — panel ciddi değişip bir sonraki versiyon gerekirse sabit
+  // artırılır, bu alanı eski versiyonda tutan herkese tur yeniden teklif edilir.
+  coachTourCompletedVersion Int?
   studyPlans          StudyPlan[]            @relation("StudentStudyPlans")
   examResults         ExamResult[]           @relation("StudentExamResults")
   aiQuestions         AiQuestion[]           @relation("StudentAiQuestions")

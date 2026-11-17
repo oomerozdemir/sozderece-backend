@@ -7,6 +7,11 @@ import { detectFileType } from "../utils/fileSignature.js";
 import { estimateCostUsd } from "../utils/aiPricing.js";
 import { anthropic, mapAnthropicError } from "../utils/anthropicClient.js";
 
+// Koç Paneli Turu — sürüm sabiti. Bir sonraki ciddi panel değişikliğinde bu
+// sayı artırılır; eski versiyonda tamamlamış (coachTourCompletedVersion <
+// COACH_TOUR_CURRENT_VERSION) her koça tur otomatik yeniden teklif edilir.
+export const COACH_TOUR_CURRENT_VERSION = 1;
+
 
 export const getAssignedStudents = async (req, res) => {
   try {
@@ -20,6 +25,14 @@ export const getAssignedStudents = async (req, res) => {
     if (!coach) {
       return res.status(404).json({ message: "Koç profili bulunamadı." });
     }
+
+    // Koç Paneli Turu'nun aşaması — req.user JWT payload'ı olduğu için
+    // (middleware/authMiddleware.js) burada taze bir okuma gerekiyor.
+    const coachUser = await prisma.user.findUnique({
+      where: { id: userId },
+      select: { coachTourCompletedVersion: true },
+    });
+    const coachTourCompletedVersion = coachUser?.coachTourCompletedVersion ?? null;
 
     // 2️⃣ Öğrencileri ve her biri için son siparişi al
     const students = await prisma.user.findMany({
@@ -112,10 +125,42 @@ export const getAssignedStudents = async (req, res) => {
       recurringWeaknessCount: weaknessCountById.get(s.id) || 0,
     }));
 
-    res.status(200).json({ students: withFlags });
+    res.status(200).json({
+      students: withFlags,
+      coachTourCompletedVersion,
+      coachTourCompleted: coachTourCompletedVersion === COACH_TOUR_CURRENT_VERSION,
+    });
   } catch (error) {
     console.error("Koç öğrencileri getirme hatası:", error);
     res.status(500).json({ message: "Öğrenciler getirilemedi." });
+  }
+};
+
+/**
+ * PATCH /api/coach/me/tour-completed
+ * Koç Paneli Turu'nun kalıcı aşama kaydı — öğrenci tarafındaki
+ * markPanelTourCompleted ile aynı desen. Body'den { stage: 0 | "full" }
+ * alınır; client keyfi bir sayı YAZAMAZ, sadece bu iki sabitten biri kabul
+ * edilir (0 = koçun hiç öğrencisi yokken sadece dashboard bölümü görüldü,
+ * "full" = tur tamamen tamamlandı → COACH_TOUR_CURRENT_VERSION yazılır).
+ */
+export const markCoachTourCompleted = async (req, res) => {
+  try {
+    const userId = req.user?.id;
+    if (!userId) return res.status(401).json({ message: "Yetkisiz" });
+
+    const stage = req.body?.stage;
+    const version = stage === "full" ? COACH_TOUR_CURRENT_VERSION : 0;
+
+    const user = await prisma.user.update({
+      where: { id: userId },
+      data: { coachTourCompletedVersion: version },
+      select: { coachTourCompletedVersion: true },
+    });
+    res.json({ success: true, coachTourCompletedVersion: user.coachTourCompletedVersion });
+  } catch (error) {
+    console.error("markCoachTourCompleted:", error);
+    res.status(500).json({ message: "Tur durumu kaydedilemedi." });
   }
 };
 

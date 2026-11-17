@@ -2,7 +2,7 @@ import express from "express";
 import multer from "multer";
 import { PrismaClient } from "@prisma/client";
 import {
-  getAssignedStudents, getAllPublicCoaches,
+  getAssignedStudents, getAllPublicCoaches, markCoachTourCompleted,
   getStudentStudyPlanForCoach, upsertStudentStudyPlan, parseStudyPlanImage,
   getStudentExamResultsForCoach, addStudentExamResult,
   getStudentTodayForCoach, getStudentDayReports,
@@ -35,6 +35,7 @@ const memUploadImage = multer({
 // Public: Öğrenciler için koçları getir
 router.get("/my-students", authenticateToken, authorizeRoles("coach"), getAssignedStudents);
 router.get("/public-coach", getAllPublicCoaches);
+router.patch("/me/tour-completed", authenticateToken, authorizeRoles("coach"), markCoachTourCompleted);
 
 /* Öğrenci Paneli (Faz 1) — koç tarafı veri girişi */
 router.get("/students/:studentId/study-plan", authenticateToken, authorizeRoles("coach"), getStudentStudyPlanForCoach);
