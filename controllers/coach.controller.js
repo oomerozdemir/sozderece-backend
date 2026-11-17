@@ -164,6 +164,64 @@ export const markCoachTourCompleted = async (req, res) => {
   }
 };
 
+/**
+ * GET /api/coach/me — "Hesabım" sayfası için koçun kendi profili.
+ */
+export const getOwnCoachProfile = async (req, res) => {
+  try {
+    const coach = await prisma.coach.findUnique({
+      where: { userId: req.user.id },
+      select: {
+        id: true,
+        name: true,
+        subject: true,
+        description: true,
+        image: true,
+        user: { select: { email: true } },
+      },
+    });
+    if (!coach) return res.status(404).json({ message: "Koç profili bulunamadı." });
+    res.json({ coach });
+  } catch (error) {
+    console.error("getOwnCoachProfile:", error);
+    res.status(500).json({ message: "Profil alınamadı." });
+  }
+};
+
+/**
+ * PUT /api/coach/me — koç kendi adını/uzmanlığını/açıklamasını/fotoğrafını
+ * günceller. `image` dosyası geldiyse route'taki CloudinaryStorage multer
+ * middleware'i (admin tarafındaki createCoachWithUser/updateCoach ile AYNI
+ * `upload` middleware'i) zaten Cloudinary'ye yükleyip req.file.path'e secure
+ * URL'i koymuş oluyor — burada ayrıca bir upload çağrısı GEREKMİYOR. Aynı
+ * `Coach.image` alanı yazıldığı için öğrenci panelindeki "Koçum" sekmesi
+ * (getStudentProfile → assignedCoach.image) bir sonraki fetch'te otomatik
+ * güncel fotoğrafı gösterir — ayrı bir senkronizasyon gerekmiyor.
+ */
+export const updateOwnCoachProfile = async (req, res) => {
+  try {
+    const coach = await prisma.coach.findUnique({ where: { userId: req.user.id } });
+    if (!coach) return res.status(404).json({ message: "Koç profili bulunamadı." });
+
+    const { name, subject, description } = req.body;
+    const data = {};
+    if (name !== undefined && name.trim()) data.name = name.trim();
+    if (subject !== undefined) data.subject = subject;
+    if (description !== undefined) data.description = description;
+    if (req.file?.path) data.image = req.file.path;
+
+    const updated = await prisma.coach.update({
+      where: { id: coach.id },
+      data,
+      select: { id: true, name: true, subject: true, description: true, image: true },
+    });
+    res.json({ coach: updated });
+  } catch (error) {
+    console.error("updateOwnCoachProfile:", error);
+    res.status(500).json({ message: "Profil güncellenemedi." });
+  }
+};
+
 
 export const getAllPublicCoaches = async (req, res) => {
   try {

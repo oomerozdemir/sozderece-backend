@@ -3,6 +3,7 @@ import multer from "multer";
 import { PrismaClient } from "@prisma/client";
 import {
   getAssignedStudents, getAllPublicCoaches, markCoachTourCompleted,
+  getOwnCoachProfile, updateOwnCoachProfile,
   getStudentStudyPlanForCoach, upsertStudentStudyPlan, parseStudyPlanImage,
   getStudentExamResultsForCoach, addStudentExamResult,
   getStudentTodayForCoach, getStudentDayReports,
@@ -13,7 +14,7 @@ import {
   getResourcesForCoach, createStudentResource, updateStudentResource, archiveStudentResource,
 } from "../../controllers/coach.controller.js";
 import { authenticateToken, authorizeRoles } from "../../middleware/authMiddleware.js";
-import { uploadAudio } from "../../middleware/upload.js";
+import upload, { uploadAudio } from "../../middleware/upload.js";
 
 const prisma = new PrismaClient();
 const router = express.Router();
@@ -36,6 +37,8 @@ const memUploadImage = multer({
 router.get("/my-students", authenticateToken, authorizeRoles("coach"), getAssignedStudents);
 router.get("/public-coach", getAllPublicCoaches);
 router.patch("/me/tour-completed", authenticateToken, authorizeRoles("coach"), markCoachTourCompleted);
+router.get("/me", authenticateToken, authorizeRoles("coach"), getOwnCoachProfile);
+router.put("/me", authenticateToken, authorizeRoles("coach"), upload.single("image"), updateOwnCoachProfile);
 
 /* Öğrenci Paneli (Faz 1) — koç tarafı veri girişi */
 router.get("/students/:studentId/study-plan", authenticateToken, authorizeRoles("coach"), getStudentStudyPlanForCoach);
