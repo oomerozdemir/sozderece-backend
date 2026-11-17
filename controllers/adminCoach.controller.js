@@ -94,36 +94,24 @@ if (req.file?.buffer) {
 
 
 // Koçu güncelle
+// Admin'in bu uç noktadan düzenleyebildiği TEK alan artık Ana Koç ataması —
+// isim/email/branş/açıklama/fotoğraf koçun kendi "Hesabım" sayfasından
+// (PUT /api/coach/me) kendi kendine yönettiği alanlar haline geldi, admin
+// panelinden bu yetki bilinçli olarak kaldırıldı. Eski name/subject/
+// description/email/image body alanları gelse bile artık YOK SAYILIYOR.
 export const updateCoach = async (req, res) => {
   try {
-    const { name, subject, description, email, headCoachUserId } = req.body;
+    const { headCoachUserId } = req.body;
     const id = parseInt(req.params.id);
 
-    // Güncellenecek alanlar
-    const data = { name, subject, description };
     // "" (dropdown'da "Yok" seçilmesi) ve null ikisi de Ana Koç'u kaldırır.
     // NOT: bu alanın kim/ne zaman değiştirdiği tutulmuyor — V1 kapsamında
     // yeni bir audit sistemi kurulmuyor (bkz. implementasyon planı K5).
-    if (headCoachUserId !== undefined) {
-      data.headCoachUserId = headCoachUserId ? parseInt(headCoachUserId) : null;
-    }
-
-    // Yeni resim geldiyse Cloudinary’e yükle
-  if (req.file?.buffer) {
-  const result = await uploadBufferToCloudinary(req.file.buffer, name);
-  data.image = result.secure_url;
-} else if (req.file?.path) {
-  data.image = req.file.path; // CloudinaryStorage ile gelen hazır URL
-}
+    const data = {
+      headCoachUserId: headCoachUserId ? parseInt(headCoachUserId) : null,
+    };
 
     const updatedCoach = await prisma.coach.update({ where: { id }, data });
-
-    // Email alanı user tablosunda — sen zaten update ediyorsun
-    const coach = await prisma.coach.findUnique({ where: { id } });
-    if (coach && email) {
-      await prisma.user.update({ where: { id: coach.userId }, data: { email } });
-    }
-
     return res.status(200).json(updatedCoach);
   } catch (error) {
     console.error("Koç güncellenemedi:", error);
