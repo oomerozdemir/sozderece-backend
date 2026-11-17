@@ -6,6 +6,7 @@ import { authenticateToken, authorizeRoles } from "../../middleware/authMiddlewa
 import { requireAiQuestionAssistantAccess } from "../../utils/aiAccessControl.js";
 import {
   getStudentProfile,
+  updateStudentProfile,
   completeAppointmentByStudent,
   getMyPastAppointmentsStudent,
   createAppointmentReviewByStudent,
@@ -90,6 +91,7 @@ const aiQuestionLimiter = rateLimit({
 
 /* Profil */
 router.get("/me", authenticateToken, getStudentProfile);
+router.patch("/me", authenticateToken, updateStudentProfile);
 router.patch("/me/tour-completed", authenticateToken, markPanelTourCompleted);
 
 router.patch(

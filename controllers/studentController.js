@@ -24,6 +24,32 @@ export const markPanelTourCompleted = async (req, res) => {
   }
 };
 
+/**
+ * PATCH /api/v1/ogrenci/me
+ * Öğrenci "Hesabım" sekmesi — şu an için sadece isim değişikliği.
+ */
+export const updateStudentProfile = async (req, res) => {
+  try {
+    const userId = req.user?.id;
+    if (!userId) return res.status(401).json({ message: "Yetkisiz" });
+
+    const name = req.body?.name;
+    if (typeof name !== "string" || !name.trim()) {
+      return res.status(400).json({ message: "İsim boş olamaz." });
+    }
+
+    const user = await prisma.user.update({
+      where: { id: userId },
+      data: { name: name.trim() },
+      select: { name: true },
+    });
+    res.json({ success: true, name: user.name });
+  } catch (error) {
+    console.error("updateStudentProfile:", error);
+    res.status(500).json({ message: "Güncellenemedi." });
+  }
+};
+
 export const getStudentProfile = async (req, res) => {
   try {
     const userId = req.user?.id;
