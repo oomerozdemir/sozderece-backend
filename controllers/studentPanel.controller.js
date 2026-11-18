@@ -13,6 +13,13 @@ const ACTIVE_LIVE_STATUSES = ["IN_PROGRESS", "RESULT_PENDING", "ANALYSIS_PENDING
 const LGS_GRADES = new Set(["5", "6", "7", "8"]);
 export const effectiveTrackFromGrade = (grade) => (LGS_GRADES.has(String(grade || "")) ? "lgs" : "yks");
 
+// Terminal/non-terminal durum ayrımı — görev "sonuçlanmış" mı yoksa hâlâ
+// bekliyor mu sorusunu TEK yerden, adı konmuş bir kuralla cevaplar (bkz.
+// onaylı plan Rev.2 §2 — önceden örtük bir "pending değilse sonuçlanmış"
+// koşuluydu, burada açıkça listeleniyor).
+const TERMINAL_STATUSES = ["done", "partial", "stuck"]; // pending = non-terminal
+const isDayFullyResolved = (dayItems) => dayItems.length > 0 && dayItems.every((i) => TERMINAL_STATUSES.includes(i.status));
+
 // Bir günün (plan + dayOfWeek) TÜM görevleri bir sonuca bağlandığında
 // ("pending" kalmadığında) otomatik bir DayReport ("Z-Raporu") üretir/
 // günceller. Veliye otomatik gönderim yok — sadece öğrenci/koç panelinde
@@ -23,10 +30,18 @@ async function maybeGenerateDayReport(studentId, weekStart, dayOfWeek) {
   if (!plan) return;
 
   const dayItems = await prisma.studyPlanItem.findMany({ where: { studyPlanId: plan.id, dayOfWeek } });
-  if (dayItems.length === 0 || dayItems.some((i) => i.status === "pending")) return;
 
   const date = new Date(weekStart);
   date.setDate(date.getDate() + dayOfWeek);
+
+  if (!isDayFullyResolved(dayItems)) {
+    // Gün artık tam sonuçlanmış değil (bir görev "pending"e geri alındı ya
+    // da hiç görev yok) — daha önce oluşmuş bir Z-Raporu varsa artık
+    // STALE'dir, silinir (deleteMany hiç yoksa no-op). Henüz hiç oluşmadıysa
+    // zaten yapılacak bir şey yok.
+    await prisma.dayReport.deleteMany({ where: { studentId, date } });
+    return;
+  }
 
   const doneTasks = dayItems.filter((i) => i.status === "done").length;
   const partialTasks = dayItems.filter((i) => i.status === "partial").length;

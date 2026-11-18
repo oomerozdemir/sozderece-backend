@@ -301,6 +301,58 @@ export const getStudentStudyPlanForCoach = async (req, res) => {
   }
 };
 
+// upsertStudentStudyPlan'ın payload validasyonu + update/create ayrımı —
+// önceden deleteMany+create ile hafta sıfırdan yazılıyordu, bu da öğrencinin
+// o haftaki TÜM görevlerinin status/statusAt/feeling/note/notCompletedReason
+// alanlarını (yeni satırlar bu alanları hiç yazmadığı için şemanın
+// "pending" varsayılanına düşerek) SİLİYORDU (bkz. onaylı plan). Artık
+// id-bazlı: id'si existingIds'te olan satırlar UPDATE edilir (sadece
+// dayOfWeek/subject/topic/durationMin/order — status alanlarına HİÇ
+// dokunulmaz), id'si olmayanlar CREATE edilir (yeni görev, doğal olarak
+// "pending"), DB'de olup artık gönderilmeyen id'ler DELETE edilir (koçun
+// gerçekten sildiği görevler — completion'ları doğal olarak kaybolur).
+//
+// Güvenlik (plan Rev.2 §1): id'si existingIds'te OLMAYAN bir satır asla
+// sessizce "yeni görev" sayılmaz — bu, başka bir öğrenciye/haftaya ait
+// stale/yabancı/manipüle edilmiş bir id'nin yanlışlıkla ya da kasıtlı
+// olarak kabul edilmesini engeller; TÜM istek 400 ile reddedilir.
+function validateAndPartitionItems(items, existingIds) {
+  const seenIds = new Set();
+  const toUpdate = [];
+  const toCreate = [];
+
+  for (const it of items) {
+    const dayOfWeek = Number(it?.dayOfWeek);
+    if (!Number.isInteger(dayOfWeek) || dayOfWeek < 0 || dayOfWeek > 6) {
+      return { error: "Geçersiz gün." };
+    }
+    if (typeof it?.subject !== "string" || !it.subject.trim()) {
+      return { error: "Her görevde bir ders adı olmalı." };
+    }
+    let durationMin = null;
+    if (it.durationMin !== undefined && it.durationMin !== null && it.durationMin !== "") {
+      durationMin = Math.round(Number(it.durationMin));
+      if (!Number.isFinite(durationMin) || durationMin < 0) {
+        return { error: `${it.subject}: süre negatif olamaz.` };
+      }
+    }
+    const row = { dayOfWeek, subject: it.subject.trim(), topic: it.topic || null, durationMin };
+
+    if (it.id != null) {
+      const id = Number(it.id);
+      if (!Number.isInteger(id) || id <= 0) return { error: "Geçersiz görev kimliği." };
+      if (seenIds.has(id)) return { error: "Aynı görev kimliği birden fazla kez gönderildi." };
+      seenIds.add(id);
+      if (!existingIds.has(id)) return { error: "Bu haftaya ait olmayan bir görev kimliği gönderildi." };
+      toUpdate.push({ id, ...row });
+    } else {
+      toCreate.push(row);
+    }
+  }
+
+  return { toUpdate, toCreate };
+}
+
 export const upsertStudentStudyPlan = async (req, res) => {
   try {
     const studentId = parseInt(req.params.studentId);
@@ -315,47 +367,71 @@ export const upsertStudentStudyPlan = async (req, res) => {
 
     const existing = await prisma.studyPlan.findFirst({ where: { studentId, weekStart } });
 
+    // Yeni bir hafta için existingIds boş küme — payload'da HERHANGİ bir id
+    // gelirse validasyon zaten reddedecek (yeni haftanın var olan bir
+    // item'a referans vermesi mantıksız, güvenli varsayılan).
+    const existingItems = existing
+      ? await prisma.studyPlanItem.findMany({ where: { studyPlanId: existing.id }, select: { id: true } })
+      : [];
+    const existingIds = new Set(existingItems.map((i) => i.id));
+
+    const result = validateAndPartitionItems(items, existingIds);
+    if (result.error) {
+      return res.status(400).json({ success: false, message: result.error });
+    }
+    const { toUpdate, toCreate } = result;
+
+    const keptIds = new Set(toUpdate.map((i) => i.id));
+    const toDeleteIds = [...existingIds].filter((id) => !keptIds.has(id));
+
     // BİLİNEN BOŞLUK: update dalı createdById'yi güncellemiyor — bir
     // head_coach, başka bir coach'un oluşturduğu haftayı düzenlerse,
     // createdById hâlâ o coach'u gösterir (en son kimin düzenlediği değil,
     // yalnızca kim OLUŞTURDU bilgisi tutuluyor). Genel bir audit sistemi
     // kurulmuyor (V1 kapsam kararı) — bu, bilinçli kabul edilmiş bir sınırlama.
-    const plan = existing
-      ? await prisma.studyPlan.update({
-          where: { id: existing.id },
-          data: {
-            title: title || null,
-            items: {
-              deleteMany: {}, // basit ve doğru: haftayı yeniden yaz
-              create: items.map((it, i) => ({
-                dayOfWeek: it.dayOfWeek,
-                subject: it.subject,
-                topic: it.topic || null,
-                durationMin: it.durationMin ? parseInt(it.durationMin) : null,
-                order: it.order ?? i,
-              })),
-            },
-          },
-          include: { items: { orderBy: [{ dayOfWeek: "asc" }, { order: "asc" }] } },
-        })
-      : await prisma.studyPlan.create({
-          data: {
-            studentId,
-            weekStart,
-            title: title || null,
-            createdById: req.user.id,
-            items: {
-              create: items.map((it, i) => ({
-                dayOfWeek: it.dayOfWeek,
-                subject: it.subject,
-                topic: it.topic || null,
-                durationMin: it.durationMin ? parseInt(it.durationMin) : null,
-                order: it.order ?? i,
-              })),
-            },
-          },
-          include: { items: { orderBy: [{ dayOfWeek: "asc" }, { order: "asc" }] } },
+    const planId = await prisma.$transaction(async (tx) => {
+      const id = existing
+        ? existing.id
+        : (
+            await tx.studyPlan.create({
+              data: { studentId, weekStart, title: title || null, createdById: req.user.id },
+            })
+          ).id;
+
+      if (existing) {
+        await tx.studyPlan.update({ where: { id }, data: { title: title || null } });
+      }
+
+      if (toDeleteIds.length) {
+        await tx.studyPlanItem.deleteMany({ where: { id: { in: toDeleteIds } } });
+      }
+      for (let i = 0; i < toUpdate.length; i++) {
+        const it = toUpdate[i];
+        await tx.studyPlanItem.update({
+          where: { id: it.id },
+          data: { dayOfWeek: it.dayOfWeek, subject: it.subject, topic: it.topic, durationMin: it.durationMin, order: i },
         });
+      }
+      if (toCreate.length) {
+        await tx.studyPlanItem.createMany({
+          data: toCreate.map((it, i) => ({
+            studyPlanId: id,
+            dayOfWeek: it.dayOfWeek,
+            subject: it.subject,
+            topic: it.topic,
+            durationMin: it.durationMin,
+            order: toUpdate.length + i,
+          })),
+        });
+      }
+
+      return id;
+    });
+
+    const plan = await prisma.studyPlan.findUnique({
+      where: { id: planId },
+      include: { items: { orderBy: [{ dayOfWeek: "asc" }, { order: "asc" }] } },
+    });
 
     res.json({ success: true, plan });
   } catch (error) {
