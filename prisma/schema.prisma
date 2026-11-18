@@ -491,7 +491,11 @@ model User {
   // olana kadar bu bayrak açık olmayan hiçbir öğrenci yenisini göremez —
   // /student/dashboard aynı kalır, StudentDashboard.jsx bu alana göre
   // eski/yeni paneli seçer. Admin panelden aç/kapat edilebilir.
-  panelBetaAccess     Boolean                @default(false)
+  // Varsayılan true — yeni öğrenci paneli artık HERKESE açık (bkz. admin
+  // talebiyle kaldırılan eski beta-kısıtlaması). Admin "Kullanıcılar" sekmesinden
+  // bunu bir öğrenci için KAPATIP eski panele geri döndürebilir — tersine bir
+  // "izin ver" bayrağı değil, artık bir "devre dışı bırak" anahtarı.
+  panelBetaAccess     Boolean                @default(true)
   // Panel Turu'nun (guided tour) kalıcı tamamlanma zamanı — null ise öğrenci
   // paneli ilk kez gördüğünde otomatik karşılama teklif edilir. Farklı
   // cihazdan giriş yapsa bile tekrar tur görmesin diye backend'de (yalnızca
