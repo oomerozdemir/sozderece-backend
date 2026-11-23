@@ -367,6 +367,18 @@ export const upsertStudentStudyPlan = async (req, res) => {
 
     const existing = await prisma.studyPlan.findFirst({ where: { studentId, weekStart } });
 
+    // Geçmiş bir hafta için YENİ program oluşturulamaz — sadece var olan bir
+    // haftanın düzenlenmesine izin verilir. Koçun, hafta değişimini fark
+    // etmeden (ör. Pazar gecesi) "sonraki hafta" sandığı programı aslında az
+    // önce biten haftaya kaydetmesi gibi hatalara karşı koruma; mevcut bir
+    // geçmiş hafta planı varsa onu düzeltmek/tamamlamak hâlâ serbest.
+    if (!existing && weekStart < toMondayStart(new Date())) {
+      return res.status(400).json({
+        success: false,
+        message: "Geçmiş bir hafta için yeni program oluşturulamaz. Lütfen içinde bulunduğunuz veya gelecek bir haftayı seçin.",
+      });
+    }
+
     // Yeni bir hafta için existingIds boş küme — payload'da HERHANGİ bir id
     // gelirse validasyon zaten reddedecek (yeni haftanın var olan bir
     // item'a referans vermesi mantıksız, güvenli varsayılan).
